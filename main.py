@@ -1,8 +1,10 @@
 import os
 import asyncio
+import ipaddress
 from contextlib import asynccontextmanager
 from typing import Any
 from time import perf_counter
+from urllib.parse import urlparse
 
 import jwt
 import uvicorn
@@ -14,7 +16,7 @@ from jwt import InvalidTokenError, PyJWKClient
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_ollama import ChatOllama
 from mcp_use import MCPAgent, MCPClient
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import Integer, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -200,6 +202,36 @@ class ServerRegistration(BaseModel):
     name: str
     url: str
 
+    @field_validator("url")
+    @classmethod
+    def validate_server_url(cls, value: str) -> str:
+        url = value.strip()
+        parsed = urlparse(url)
+
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("URL must start with http:// or https://")
+        if not parsed.hostname:
+            raise ValueError("URL must include a valid hostname or IP address")
+
+        hostname = parsed.hostname
+        try:
+            ipaddress.ip_address(hostname)
+        except ValueError:
+            if hostname != "localhost" and "." not in hostname:
+                raise ValueError(
+                    "URL host must be a valid IP, localhost, or a fully qualified domain (e.g. api.example.com)"
+                )
+
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("URL must include a valid numeric port") from exc
+
+        if port is None:
+            raise ValueError("URL must include an explicit port, e.g. :8005")
+
+        return url
+
 
 class BaseURLRegistration(BaseModel):
     name: str
@@ -236,10 +268,8 @@ def health() -> dict[str, Any]:
 @app.post("/register-base-url")
 def register_base_url(
     data: BaseURLRegistration,
-    current_user: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Register base URL for app."""
-    _ = current_user
     try:
         with SessionLocal() as db:
             existing = db.scalar(select(BaseURLModel).where(BaseURLModel.name == data.name))
@@ -280,13 +310,19 @@ def list_base_urls(
 # 6. Server Endpoints (MCP Servers)
 # ---------------------------------------------------
 @app.post("/register-server")
-def register_server(
+async def register_server(
     data: ServerRegistration,
-    current_user: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Register MCP server."""
-    _ = current_user
     try:
+        probe_result = await probe_server_status(data.name, data.url, timeout_sec=8.0)
+        if probe_result["status"] != "alive":
+            error_detail = probe_result.get("error") or "Unknown connection error"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Server endpoint is not reachable or not MCP-compatible: {error_detail}",
+            )
+
         with SessionLocal() as db:
             existing = db.scalar(select(ServerModel).where(ServerModel.name == data.name))
             if existing:

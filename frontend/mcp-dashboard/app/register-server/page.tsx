@@ -15,6 +15,63 @@ interface Server {
   url: string;
 }
 
+function isValidIpAddress(hostname: string): boolean {
+  const ipv4Pattern =
+    /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  if (ipv4Pattern.test(hostname)) return true;
+
+  // Minimal IPv6 allowance for local parsing only; backend performs authoritative validation.
+  return hostname.includes(':');
+}
+
+function validateServerUrlInput(rawUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return 'Enter a valid URL (example: http://10.0.0.5:8005/mcp)';
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return 'URL must start with http:// or https://';
+  }
+
+  if (!parsed.port) {
+    return 'URL must include an explicit port (example: :8005)';
+  }
+
+  const hostname = parsed.hostname;
+  const isLocalhost = hostname === 'localhost';
+  const isFqdn = hostname.includes('.');
+  const isIp = isValidIpAddress(hostname);
+
+  if (!isLocalhost && !isFqdn && !isIp) {
+    return 'Host must be a valid IP, localhost, or a full domain (example: api.example.com)';
+  }
+
+  return null;
+}
+
+function toErrorMessage(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message;
+  if (Array.isArray(value)) {
+    return value.map((item) => toErrorMessage(item)).join(', ');
+  }
+  if (value && typeof value === 'object') {
+    const detail = (value as { detail?: unknown }).detail;
+    const msg = (value as { msg?: unknown }).msg;
+    if (typeof detail === 'string') return detail;
+    if (typeof msg === 'string') return msg;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return 'An unexpected error occurred';
+    }
+  }
+  return 'An unexpected error occurred';
+}
+
 export default function RegisterServerPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,16 +109,27 @@ export default function RegisterServerPage() {
     setError(null);
 
     try {
+      const urlValidationError = validateServerUrlInput(formData.url);
+      if (urlValidationError) {
+        setError(urlValidationError);
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/register-server`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        setError(data.detail || data.error || 'Registration failed');
+        const message =
+          (data && typeof data === 'object' && 'detail' in data && toErrorMessage((data as { detail: unknown }).detail)) ||
+          (data && typeof data === 'object' && 'error' in data && toErrorMessage((data as { error: unknown }).error)) ||
+          `Registration failed (${response.status})`;
+        setError(`Registration failed: ${message}`);
         setLoading(false);
         return;
       }
@@ -76,7 +144,7 @@ export default function RegisterServerPage() {
 
       setLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(toErrorMessage(err));
       setLoading(false);
     }
   };
