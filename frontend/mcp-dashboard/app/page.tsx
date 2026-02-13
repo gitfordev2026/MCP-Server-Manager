@@ -116,7 +116,7 @@ export default function Home() {
     if (!paths || typeof paths !== 'object') return 0;
 
     const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
-    return Object.values(paths).reduce((total, pathItem) => {
+    return Object.values(paths).reduce<number>((total, pathItem) => {
       if (!pathItem || typeof pathItem !== 'object') return total;
       const operationCount = Object.keys(pathItem as Record<string, unknown>).filter((method) =>
         methods.has(method.toLowerCase())
