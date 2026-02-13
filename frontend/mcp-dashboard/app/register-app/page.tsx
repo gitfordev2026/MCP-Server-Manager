@@ -11,6 +11,8 @@ const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL
 interface BaseURL {
   name: string;
   url: string;
+  openapi_path?: string;
+  include_unreachable_tools?: boolean;
 }
 
 export default function RegisterAppPage() {
@@ -22,6 +24,8 @@ export default function RegisterAppPage() {
   const [formData, setFormData] = useState({
     name: '',
     url: '',
+    openapi_path: '',
+    include_unreachable_tools: false,
   });
 
   useEffect(() => {
@@ -39,8 +43,22 @@ export default function RegisterAppPage() {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const { name, value, checked } = e.target;
+    setFormData((prev) => {
+      if (name === 'include_unreachable_tools') {
+        return { ...prev, include_unreachable_tools: checked };
+      }
+      if (name === 'openapi_path') {
+        return { ...prev, openapi_path: value };
+      }
+      if (name === 'name') {
+        return { ...prev, name: value };
+      }
+      if (name === 'url') {
+        return { ...prev, url: value };
+      }
+      return prev;
+    });
     setError(null);
   };
 
@@ -67,7 +85,7 @@ export default function RegisterAppPage() {
       }
 
       setSuccess(true);
-      setFormData({ name: '', url: '' });
+      setFormData({ name: '', url: '', openapi_path: '', include_unreachable_tools: false });
       setTimeout(() => setSuccess(false), 3000);
       fetchBaseURLs();
     } catch (err) {
@@ -136,6 +154,35 @@ export default function RegisterAppPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-blue-700 mb-2">Custom OpenAPI Path (optional)</label>
+                <input
+                  type="text"
+                  name="openapi_path"
+                  value={formData.openapi_path}
+                  onChange={handleChange}
+                  placeholder="openapi.json, /swagger/v1/swagger.json, or full URL"
+                  className="w-full px-4 py-2 bg-white border border-blue-300/50 rounded-xl text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Leave empty to auto-discover using default `/openapi.json`.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-xl border border-blue-200/60 bg-blue-50/60 p-3">
+                <input
+                  id="include_unreachable_tools"
+                  type="checkbox"
+                  name="include_unreachable_tools"
+                  checked={formData.include_unreachable_tools}
+                  onChange={handleChange}
+                  className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="include_unreachable_tools" className="text-sm text-blue-800">
+                  Include placeholder tool if app is unreachable or has zero exposed endpoints
+                </label>
+              </div>
+
               <Button
                 type="submit"
                 className="cursor-pointer w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-2 rounded-xl transition-all duration-300 hover:shadow-lg hover:shadow-blue-400/50 hover:scale-105 shadow-md"
@@ -170,7 +217,13 @@ export default function RegisterAppPage() {
             ) : (
               <div className="space-y-3">
                 {baseURLs.map((app, index) => (
-                  <Link key={index} href={`/api-explorer?url=${encodeURIComponent(app.url)}&name=${encodeURIComponent(app.name)}`}>
+                  <Link
+                    key={index}
+                    href={
+                      `/api-explorer?url=${encodeURIComponent(app.url)}&name=${encodeURIComponent(app.name)}` +
+                      (app.openapi_path ? `&openapi_path=${encodeURIComponent(app.openapi_path)}` : '')
+                    }
+                  >
                     <div className="group relative bg-white/70 hover:bg-white/80 border border-blue-300/50 hover:border-blue-500/60 transition-all duration-300 cursor-pointer rounded-2xl p-4 backdrop-blur-xl animate-slideInUp shadow-md hover:shadow-lg hover:shadow-blue-300/40" style={{ animationDelay: `${0.3 + index * 0.1}s` }}>
                       <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
                       <div className="relative flex items-start justify-between">
@@ -178,7 +231,11 @@ export default function RegisterAppPage() {
                           <h3 className="font-semibold text-slate-800 text-lg">{app.name}</h3>
                           <p className="text-slate-600 text-sm mt-1 break-all">{app.url}</p>
                           <p className="text-xs text-slate-500 mt-2 font-mono">
-                            {app.url.endsWith('/') ? `${app.url}openapi.json` : `${app.url}/openapi.json`}
+                            {(app.openapi_path && app.openapi_path.trim()) ||
+                              (app.url.endsWith('/') ? `${app.url}openapi.json` : `${app.url}/openapi.json`)}
+                          </p>
+                          <p className="text-xs text-blue-700 mt-1">
+                            Placeholder policy: {app.include_unreachable_tools ? 'Enabled' : 'Disabled'}
                           </p>
                         </div>
                         <span className="text-blue-600 ml-4 font-bold">→</span>

@@ -12,17 +12,23 @@
 - Entry file: `main.py`
 - Database tables:
   - `servers` (`name`, `url`)
-  - `base_urls` (`name`, `url`)
+  - `base_urls` (`name`, `url`, `openapi_path`, `include_unreachable_tools`)
 - Public endpoints (currently open by design):
   - `GET /health`
   - `POST /register-base-url`
   - `GET /base-urls`
+  - `GET /openapi-spec?url=...&openapi_path=...&retries=...`
+  - `GET /mcp/openapi/catalog`
+  - `GET /mcp/openapi/diagnostics`
   - `POST /register-server`
   - `GET /servers`
   - `GET /servers/{server_name}/tools`
   - `GET /servers/status`
   - `GET /servers/{server_name}/status`
   - `GET /agent/query?prompt=...`
+- MCP transport endpoint:
+  - Combined app OpenAPI MCP server mounted at `POST/GET /mcp/apps` (Streamable HTTP)
+  - Exposes registered app OpenAPI operations as MCP tools for MCP clients.
 - Input validation:
   - `POST /register-server` now enforces strict URL format:
     - Must use `http` or `https`
@@ -54,6 +60,7 @@
   - `/servers/[name]` server tools
   - `/register-app`
   - `/register-app/[name]`
+  - `/access-control`
   - `/api-explorer`
   - `/chat`
   - `/login` (placeholder page to satisfy existing auth/register redirect)
@@ -80,11 +87,11 @@
 ## Live App Monitoring
 - Implemented on `frontend/mcp-dashboard/app/page.tsx`.
 - On each dashboard refresh cycle, every registered app base URL is probed via:
-  - `{baseUrl}/openapi.json`
+  - `GET /openapi-spec?url={baseUrl}` (backend proxy)
 - App card live data:
   - Status badge (`Alive` / `Down`)
   - OpenAPI probe latency (ms)
-  - Endpoint count (from OpenAPI `paths`)
+  - Endpoint count (from total OpenAPI operations across all paths/methods)
 - App section summary now shows:
   - Alive count
   - Down count
@@ -101,7 +108,75 @@
 - Frontend should consume backend base URL from env (do not hardcode per-page URLs).
 - Keep this file updated whenever code changes are made.
 
+## Access Control Module
+- New page: `frontend/mcp-dashboard/app/access-control/page.tsx`
+- Purpose:
+  - Lists all app servers and MCP servers.
+  - On owner selection, lists MCP-exposed endpoints/tools:
+    - App owners use combined catalog from `GET /mcp/openapi/catalog`
+    - MCP servers load tools from `GET /servers/{server_name}/tools`
+  - Provides endpoint-level access control with:
+    - Owner-level default policy (`Allow`, `Require Approval`, `Deny`)
+    - `Apply Selected Mode To All Endpoints`
+    - Per-endpoint override controls and reset
+- Current persistence:
+  - Policies are stored in browser local storage key `mcp_access_control_policies_v1` (frontend-only for now).
+
 ## Change Log
+- 2026-02-13
+  - Added custom app OpenAPI sync controls and diagnostics:
+    - `base_urls` schema now stores per-app `openapi_path` and `include_unreachable_tools`.
+    - `POST /register-base-url` and `GET /base-urls` now accept/return those fields.
+    - OpenAPI candidate resolution now supports custom paths (relative path, absolute path, or full URL).
+    - Added retry-aware diagnostics endpoint `GET /mcp/openapi/diagnostics?retries=...`.
+    - Enhanced `GET /mcp/openapi/catalog` to return app-level diagnostics for all apps (healthy, unreachable, zero-endpoints) including attempts, latency, candidate URLs, and placeholder status.
+    - Added placeholder tool policy: if enabled per app and sync is unreachable/zero-endpoints, combined MCP exposes a placeholder tool instead of dropping visibility.
+  - Updated frontend register-app page:
+    - Added inputs for custom OpenAPI path and include-unreachable-placeholder policy.
+    - Registered app cards now show configured OpenAPI path and placeholder policy status.
+  - Updated frontend access-control page:
+    - Added combined MCP diagnostics panel for all app servers, including unreachable and zero-endpoint apps.
+    - Added retry selector that refreshes catalog diagnostics with configurable retry count.
+    - Placeholder tools are labeled in endpoint lists with placeholder reason.
+  - Updated dashboard and API explorer OpenAPI fetch flow:
+    - Dashboard app health probes now forward `openapi_path` to backend `/openapi-spec`.
+    - API Explorer now accepts `openapi_path` query param and uses it when loading OpenAPI specs.
+    - App-to-Explorer links now include `openapi_path` when configured.
+  - Added frontend access-control page (`/access-control`):
+    - Lists all app servers and MCP servers.
+    - Shows MCP-exposed endpoints/tools for selected owner.
+    - Supports apply-all and per-endpoint access policy controls.
+    - Persists policies locally in browser storage for now.
+  - Updated top navigation to include `Access Control` route and active-state highlighting.
+  - Added combined OpenAPI-to-MCP backend server in `main.py`:
+    - New dynamic MCP endpoint at `/mcp/apps` (Streamable HTTP transport).
+    - Auto-discovers tools from all registered app `base_urls` OpenAPI specs.
+    - Converts each API operation into an MCP tool with request schema for `path`, `query`, `headers`, `cookies`, `body`, and optional `timeout_sec`.
+    - Tool invocation executes the upstream HTTP API call and returns structured response payload (`status_code`, `url`, `ok`, `body`).
+    - Added catalog debug endpoint `GET /mcp/openapi/catalog` to inspect generated tools and sync errors.
+    - Added cache+refresh behavior (`OPENAPI_MCP_CACHE_TTL_SEC`, cache invalidation on app registration).
+    - Fixed mounted MCP lifecycle integration by running `combined_apps_mcp.session_manager.run()` inside FastAPI lifespan.
+  - Fixed dashboard rendering regression in `app/page.tsx` where `normalizeOpenApiUrl` was referenced after refactor but not defined, which could break dashboard card rendering and hide server/app lists.
+  - Improved dashboard fetch resilience in `app/page.tsx`:
+    - Switched primary data calls (`/servers`, `/base-urls`, `/servers/status`) to `Promise.allSettled`.
+    - Prevented single status fetch failure from blocking all dashboard data.
+    - Render server/app lists immediately after list fetches while status/app health probes continue in background.
+    - Added explicit frontend error when `NEXT_PUBLIC_BE_API_URL` is missing.
+    - Preserved last-known server/app status and counts during refresh checks; dashboard no longer clears to waiting/empty while probes are in-flight.
+    - Added overlap-safe live polling with in-flight guard to prevent concurrent refresh races.
+    - Added failure smoothing for status transitions:
+      - Alive -> Down now requires consecutive failed probes (`DOWN_AFTER_FAILURES=2`) before UI flips down.
+      - Last-known tool/endpoint counts remain visible during transient probe failures.
+  - Corrected endpoint counting logic on frontend:
+    - Dashboard app cards now count OpenAPI operations (HTTP methods across paths), not only path keys.
+    - API Explorer "Total Endpoints" now shows total operations for consistency with dashboard.
+  - Improved server/app card metric messaging:
+    - Tool count and endpoint count now show "unavailable" when status is down instead of misleading zero values.
+  - Fixed app endpoint discovery in API Explorer by routing OpenAPI fetch through backend:
+    - Added `GET /openapi-spec?url=...` in `main.py`.
+    - Backend now resolves OpenAPI candidates (registered path + root fallback) and returns first valid JSON spec.
+  - Updated frontend API Explorer (`app/api-explorer/page.tsx`) to use backend `/openapi-spec` instead of direct browser fetch to `{baseUrl}/openapi.json`.
+  - Updated main dashboard app monitoring (`app/page.tsx`) to probe OpenAPI via backend `/openapi-spec`, improving app health/endpoint count reliability for CORS-restricted APIs.
 - 2026-02-12
   - Added `project.md` as persistent project memory.
   - Fixed navigation route recognition for server details:

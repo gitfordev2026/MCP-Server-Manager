@@ -242,7 +242,8 @@ export default function RegisterServerPage() {
             ) : (
               <div className="space-y-3">
                 {servers.map((server, index) => (
-                  <Link key={index} href={`/api-explorer?url=${encodeURIComponent(server.url)}&name=${encodeURIComponent(server.name)}`}>
+                  // <Link key={index} href={`/api-explorer?url=${encodeURIComponent(server.url)}&name=${encodeURIComponent(server.name)}`}>
+                  <Link key={index} href={`/servers/${encodeURIComponent(server.name)}`}>
                     <div className="group relative bg-white/70 hover:bg-white/80 border border-blue-300/50 hover:border-blue-500/60 transition-all duration-300 cursor-pointer rounded-2xl p-4 backdrop-blur-xl animate-slideInUp shadow-md hover:shadow-lg hover:shadow-blue-300/40" style={{ animationDelay: `${0.3 + index * 0.1}s` }}>
                       <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-2xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
                       <div className="relative flex items-start justify-between">

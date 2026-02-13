@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 
 
 const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL
+const STATUS_POLL_MS = 10000;
+const DOWN_AFTER_FAILURES = 2;
 
 interface Server {
   name: string;
@@ -16,6 +18,8 @@ interface Server {
 interface BaseURL {
   name: string;
   url: string;
+  openapi_path?: string;
+  include_unreachable_tools?: boolean;
 }
 
 interface ServerHealth {
@@ -57,6 +61,13 @@ export default function Home() {
   const [appHealth, setAppHealth] = useState<Record<string, AppHealth>>({});
   const [appStatusSummary, setAppStatusSummary] = useState({ total: 0, alive: 0, down: 0 });
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const serversRef = useRef<Server[]>([]);
+  const appsRef = useRef<BaseURL[]>([]);
+  const serverHealthRef = useRef<Record<string, ServerHealth>>({});
+  const appHealthRef = useRef<Record<string, AppHealth>>({});
+  const pollInFlightRef = useRef(false);
+  const serverFailureStreakRef = useRef<Record<string, number>>({});
+  const appFailureStreakRef = useRef<Record<string, number>>({});
 
   const aliveLatencies = Object.values(serverHealth)
     .filter((item) => item.status === 'alive')
@@ -65,24 +76,74 @@ export default function Home() {
     ? Math.round(aliveLatencies.reduce((acc, value) => acc + value, 0) / aliveLatencies.length)
     : null;
 
-  const normalizeOpenApiUrl = (baseUrl: string) =>
-    baseUrl.endsWith('/') ? `${baseUrl}openapi.json` : `${baseUrl}/openapi.json`;
+  const normalizeOpenApiUrl = useCallback((baseUrl: string, openApiPath?: string) => {
+    const customPath = (openApiPath || '').trim();
+    if (!customPath) {
+      return baseUrl.endsWith('/') ? `${baseUrl}openapi.json` : `${baseUrl}/openapi.json`;
+    }
+    if (customPath.startsWith('http://') || customPath.startsWith('https://')) {
+      return customPath;
+    }
 
-  const probeAppHealth = async (app: BaseURL): Promise<AppHealth> => {
-    const openApiUrl = normalizeOpenApiUrl(app.url);
+    const trimmedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    if (customPath.startsWith('/')) {
+      try {
+        const parsed = new URL(trimmedBase);
+        return `${parsed.protocol}//${parsed.host}${customPath}`;
+      } catch {
+        return `${trimmedBase}${customPath}`;
+      }
+    }
+
+    return `${trimmedBase}/${customPath}`;
+  }, []);
+
+  const buildOpenApiProxyUrl = useCallback(
+    (baseUrl: string, openApiPath?: string) => {
+      const params = new URLSearchParams({ url: baseUrl });
+      const customPath = (openApiPath || '').trim();
+      if (customPath) {
+        params.set('openapi_path', customPath);
+      }
+      return `${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`;
+    },
+    []
+  );
+
+  const countOpenApiOperations = useCallback((spec: unknown): number => {
+    if (!spec || typeof spec !== 'object') return 0;
+    const paths = (spec as { paths?: Record<string, unknown> }).paths;
+    if (!paths || typeof paths !== 'object') return 0;
+
+    const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
+    return Object.values(paths).reduce((total, pathItem) => {
+      if (!pathItem || typeof pathItem !== 'object') return total;
+      const operationCount = Object.keys(pathItem as Record<string, unknown>).filter((method) =>
+        methods.has(method.toLowerCase())
+      ).length;
+      return total + operationCount;
+    }, 0);
+  }, []);
+
+  const probeAppHealth = useCallback(async (app: BaseURL): Promise<AppHealth> => {
+    const openApiProxyUrl = buildOpenApiProxyUrl(app.url, app.openapi_path);
     const started = performance.now();
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 8000);
 
     try {
-      const response = await fetch(openApiUrl, { signal: controller.signal });
+      const response = await fetch(openApiProxyUrl, { signal: controller.signal });
+      const payload = await response.json();
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const detail =
+          payload && typeof payload === 'object' && 'detail' in payload
+            ? String(payload.detail)
+            : `HTTP ${response.status}`;
+        throw new Error(detail);
       }
 
-      const payload = await response.json();
       const latency = Math.round(performance.now() - started);
-      const endpointCount = payload?.paths ? Object.keys(payload.paths).length : 0;
+      const endpointCount = countOpenApiOperations(payload);
 
       return {
         name: app.name,
@@ -105,57 +166,246 @@ export default function Home() {
     } finally {
       window.clearTimeout(timeoutId);
     }
-  };
+  }, [buildOpenApiProxyUrl, countOpenApiOperations]);
+
+  const summarizeServers = useCallback(
+    (serverList: Server[], healthByName: Record<string, ServerHealth>) => {
+      const alive = serverList.filter((server) => healthByName[server.name]?.status === 'alive').length;
+      return { total: serverList.length, alive, down: serverList.length - alive };
+    },
+    []
+  );
+
+  const summarizeApps = useCallback((appList: BaseURL[], healthByName: Record<string, AppHealth>) => {
+    const alive = appList.filter((app) => healthByName[app.name]?.status === 'alive').length;
+    return { total: appList.length, alive, down: appList.length - alive };
+  }, []);
+
+  const mergeServerHealth = useCallback(
+    (
+      previous: Record<string, ServerHealth>,
+      incoming: ServerHealth[],
+      serverList: Server[],
+    ): Record<string, ServerHealth> => {
+      const next: Record<string, ServerHealth> = {};
+      const serverNames = new Set(serverList.map((server) => server.name));
+      const incomingByName = incoming.reduce<Record<string, ServerHealth>>((acc, item) => {
+        acc[item.name] = item;
+        return acc;
+      }, {});
+
+      for (const serverName of serverNames) {
+        const probe = incomingByName[serverName];
+        const previousItem = previous[serverName];
+
+        if (!probe) {
+          if (previousItem) {
+            next[serverName] = previousItem;
+          }
+          continue;
+        }
+
+        if (probe.status === 'alive') {
+          serverFailureStreakRef.current[serverName] = 0;
+          next[serverName] = probe;
+          continue;
+        }
+
+        const streak = (serverFailureStreakRef.current[serverName] || 0) + 1;
+        serverFailureStreakRef.current[serverName] = streak;
+
+        if (previousItem && previousItem.status === 'alive' && streak < DOWN_AFTER_FAILURES) {
+          next[serverName] = {
+            ...previousItem,
+            latency_ms: probe.latency_ms,
+            error: probe.error,
+          };
+        } else {
+          next[serverName] = probe;
+        }
+      }
+
+      for (const trackedName of Object.keys(serverFailureStreakRef.current)) {
+        if (!serverNames.has(trackedName)) {
+          delete serverFailureStreakRef.current[trackedName];
+        }
+      }
+
+      return next;
+    },
+    []
+  );
+
+  const mergeAppHealth = useCallback(
+    (
+      previous: Record<string, AppHealth>,
+      incoming: AppHealth[],
+      appList: BaseURL[],
+    ): Record<string, AppHealth> => {
+      const next: Record<string, AppHealth> = {};
+      const appNames = new Set(appList.map((app) => app.name));
+      const incomingByName = incoming.reduce<Record<string, AppHealth>>((acc, item) => {
+        acc[item.name] = item;
+        return acc;
+      }, {});
+
+      for (const appName of appNames) {
+        const probe = incomingByName[appName];
+        const previousItem = previous[appName];
+
+        if (!probe) {
+          if (previousItem) {
+            next[appName] = previousItem;
+          }
+          continue;
+        }
+
+        if (probe.status === 'alive') {
+          appFailureStreakRef.current[appName] = 0;
+          next[appName] = probe;
+          continue;
+        }
+
+        const streak = (appFailureStreakRef.current[appName] || 0) + 1;
+        appFailureStreakRef.current[appName] = streak;
+
+        if (previousItem && previousItem.status === 'alive' && streak < DOWN_AFTER_FAILURES) {
+          next[appName] = {
+            ...previousItem,
+            latency_ms: probe.latency_ms,
+            error: probe.error,
+          };
+        } else {
+          next[appName] = probe;
+        }
+      }
+
+      for (const trackedName of Object.keys(appFailureStreakRef.current)) {
+        if (!appNames.has(trackedName)) {
+          delete appFailureStreakRef.current[trackedName];
+        }
+      }
+
+      return next;
+    },
+    []
+  );
 
   useEffect(() => {
     const fetchData = async (silent = false) => {
+      if (silent && pollInFlightRef.current) {
+        return;
+      }
+
+      pollInFlightRef.current = true;
       try {
+        if (!NEXT_PUBLIC_BE_API_URL) {
+          setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
+          setServers([]);
+          setApps([]);
+          return;
+        }
+
         if (silent) {
           setRefreshing(true);
         } else {
           setLoading(true);
         }
-        const [serversRes, appsRes, statusRes] = await Promise.all([
+        const [serversRes, appsRes] = await Promise.allSettled([
           fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
           fetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
-          fetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`),
         ]);
-        if (!serversRes.ok || !appsRes.ok || !statusRes.ok) throw new Error('Failed to fetch data');
-        const serversData = await serversRes.json();
-        const appsData = await appsRes.json();
-        const statusData: ServerStatusResponse = await statusRes.json();
-        const appList: BaseURL[] = appsData.base_urls || [];
-        const appHealthChecks = await Promise.all(appList.map((app) => probeAppHealth(app)));
 
-        setServers(serversData.servers || []);
-        setApps(appList);
-        const healthByName = (statusData.servers || []).reduce<Record<string, ServerHealth>>((acc, item) => {
-          acc[item.name] = item;
-          return acc;
-        }, {});
-        const appHealthByName = appHealthChecks.reduce<Record<string, AppHealth>>((acc, item) => {
-          acc[item.name] = item;
-          return acc;
-        }, {});
-        const appAlive = appHealthChecks.filter((item) => item.status === 'alive').length;
-        setServerHealth(healthByName);
-        setStatusSummary(statusData.summary || { total: 0, alive: 0, down: 0 });
-        setAppHealth(appHealthByName);
-        setAppStatusSummary({
-          total: appHealthChecks.length,
-          alive: appAlive,
-          down: appHealthChecks.length - appAlive,
+        let nextServers: Server[] = [];
+        let nextApps: BaseURL[] = [];
+        let hasServersList = false;
+        let hasAppsList = false;
+        const warnings: string[] = [];
+
+        if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
+          const serversData = await serversRes.value.json();
+          nextServers = serversData.servers || [];
+          hasServersList = true;
+        } else {
+          warnings.push('servers');
+        }
+
+        if (appsRes.status === 'fulfilled' && appsRes.value.ok) {
+          const appsData = await appsRes.value.json();
+          nextApps = appsData.base_urls || [];
+          hasAppsList = true;
+        } else {
+          warnings.push('apps');
+        }
+
+        if (hasServersList) {
+          serversRef.current = nextServers;
+          setServers(nextServers);
+        }
+        if (hasAppsList) {
+          appsRef.current = nextApps;
+          setApps(nextApps);
+        }
+
+        const activeServers = hasServersList ? nextServers : serversRef.current;
+        const activeApps = hasAppsList ? nextApps : appsRef.current;
+
+        // Keep last known status/count values visible while revalidating.
+        setStatusSummary(summarizeServers(activeServers, serverHealthRef.current));
+        setAppStatusSummary(summarizeApps(activeApps, appHealthRef.current));
+
+        if (!silent) {
+          setLoading(false);
+        }
+
+        const statusTask = fetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`).then(async (res) => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return (await res.json()) as ServerStatusResponse;
         });
+        const appHealthTask = Promise.all(activeApps.map((app) => probeAppHealth(app)));
+        const [statusResult, appHealthResult] = await Promise.allSettled([statusTask, appHealthTask]);
+
+        if (statusResult.status === 'fulfilled') {
+          const mergedServerHealth = mergeServerHealth(
+            serverHealthRef.current,
+            statusResult.value.servers || [],
+            activeServers
+          );
+          serverHealthRef.current = mergedServerHealth;
+          setServerHealth(mergedServerHealth);
+          setStatusSummary(summarizeServers(activeServers, mergedServerHealth));
+        } else {
+          warnings.push('status');
+        }
+
+        if (appHealthResult.status === 'fulfilled') {
+          const mergedAppHealth = mergeAppHealth(appHealthRef.current, appHealthResult.value, activeApps);
+          appHealthRef.current = mergedAppHealth;
+          setAppHealth(mergedAppHealth);
+          setAppStatusSummary(summarizeApps(activeApps, mergedAppHealth));
+        } else {
+          warnings.push('app-health');
+        }
+
         setLastUpdated(
           new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         );
-        setError(null);
+
+        const listFetchFailed = warnings.includes('servers') && warnings.includes('apps');
+        if (listFetchFailed) {
+          setError('Failed to load servers and apps');
+        } else {
+          setError(null);
+        }
       } catch (err) {
         if (!silent) {
           setError(err instanceof Error ? err.message : 'Failed to load data');
         }
         console.error('Error fetching data:', err);
       } finally {
+        pollInFlightRef.current = false;
         if (silent) {
           setRefreshing(false);
         } else {
@@ -164,11 +414,11 @@ export default function Home() {
       }
     };
 
-    fetchData();
+    void fetchData();
     const intervalId = window.setInterval(() => {
-      fetchData(true);
-    }, 10000);
-    
+      void fetchData(true);
+    }, STATUS_POLL_MS);
+
     // Check system preference
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       setIsDark(true);
@@ -177,7 +427,7 @@ export default function Home() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [mergeAppHealth, mergeServerHealth, probeAppHealth, summarizeApps, summarizeServers]);
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900' : 'bg-gradient-to-br from-white via-slate-50 to-slate-100'} overflow-hidden transition-colors duration-500`}>
@@ -368,7 +618,11 @@ export default function Home() {
                         <p className={`text-xs font-mono mb-2 truncate opacity-75 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{server.url.split('//')[1] || server.url}</p>
                         <div className={`text-xs mb-4 space-y-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                           <p>{health ? `${health.latency_ms} ms latency` : 'Waiting for status...'}</p>
-                          <p>{health ? `${health.tool_count} tools` : 'Tool count unavailable'}</p>
+                          <p>
+                            {health && health.status === 'alive'
+                              ? `${health.tool_count} tools`
+                              : 'Tool count unavailable'}
+                          </p>
                         </div>
                         
                         <div className="flex gap-2">
@@ -427,7 +681,13 @@ export default function Home() {
                   const isAlive = health?.status === 'alive';
 
                   return (
-                  <Link key={app.name} href={`/api-explorer?url=${encodeURIComponent(app.url)}&name=${encodeURIComponent(app.name)}`}>
+                  <Link
+                    key={app.name}
+                    href={
+                      `/api-explorer?url=${encodeURIComponent(app.url)}&name=${encodeURIComponent(app.name)}` +
+                      (app.openapi_path ? `&openapi_path=${encodeURIComponent(app.openapi_path)}` : '')
+                    }
+                  >
                     <div
                       className="group relative animate-slideInUp cursor-pointer"
                       style={{ animationDelay: `${0.6 + index * 0.1}s` }}
@@ -452,10 +712,14 @@ export default function Home() {
                           <p className={`text-xs font-mono mb-2 truncate opacity-75 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{app.url.split('//')[1] || app.url}</p>
                           <div className={`text-xs mb-2 space-y-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                             <p>{health ? `${health.latency_ms} ms latency` : 'Waiting for status...'}</p>
-                            <p>{health ? `${health.endpoint_count} endpoints` : 'Endpoint count unavailable'}</p>
+                            <p>
+                              {health && health.status === 'alive'
+                                ? `${health.endpoint_count} endpoints`
+                                : 'Endpoint count unavailable'}
+                            </p>
                           </div>
                           <p className={`text-xs font-mono mb-6 truncate opacity-60 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                            {normalizeOpenApiUrl(app.url)}
+                            {normalizeOpenApiUrl(app.url, app.openapi_path)}
                           </p>
                           
                           <div className="flex gap-2">

@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
+
+const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL;
 
 interface PathItem {
   path: string;
@@ -47,16 +47,23 @@ export default function ApiExplorerPage() {
   const searchParams = useSearchParams();
   const url = searchParams.get('url') || '';
   const name = searchParams.get('name') || 'API';
+  const openapiPath = searchParams.get('openapi_path') || '';
 
   const [spec, setSpec] = useState<OpenAPISpec | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pathItems, setPathItems] = useState<PathItem[]>([]);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+  const totalOperations = pathItems.reduce((total, item) => total + item.methods.length, 0);
 
   useEffect(() => {
     if (!url) {
       setError('No URL provided');
+      setLoading(false);
+      return;
+    }
+    if (!NEXT_PUBLIC_BE_API_URL) {
+      setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
       setLoading(false);
       return;
     }
@@ -66,15 +73,24 @@ export default function ApiExplorerPage() {
         setLoading(true);
         setError(null);
 
-        // Try fetching openapi.json from the server
-        const openAPIUrl = url.endsWith('/') ? `${url}openapi.json` : `${url}/openapi.json`;
-        const response = await fetch(openAPIUrl);
+        // Fetch spec via backend proxy to avoid browser CORS restrictions.
+        const query = new URLSearchParams({ url });
+        const customPath = openapiPath.trim();
+        if (customPath) {
+          query.set('openapi_path', customPath);
+        }
+        const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${query.toString()}`);
+        const payload = await response.json();
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch OpenAPI spec: ${response.statusText}`);
+          const detail =
+            payload && typeof payload === 'object' && 'detail' in payload
+              ? String(payload.detail)
+              : `HTTP ${response.status}`;
+          throw new Error(`Failed to fetch OpenAPI spec: ${detail}`);
         }
 
-        const data: OpenAPISpec = await response.json();
+        const data = payload as OpenAPISpec;
         setSpec(data);
 
         // Parse paths and methods
@@ -111,7 +127,7 @@ export default function ApiExplorerPage() {
     };
 
     fetchOpenAPI();
-  }, [url]);
+  }, [url, openapiPath]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">
@@ -133,6 +149,9 @@ export default function ApiExplorerPage() {
             📚 {name} API Explorer
           </h1>
           <p className="text-slate-600">{url}</p>
+          <p className="text-slate-500 text-xs mt-1 font-mono">
+            OpenAPI path: {openapiPath.trim() || '/openapi.json (auto)'}
+          </p>
         </div>
 
         {/* Spec Info */}
@@ -149,7 +168,7 @@ export default function ApiExplorerPage() {
               </div>
               <div>
                 <p className="text-slate-600 text-sm">Total Endpoints</p>
-                <p className="text-slate-800 text-lg font-semibold">{pathItems.length}</p>
+                <p className="text-slate-800 text-lg font-semibold">{totalOperations}</p>
               </div>
             </div>
             {spec.info.description && (

@@ -99,7 +99,7 @@ export default function ServerToolsPage() {
       <div className={`min-h-screen ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
         <Navigation pageTitle="Server Details" />
         <div className="max-w-6xl mx-auto px-4 py-8">
-          <Card className="bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800">
+          <Card className="bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800 my-18">
             <div className="p-6">
               <h3 className="text-red-800 dark:text-red-400 font-semibold mb-2">Error</h3>
               <p className="text-red-700 dark:text-red-300">{error}</p>
@@ -127,7 +127,7 @@ export default function ServerToolsPage() {
       
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Server Header */}
-        <div className="mb-8">
+        <div className="mb-8 mt-18">
           <Card className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800">
             <div className="p-6">
               <div className="flex items-start justify-between">
