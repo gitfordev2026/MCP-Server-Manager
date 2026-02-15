@@ -5,7 +5,7 @@
 - Frontend: Provide a dashboard UI for MCP servers/apps, API explorer for OpenAPI endpoints, and chat UI for `/agent/query`.
 
 ## Tech Stack
-- Backend: FastAPI + SQLAlchemy + SQLite (`servers.db`) in `main.py`.
+- Backend: FastAPI + SQLAlchemy + PostgreSQL (primary) / SQLite fallback (`servers.db`) in `main.py`.
 - Frontend: Next.js App Router + React + Tailwind in `frontend/mcp-dashboard`.
 
 ## Backend Overview
@@ -107,6 +107,13 @@
 - Keep backend endpoints open until auth phase starts.
 - Frontend should consume backend base URL from env (do not hardcode per-page URLs).
 - Keep this file updated whenever code changes are made.
+
+## Database Configuration
+- Primary: PostgreSQL via `DATABASE_URL` env var (e.g. `postgresql://postgres:postgres@localhost:5432/mcp_manager`).
+- Fallback: SQLite (`servers.db`) when PostgreSQL is unavailable and `DB_FALLBACK_SQLITE=true`.
+- On startup, the backend auto-creates the PostgreSQL database and all tables if they don't exist.
+- The `/health` endpoint reports `db_backend` (`"postgresql"` or `"sqlite"`).
+- Migration logic in `migrate_base_urls_schema()` is cross-DB compatible (uses `information_schema` for PostgreSQL, `PRAGMA` for SQLite).
 
 ## Access Control Module
 - New page: `frontend/mcp-dashboard/app/access-control/page.tsx`
