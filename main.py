@@ -994,10 +994,63 @@ async def invoke_openapi_tool(tool: OpenAPIToolDefinition, arguments: dict[str, 
     }
 
 
+async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
+    """Connect to every registered MCP server and list its tools.
+
+    Returns a dict mapping  prefixed_name -> (server_name, original_tool_name, tool_object).
+    Tool names are prefixed as  mcp__{server_name}__{original_name}  to avoid collisions
+    with OpenAPI-generated tool names.
+    Servers that are unreachable are silently skipped.
+    """
+    import asyncio as _aio
+
+    with SessionLocal() as db:
+        rows = db.scalars(select(ServerModel)).all()
+        servers = [(row.name, row.url) for row in rows]
+
+    if not servers:
+        return {}
+
+    result: dict[str, tuple[str, str, Any]] = {}
+
+    async def _probe(name: str, url: str) -> list[tuple[str, str, Any]]:
+        try:
+            config = {"mcpServers": {name: {"url": url}}}
+            client = MCPClient(config)
+            await client.create_all_sessions()
+            session = client.get_session(name)
+            tools = await _aio.wait_for(session.list_tools(), timeout=10.0)
+            return [
+                (f"mcp__{name}__{t.name}", name, t.name, t)
+                for t in tools
+            ]
+        except Exception as exc:
+            print(f"[combined-mcp] Could not list tools for server '{name}': {exc}")
+            return []
+
+    tasks = [_probe(name, url) for name, url in servers]
+    results = await _aio.gather(*tasks, return_exceptions=True)
+
+    for batch in results:
+        if isinstance(batch, BaseException):
+            continue
+        for prefixed_name, srv_name, orig_name, tool_obj in batch:
+            result[prefixed_name] = (srv_name, orig_name, tool_obj)
+
+    return result
+
+
 class CombinedAppsOpenAPIMCP(FastMCP[Any]):
     async def list_tools(self) -> list[MCPTool]:
-        catalog = await build_openapi_tool_catalog()
-        return [
+        import asyncio as _aio
+
+        # Fetch both sources concurrently
+        catalog_task = build_openapi_tool_catalog()
+        mcp_task = _fetch_all_mcp_server_tools()
+        catalog, mcp_tools = await _aio.gather(catalog_task, mcp_task)
+
+        # OpenAPI app tools
+        tools: list[MCPTool] = [
             MCPTool(
                 name=tool.name,
                 title=tool.title,
@@ -1007,7 +1060,47 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             for tool in catalog.tools.values()
         ]
 
+        # Native MCP server tools
+        for prefixed_name, (server_name, _orig_name, tool_obj) in mcp_tools.items():
+            tools.append(
+                MCPTool(
+                    name=prefixed_name,
+                    title=getattr(tool_obj, "name", prefixed_name),
+                    description=f"[MCP: {server_name}] {getattr(tool_obj, 'description', '') or 'No description'}",
+                    inputSchema=getattr(tool_obj, "inputSchema", {}) or {},
+                )
+            )
+
+        return tools
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        # ---- Native MCP server tool ----
+        if name.startswith("mcp__"):
+            parts = name.split("__", 2)  # ["mcp", server_name, tool_name]
+            if len(parts) != 3:
+                raise ValueError(f"Malformed MCP tool name: '{name}'")
+            server_name, orig_tool_name = parts[1], parts[2]
+
+            with SessionLocal() as db:
+                server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
+            if not server:
+                raise ValueError(f"MCP server '{server_name}' not found in database.")
+
+            config = {"mcpServers": {server_name: {"url": server.url}}}
+            client = MCPClient(config)
+            await client.create_all_sessions()
+            session = client.get_session(server_name)
+            result = await session.call_tool(orig_tool_name, arguments or {})
+            # Convert CallToolResult to a plain dict for JSON response
+            return {
+                "content": [
+                    {"type": getattr(c, "type", "text"), "text": getattr(c, "text", str(c))}
+                    for c in (result.content if hasattr(result, "content") else [])
+                ],
+                "isError": getattr(result, "isError", False),
+            }
+
+        # ---- OpenAPI app tool ----
         catalog = await build_openapi_tool_catalog()
         tool = catalog.tools.get(name)
 
@@ -1151,23 +1244,58 @@ async def get_openapi_tool_catalog(
     retries: int = Query(default=OPENAPI_MCP_FETCH_RETRIES, ge=0, le=5),
     current_user: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Inspect generated MCP tools from registered app OpenAPI specs."""
+    """Inspect generated MCP tools from registered app OpenAPI specs and native MCP servers."""
     _ = current_user
     catalog = await build_openapi_tool_catalog(force_refresh=force_refresh, retries_override=retries)
+    mcp_server_tools = await _fetch_all_mcp_server_tools()
+
     app_count = len(catalog.apps)
     healthy_count = sum(1 for app in catalog.apps if app.get("status") == "healthy")
     zero_count = sum(1 for app in catalog.apps if app.get("status") == "zero_endpoints")
     unreachable_count = sum(1 for app in catalog.apps if app.get("status") == "unreachable")
 
+    # Build combined tools list
+    tools_list = [
+        {
+            "name": tool.name,
+            "title": tool.title,
+            "app": tool.app_name,
+            "method": tool.method,
+            "path": tool.path,
+            "is_placeholder": tool.is_placeholder,
+            "placeholder_reason": tool.placeholder_reason,
+            "source": "openapi",
+        }
+        for tool in catalog.tools.values()
+    ]
+
+    # Add native MCP server tools
+    mcp_server_tool_list = []
+    for prefixed_name, (server_name, orig_name, tool_obj) in mcp_server_tools.items():
+        entry = {
+            "name": prefixed_name,
+            "title": orig_name,
+            "app": server_name,
+            "method": "MCP",
+            "path": orig_name,
+            "is_placeholder": False,
+            "placeholder_reason": None,
+            "source": "mcp_server",
+        }
+        tools_list.append(entry)
+        mcp_server_tool_list.append(entry)
+
     return {
         "mcp_endpoint": "/mcp/apps",
         "generated_at": catalog.generated_at,
-        "tool_count": len(catalog.tools),
+        "tool_count": len(tools_list),
         "summary": {
             "apps_total": app_count,
             "healthy": healthy_count,
             "zero_endpoints": zero_count,
             "unreachable": unreachable_count,
+            "mcp_servers": len(set(s for _, (s, _, _) in mcp_server_tools.items())),
+            "mcp_server_tools": len(mcp_server_tools),
         },
         "settings": {
             "retries": retries,
@@ -1175,18 +1303,8 @@ async def get_openapi_tool_catalog(
         },
         "sync_errors": catalog.sync_errors,
         "apps": catalog.apps,
-        "tools": [
-            {
-                "name": tool.name,
-                "title": tool.title,
-                "app": tool.app_name,
-                "method": tool.method,
-                "path": tool.path,
-                "is_placeholder": tool.is_placeholder,
-                "placeholder_reason": tool.placeholder_reason,
-            }
-            for tool in catalog.tools.values()
-        ],
+        "tools": tools_list,
+        "mcp_server_tools": mcp_server_tool_list,
     }
 
 
