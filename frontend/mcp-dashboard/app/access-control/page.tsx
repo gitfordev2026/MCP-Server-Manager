@@ -479,6 +479,7 @@ export default function AccessControlPage() {
         body: JSON.stringify({ mode }),
       });
       if (!res.ok) throw new Error('Failed to update policy');
+      fetchPolicies();
     } catch (error) {
       console.error('Error updating default mode:', error);
       toast.error('Failed to save policy change');
@@ -509,6 +510,7 @@ export default function AccessControlPage() {
         }
       );
       if (!res.ok) throw new Error('Failed to update endpoint policy');
+      fetchPolicies();
     } catch (error) {
       console.error('Error updating endpoint mode:', error);
       toast.error('Failed to save policy change');
@@ -538,6 +540,7 @@ export default function AccessControlPage() {
         }
       );
       if (!res.ok) throw new Error('Failed to reset endpoint policy');
+      fetchPolicies();
     } catch (error) {
       console.error('Error resetting endpoint mode:', error);
       toast.error('Failed to reset policy');
@@ -550,10 +553,10 @@ export default function AccessControlPage() {
 
     setPolicies((prev) => {
       const previous = prev[ownerId] || { defaultMode: 'approval' as AccessMode, endpointModes: {} };
-      const nextEndpointModes = endpoints.reduce<Record<string, AccessMode>>((acc, endpoint) => {
-        acc[endpoint.id] = mode;
-        return acc;
-      }, {});
+      const nextEndpointModes = { ...previous.endpointModes };
+      endpoints.forEach((endpoint) => {
+        nextEndpointModes[endpoint.id] = mode;
+      });
       return {
         ...prev,
         [ownerId]: {
@@ -571,6 +574,7 @@ export default function AccessControlPage() {
         body: JSON.stringify({ mode, tool_ids: endpointIds }),
       });
       if (!res.ok) throw new Error('Failed to apply bulk policy');
+      fetchPolicies();
     } catch (error) {
       console.error('Error applying bulk policy:', error);
       toast.error('Failed to apply policies');
