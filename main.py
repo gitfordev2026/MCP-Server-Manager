@@ -22,7 +22,15 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import Tool as MCPTool
 from mcp_use import MCPAgent, MCPClient
 from pydantic import BaseModel, field_validator
-from sqlalchemy import Integer, String, create_engine, select
+from sqlalchemy import (
+    Integer,
+    String,
+    create_engine,
+    select,
+    event,
+    inspect,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 load_dotenv()
@@ -149,6 +157,16 @@ class BaseURLModel(Base):
     url: Mapped[str] = mapped_column(String, nullable=False)
     openapi_path: Mapped[str] = mapped_column(String, nullable=False, default="")
     include_unreachable_tools: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class AccessPolicyModel(Base):
+    __tablename__ = "access_policies"
+    __table_args__ = (UniqueConstraint("owner_id", "tool_id", name="uq_owner_tool"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
+    tool_id: Mapped[str] = mapped_column(String, nullable=False, default="__default__")
+    mode: Mapped[str] = mapped_column(String, nullable=False, default="approval")  # allow, approval, deny
 
 
 # ---------------------------------------------------
@@ -1073,13 +1091,42 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
 
         return tools
 
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        # Helper to check access policy
+        def _check_access(owner_id: str, tool_id: str) -> None:
+            with SessionLocal() as db:
+                # 1. Check specific tool policy
+                policy = db.scalar(
+                    select(AccessPolicyModel).where(
+                        AccessPolicyModel.owner_id == owner_id,
+                        AccessPolicyModel.tool_id == tool_id
+                    )
+                )
+                if not policy:
+                    # 2. Check owner default
+                    policy = db.scalar(
+                        select(AccessPolicyModel).where(
+                            AccessPolicyModel.owner_id == owner_id,
+                            AccessPolicyModel.tool_id == "__default__"
+                        )
+                    )
+
+                mode = policy.mode if policy else "approval"  # Default to approval if no policy exists
+
+                if mode == "deny":
+                    raise HTTPException(status_code=403, detail=f"Access denied to tool '{tool_id}' on '{owner_id}'")
+                # We treat 'approval' as 'allow' for now in the automated agent context,
+                # or we could block. For this implementation, we only block 'deny'.
+
         # ---- Native MCP server tool ----
         if name.startswith("mcp__"):
             parts = name.split("__", 2)  # ["mcp", server_name, tool_name]
             if len(parts) != 3:
                 raise ValueError(f"Malformed MCP tool name: '{name}'")
             server_name, orig_tool_name = parts[1], parts[2]
+
+            _check_access(f"mcp:{server_name}", orig_tool_name)
 
             with SessionLocal() as db:
                 server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
@@ -1110,6 +1157,8 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
 
         if tool is None:
             raise ValueError(f"Unknown tool '{name}'. Refresh your MCP tool list and try again.")
+
+        _check_access(f"app:{tool.app_name}", tool.name)
 
         return await invoke_openapi_tool(tool, arguments or {})
 
@@ -1254,6 +1303,27 @@ async def get_openapi_tool_catalog(
     zero_count = sum(1 for app in catalog.apps if app.get("status") == "zero_endpoints")
     unreachable_count = sum(1 for app in catalog.apps if app.get("status") == "unreachable")
 
+    # Build map of access policies for efficient lookup
+    with SessionLocal() as db:
+        policies = db.scalars(select(AccessPolicyModel)).all()
+        # Map: owner_id -> { tool_id -> mode }
+        policy_map: dict[str, dict[str, str]] = {}
+        for p in policies:
+            if p.owner_id not in policy_map:
+                policy_map[p.owner_id] = {}
+            policy_map[p.owner_id][p.tool_id] = p.mode
+
+    def _get_mode(owner_id: str, tool_id: str) -> str:
+        owner_policies = policy_map.get(owner_id, {})
+        # Check specific tool
+        if tool_id in owner_policies:
+            return owner_policies[tool_id]
+        # Check default
+        if "__default__" in owner_policies:
+            return owner_policies["__default__"]
+        # Fallback
+        return "approval"
+
     # Build combined tools list
     tools_list = [
         {
@@ -1265,6 +1335,7 @@ async def get_openapi_tool_catalog(
             "is_placeholder": tool.is_placeholder,
             "placeholder_reason": tool.placeholder_reason,
             "source": "openapi",
+            "access_mode": _get_mode(f"app:{tool.app_name}", tool.name),
         }
         for tool in catalog.tools.values()
     ]
@@ -1281,6 +1352,7 @@ async def get_openapi_tool_catalog(
             "is_placeholder": False,
             "placeholder_reason": None,
             "source": "mcp_server",
+            "access_mode": _get_mode(f"mcp:{server_name}", orig_name),
         }
         tools_list.append(entry)
         mcp_server_tool_list.append(entry)
@@ -1369,6 +1441,14 @@ async def get_server_tools(
     try:
         with SessionLocal() as db:
             server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
+            
+            # Fetch access policies for this server
+            policies = db.scalars(
+                select(AccessPolicyModel).where(AccessPolicyModel.owner_id == f"mcp:{server_name}")
+            ).all()
+            
+            policy_map = {p.tool_id: p.mode for p in policies}
+            default_mode = policy_map.get("__default__", "approval")
 
         if not server:
             raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
@@ -1394,11 +1474,13 @@ async def get_server_tools(
 
         tools_list = []
         for tool in tools:
+            mode = policy_map.get(tool.name, default_mode)
             tools_list.append(
                 {
                     "name": tool.name,
                     "description": tool.description,
                     "inputSchema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                    "access_mode": mode,
                 }
             )
 
@@ -1559,6 +1641,159 @@ async def query(
     _ = current_user
     result = await agent.run(prompt)
     return {"response": result}
+
+
+# ---------------------------------------------------
+# 8. Access Control API
+# ---------------------------------------------------
+class AccessPolicyUpdate(BaseModel):
+    mode: str  # allow, approval, deny
+
+class AccessPolicyBulkUpdate(BaseModel):
+    mode: str
+    tool_ids: list[str]
+
+
+@app.get("/access-policies")
+def list_access_policies(
+    current_user: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Get all access policies grouped by owner."""
+    _ = current_user
+    with SessionLocal() as db:
+        policies = db.scalars(select(AccessPolicyModel)).all()
+
+    # Format: { owner_id: { defaultMode: ..., endpointModes: { tool_id: mode } } }
+    result: dict[str, dict[str, Any]] = {}
+    for p in policies:
+        if p.owner_id not in result:
+            result[p.owner_id] = {"defaultMode": "approval", "endpointModes": {}}
+        
+        if p.tool_id == "__default__":
+            result[p.owner_id]["defaultMode"] = p.mode
+        else:
+            result[p.owner_id]["endpointModes"][p.tool_id] = p.mode
+
+    return {"policies": result}
+
+
+@app.put("/access-policies/{owner_id}")
+def update_owner_default_policy(
+    owner_id: str,
+    policy: AccessPolicyUpdate,
+    current_user: dict[str, Any] | None = None,
+):
+    """Update default access mode for an owner."""
+    _ = current_user
+    with SessionLocal() as db:
+        existing = db.scalar(
+            select(AccessPolicyModel).where(
+                AccessPolicyModel.owner_id == owner_id,
+                AccessPolicyModel.tool_id == "__default__",
+            )
+        )
+        if existing:
+            existing.mode = policy.mode
+        else:
+            db.add(AccessPolicyModel(owner_id=owner_id, tool_id="__default__", mode=policy.mode))
+        db.commit()
+    return {"status": "updated", "owner_id": owner_id, "default_mode": policy.mode}
+
+
+@app.put("/access-policies/{owner_id}/{tool_id}")
+def update_tool_policy(
+    owner_id: str,
+    tool_id: str,
+    policy: AccessPolicyUpdate,
+    current_user: dict[str, Any] | None = None,
+):
+    """Update access mode for a specific tool."""
+    _ = current_user
+    with SessionLocal() as db:
+        existing = db.scalar(
+            select(AccessPolicyModel).where(
+                AccessPolicyModel.owner_id == owner_id,
+                AccessPolicyModel.tool_id == tool_id,
+            )
+        )
+        if existing:
+            existing.mode = policy.mode
+        else:
+            db.add(AccessPolicyModel(owner_id=owner_id, tool_id=tool_id, mode=policy.mode))
+        db.commit()
+    return {"status": "updated", "owner_id": owner_id, "tool_id": tool_id, "mode": policy.mode}
+
+
+@app.delete("/access-policies/{owner_id}/{tool_id}")
+def delete_tool_policy(
+    owner_id: str,
+    tool_id: str,
+    current_user: dict[str, Any] | None = None,
+):
+    """Reset a tool's policy to use the owner default."""
+    _ = current_user
+    with SessionLocal() as db:
+        existing = db.scalar(
+            select(AccessPolicyModel).where(
+                AccessPolicyModel.owner_id == owner_id,
+                AccessPolicyModel.tool_id == tool_id,
+            )
+        )
+        if existing:
+            db.delete(existing)
+            db.commit()
+    return {"status": "deleted", "owner_id": owner_id, "tool_id": tool_id}
+
+
+@app.post("/access-policies/{owner_id}/apply-all")
+def bulk_apply_policy(
+    owner_id: str,
+    data: AccessPolicyBulkUpdate,
+    current_user: dict[str, Any] | None = None,
+):
+    """Apply a mode to multiple tools and update valid tools list (cleanup old)."""
+    _ = current_user
+    with SessionLocal() as db:
+        # 1. Update default
+        default_policy = db.scalar(
+            select(AccessPolicyModel).where(
+                AccessPolicyModel.owner_id == owner_id,
+                AccessPolicyModel.tool_id == "__default__",
+            )
+        )
+        if default_policy:
+            default_policy.mode = data.mode
+        else:
+            db.add(AccessPolicyModel(owner_id=owner_id, tool_id="__default__", mode=data.mode))
+
+        # 2. Update all specific tools to match match
+        # (Optimized: Instead of upserting every single row if they match default, 
+        # usually apply-all means 'set default and clear overrides' 
+        # OR 'set specific overrides for all currently known tools')
+        
+        # Strategy: Clear all specific overrides for this owner? 
+        # The frontend semantics of "Apply to all" in the previous code was:
+        # set defaultMode AND set endpointModes for all visible endpoints.
+        # But if they match, we can just clear specific overrides to save DB space?
+        # Let's stick to explicit saving to match frontend expectation if it wants explicit control.
+        # But actually, simpler is: set default, and clear specific overrides? 
+        # For now, let's just Upsert all provided tools to be safe.
+        
+        for tool_id in data.tool_ids:
+             existing = db.scalar(
+                select(AccessPolicyModel).where(
+                    AccessPolicyModel.owner_id == owner_id,
+                    AccessPolicyModel.tool_id == tool_id,
+                )
+            )
+             if existing:
+                 existing.mode = data.mode
+             else:
+                 db.add(AccessPolicyModel(owner_id=owner_id, tool_id=tool_id, mode=data.mode))
+        
+        db.commit()
+
+    return {"status": "bulk_updated", "owner_id": owner_id, "mode": data.mode}
 
 
 if __name__ == "__main__":

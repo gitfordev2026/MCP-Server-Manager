@@ -141,22 +141,22 @@ function parseCatalogTools(payload: unknown): {
 
   const tools = Array.isArray(rawTools)
     ? rawTools
-        .map((item) => {
-          const obj = toObject(item);
-          if (!obj) return null;
+      .map((item) => {
+        const obj = toObject(item);
+        if (!obj) return null;
 
-          const name = typeof obj.name === 'string' ? obj.name : '';
-          const title = typeof obj.title === 'string' ? obj.title : name;
-          const app = typeof obj.app === 'string' ? obj.app : '';
-          const method = typeof obj.method === 'string' ? obj.method : '';
-          const path = typeof obj.path === 'string' ? obj.path : '';
-          if (!name || !app || !method || !path) return null;
-          const isPlaceholder = typeof obj.is_placeholder === 'boolean' ? obj.is_placeholder : false;
-          const placeholderReason = typeof obj.placeholder_reason === 'string' ? obj.placeholder_reason : null;
+        const name = typeof obj.name === 'string' ? obj.name : '';
+        const title = typeof obj.title === 'string' ? obj.title : name;
+        const app = typeof obj.app === 'string' ? obj.app : '';
+        const method = typeof obj.method === 'string' ? obj.method : '';
+        const path = typeof obj.path === 'string' ? obj.path : '';
+        if (!name || !app || !method || !path) return null;
+        const isPlaceholder = typeof obj.is_placeholder === 'boolean' ? obj.is_placeholder : false;
+        const placeholderReason = typeof obj.placeholder_reason === 'string' ? obj.placeholder_reason : null;
 
-          return { name, title, app, method, path, is_placeholder: isPlaceholder, placeholder_reason: placeholderReason };
-        })
-        .filter((item): item is CatalogTool => item !== null)
+        return { name, title, app, method, path, is_placeholder: isPlaceholder, placeholder_reason: placeholderReason };
+      })
+      .filter((item): item is CatalogTool => item !== null)
     : [];
 
   const syncErrors = Array.isArray(rawErrors)
@@ -165,43 +165,43 @@ function parseCatalogTools(payload: unknown): {
 
   const appDiagnostics = Array.isArray(rawApps)
     ? rawApps
-        .map((item) => {
-          const obj = toObject(item);
-          if (!obj) return null;
-          const name = typeof obj.name === 'string' ? obj.name : '';
-          const url = typeof obj.url === 'string' ? obj.url : '';
-          if (!name || !url) return null;
-          const openapiPath = typeof obj.openapi_path === 'string' ? obj.openapi_path : '';
-          const includeUnreachableTools =
-            typeof obj.include_unreachable_tools === 'boolean' ? obj.include_unreachable_tools : false;
-          const status = typeof obj.status === 'string' ? obj.status : 'unknown';
-          const operationCount = typeof obj.operation_count === 'number' ? obj.operation_count : 0;
-          const toolCount = typeof obj.tool_count === 'number' ? obj.tool_count : 0;
-          const placeholderToolAdded =
-            typeof obj.placeholder_tool_added === 'boolean' ? obj.placeholder_tool_added : false;
-          const usedOpenapiUrl = typeof obj.used_openapi_url === 'string' ? obj.used_openapi_url : null;
-          const roundsAttempted = typeof obj.rounds_attempted === 'number' ? obj.rounds_attempted : 0;
-          const requestsAttempted = typeof obj.requests_attempted === 'number' ? obj.requests_attempted : 0;
-          const latencyMs = typeof obj.latency_ms === 'number' ? obj.latency_ms : 0;
-          const error = typeof obj.error === 'string' ? obj.error : null;
+      .map((item) => {
+        const obj = toObject(item);
+        if (!obj) return null;
+        const name = typeof obj.name === 'string' ? obj.name : '';
+        const url = typeof obj.url === 'string' ? obj.url : '';
+        if (!name || !url) return null;
+        const openapiPath = typeof obj.openapi_path === 'string' ? obj.openapi_path : '';
+        const includeUnreachableTools =
+          typeof obj.include_unreachable_tools === 'boolean' ? obj.include_unreachable_tools : false;
+        const status = typeof obj.status === 'string' ? obj.status : 'unknown';
+        const operationCount = typeof obj.operation_count === 'number' ? obj.operation_count : 0;
+        const toolCount = typeof obj.tool_count === 'number' ? obj.tool_count : 0;
+        const placeholderToolAdded =
+          typeof obj.placeholder_tool_added === 'boolean' ? obj.placeholder_tool_added : false;
+        const usedOpenapiUrl = typeof obj.used_openapi_url === 'string' ? obj.used_openapi_url : null;
+        const roundsAttempted = typeof obj.rounds_attempted === 'number' ? obj.rounds_attempted : 0;
+        const requestsAttempted = typeof obj.requests_attempted === 'number' ? obj.requests_attempted : 0;
+        const latencyMs = typeof obj.latency_ms === 'number' ? obj.latency_ms : 0;
+        const error = typeof obj.error === 'string' ? obj.error : null;
 
-          return {
-            name,
-            url,
-            openapi_path: openapiPath,
-            include_unreachable_tools: includeUnreachableTools,
-            status,
-            operation_count: operationCount,
-            tool_count: toolCount,
-            placeholder_tool_added: placeholderToolAdded,
-            used_openapi_url: usedOpenapiUrl,
-            rounds_attempted: roundsAttempted,
-            requests_attempted: requestsAttempted,
-            latency_ms: latencyMs,
-            error,
-          };
-        })
-        .filter((item): item is CatalogAppDiagnostic => item !== null)
+        return {
+          name,
+          url,
+          openapi_path: openapiPath,
+          include_unreachable_tools: includeUnreachableTools,
+          status,
+          operation_count: operationCount,
+          tool_count: toolCount,
+          placeholder_tool_added: placeholderToolAdded,
+          used_openapi_url: usedOpenapiUrl,
+          rounds_attempted: roundsAttempted,
+          requests_attempted: requestsAttempted,
+          latency_ms: latencyMs,
+          error,
+        };
+      })
+      .filter((item): item is CatalogAppDiagnostic => item !== null)
     : [];
 
   return { tools, syncErrors, appDiagnostics };
@@ -409,47 +409,24 @@ export default function AccessControlPage() {
     }
   }, [owners, selectedOwnerId]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const raw = window.localStorage.getItem(POLICY_STORAGE_KEY);
-    if (!raw) return;
-
+  const fetchPolicies = useCallback(async () => {
     try {
-      const parsed = JSON.parse(raw) as unknown;
-      const obj = toObject(parsed);
-      if (!obj) return;
-
-      const nextPolicies: Policies = {};
-      Object.entries(obj).forEach(([ownerId, value]) => {
-        const ownerObj = toObject(value);
-        if (!ownerObj) return;
-
-        const defaultMode = ownerObj.defaultMode;
-        const endpointModesRaw = ownerObj.endpointModes;
-        if (defaultMode !== 'allow' && defaultMode !== 'approval' && defaultMode !== 'deny') return;
-        if (!endpointModesRaw || typeof endpointModesRaw !== 'object' || Array.isArray(endpointModesRaw)) return;
-
-        const endpointModes: Record<string, AccessMode> = {};
-        Object.entries(endpointModesRaw as Record<string, unknown>).forEach(([endpointId, mode]) => {
-          if (mode === 'allow' || mode === 'approval' || mode === 'deny') {
-            endpointModes[endpointId] = mode;
-          }
-        });
-
-        nextPolicies[ownerId] = { defaultMode, endpointModes };
-      });
-
-      setPolicies(nextPolicies);
-    } catch {
-      // Ignore invalid persisted data and keep defaults.
+      if (!NEXT_PUBLIC_BE_API_URL) return;
+      setLoadingPolicies(true);
+      const res = await fetch(`${NEXT_PUBLIC_BE_API_URL}/access-policies`);
+      if (!res.ok) throw new Error('Failed to fetch policies');
+      const data = await res.json();
+      setPolicies(data.policies || {});
+    } catch (error) {
+      console.error('Error fetching policies:', error);
+    } finally {
+      setLoadingPolicies(false);
     }
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(policies));
-  }, [policies]);
+    fetchPolicies();
+  }, [fetchPolicies]);
 
   useEffect(() => {
     if (!selectedOwner || selectedOwner.type !== 'mcp') return;
@@ -488,14 +465,29 @@ export default function AccessControlPage() {
     [policies]
   );
 
-  const updateDefaultMode = useCallback((ownerId: string, mode: AccessMode) => {
+  const updateDefaultMode = useCallback(async (ownerId: string, mode: AccessMode) => {
+    // Optimistic update
     setPolicies((prev) => {
       const previous = prev[ownerId] || { defaultMode: 'approval' as AccessMode, endpointModes: {} };
       return { ...prev, [ownerId]: { ...previous, defaultMode: mode } };
     });
-  }, []);
 
-  const updateEndpointMode = useCallback((ownerId: string, endpointId: string, mode: AccessMode) => {
+    try {
+      const res = await fetch(`http://localhost:8090/access-policies/${encodeURIComponent(ownerId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) throw new Error('Failed to update policy');
+    } catch (error) {
+      console.error('Error updating default mode:', error);
+      toast.error('Failed to save policy change');
+      fetchPolicies(); // Revert/refresh on error
+    }
+  }, [fetchPolicies]);
+
+  const updateEndpointMode = useCallback(async (ownerId: string, endpointId: string, mode: AccessMode) => {
+    // Optimistic update
     setPolicies((prev) => {
       const previous = prev[ownerId] || { defaultMode: 'approval' as AccessMode, endpointModes: {} };
       return {
@@ -506,9 +498,25 @@ export default function AccessControlPage() {
         },
       };
     });
-  }, []);
 
-  const resetEndpointMode = useCallback((ownerId: string, endpointId: string) => {
+    try {
+      const res = await fetch(
+        `http://localhost:8090/access-policies/${encodeURIComponent(ownerId)}/${encodeURIComponent(endpointId)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        }
+      );
+      if (!res.ok) throw new Error('Failed to update endpoint policy');
+    } catch (error) {
+      console.error('Error updating endpoint mode:', error);
+      toast.error('Failed to save policy change');
+      fetchPolicies();
+    }
+  }, [fetchPolicies]);
+
+  const resetEndpointMode = useCallback(async (ownerId: string, endpointId: string) => {
     setPolicies((prev) => {
       const previous = prev[ownerId] || { defaultMode: 'approval' as AccessMode, endpointModes: {} };
       const nextEndpointModes = { ...previous.endpointModes };
@@ -521,9 +529,25 @@ export default function AccessControlPage() {
         },
       };
     });
-  }, []);
 
-  const applyToAllEndpoints = useCallback((ownerId: string, mode: AccessMode, endpoints: EndpointItem[]) => {
+    try {
+      const res = await fetch(
+        `http://localhost:8090/access-policies/${encodeURIComponent(ownerId)}/${encodeURIComponent(endpointId)}`,
+        {
+          method: 'DELETE',
+        }
+      );
+      if (!res.ok) throw new Error('Failed to reset endpoint policy');
+    } catch (error) {
+      console.error('Error resetting endpoint mode:', error);
+      toast.error('Failed to reset policy');
+      fetchPolicies();
+    }
+  }, [fetchPolicies]);
+
+  const applyToAllEndpoints = useCallback(async (ownerId: string, mode: AccessMode, endpoints: EndpointItem[]) => {
+    const endpointIds = endpoints.map((e) => e.id);
+
     setPolicies((prev) => {
       const previous = prev[ownerId] || { defaultMode: 'approval' as AccessMode, endpointModes: {} };
       const nextEndpointModes = endpoints.reduce<Record<string, AccessMode>>((acc, endpoint) => {
@@ -539,7 +563,20 @@ export default function AccessControlPage() {
         },
       };
     });
-  }, []);
+
+    try {
+      const res = await fetch(`http://localhost:8090/access-policies/${encodeURIComponent(ownerId)}/apply-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, tool_ids: endpointIds }),
+      });
+      if (!res.ok) throw new Error('Failed to apply bulk policy');
+    } catch (error) {
+      console.error('Error applying bulk policy:', error);
+      toast.error('Failed to apply policies');
+      fetchPolicies();
+    }
+  }, [fetchPolicies]);
 
   const selectedPolicy = selectedOwner ? getPolicy(selectedOwner.id) : null;
 
@@ -676,11 +713,10 @@ export default function AccessControlPage() {
                         <button
                           key={owner.id}
                           onClick={() => setSelectedOwnerId(owner.id)}
-                          className={`w-full text-left p-3 rounded-xl border transition ${
-                            selectedOwnerId === owner.id
-                              ? 'bg-blue-50 border-blue-300'
-                              : 'bg-white border-slate-200 hover:border-slate-300'
-                          }`}
+                          className={`w-full text-left p-3 rounded-xl border transition ${selectedOwnerId === owner.id
+                            ? 'bg-blue-50 border-blue-300'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                            }`}
                         >
                           <p className="text-sm font-semibold text-slate-800 truncate">{owner.name}</p>
                           <p className="text-xs text-slate-500 truncate">{owner.url}</p>
@@ -699,11 +735,10 @@ export default function AccessControlPage() {
                         <button
                           key={owner.id}
                           onClick={() => setSelectedOwnerId(owner.id)}
-                          className={`w-full text-left p-3 rounded-xl border transition ${
-                            selectedOwnerId === owner.id
-                              ? 'bg-emerald-50 border-emerald-300'
-                              : 'bg-white border-slate-200 hover:border-slate-300'
-                          }`}
+                          className={`w-full text-left p-3 rounded-xl border transition ${selectedOwnerId === owner.id
+                            ? 'bg-emerald-50 border-emerald-300'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                            }`}
                         >
                           <p className="text-sm font-semibold text-slate-800 truncate">{owner.name}</p>
                           <p className="text-xs text-slate-500 truncate">{owner.url}</p>
@@ -732,11 +767,10 @@ export default function AccessControlPage() {
                     <p className="text-sm text-slate-500 break-all">{selectedOwner.url}</p>
                   </div>
                   <span
-                    className={`text-xs font-semibold px-3 py-1 rounded-full border ${
-                      selectedOwner.type === 'app'
-                        ? 'bg-blue-100 border-blue-300 text-blue-700'
-                        : 'bg-emerald-100 border-emerald-300 text-emerald-700'
-                    }`}
+                    className={`text-xs font-semibold px-3 py-1 rounded-full border ${selectedOwner.type === 'app'
+                      ? 'bg-blue-100 border-blue-300 text-blue-700'
+                      : 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                      }`}
                   >
                     {selectedOwner.type === 'app' ? 'Combined MCP APIs' : 'Native MCP Tools'}
                   </span>
