@@ -60,15 +60,23 @@ export interface EndpointItem {
 }
 
 
+export interface AccessPolicy {
+  mode: AccessMode;
+  allowed_users: string[];
+  allowed_groups: string[];
+}
+
 export interface OwnerPolicy {
   defaultMode: AccessMode;
   endpointModes: Record<string, AccessMode>;
+  defaultPolicy: AccessPolicy;
+  endpointPolicies: Record<string, AccessPolicy>;
 }
 
 // Payloads sent to backend
 export interface PolicyPayload {
-  policy: {
-    mode: AccessMode;
-    tool_ids?: string[];
-  };
+  mode: AccessMode;
+  allowed_users?: string[];
+  allowed_groups?: string[];
+  tool_ids?: string[];
 }

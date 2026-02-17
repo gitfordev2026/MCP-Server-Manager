@@ -1,0 +1,31 @@
+
+> mcp-dashboard@0.1.0 build
+> next build
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of D:\Practice\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * D:\Practice\MCP Server Manager\mcp-use-agent (3)\mcp-use-agent\frontend\mcp-dashboard\package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.9s
+  Running TypeScript ...
+Failed to compile.
+
+./hooks/useAccessPolicies.ts:22:5
+Type error: Type '(ownerId: string, endpointId: string, mode: AccessMode) => Promise<void>' is not assignable to type 'MutationFunction<void, string>'.
+  Target signature provides too few arguments. Expected 3 or more, but got 2.
+
+[0m [90m 20 |[39m
+ [90m 21 |[39m   [36mreturn[39m useMutation({
+[31m[1m>[22m[39m[90m 22 |[39m     mutationFn[33m:[39m api[33m.[39mupdateEndpointPolicy[33m,[39m
+ [90m    |[39m     [31m[1m^[22m[39m
+ [90m 23 |[39m
+ [90m 24 |[39m     onMutate[33m:[39m [36masync[39m ({ ownerId[33m,[39m endpointId[33m,[39m mode }) [33m=>[39m {
+ [90m 25 |[39m       [36mawait[39m queryClient[33m.[39mcancelQueries({ queryKey[33m:[39m [33mPOLICIES_KEY[39m })[33m;[39m[0m
+Next.js build worker exited with code: 1 and signal: null

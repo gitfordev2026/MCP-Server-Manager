@@ -13,12 +13,20 @@ export async function fetchPolicies(): Promise<{ policies: Record<string, OwnerP
 // Update DEFAULT owner policy
 // PUT /access-policies/{ownerId}
 // =========================
+// =========================
+// Update DEFAULT owner policy
+// PUT /access-policies/{ownerId}
+// =========================
 export async function updateOwnerDefaultPolicy(
   ownerId: string,
-  mode: AccessMode
+  mode: AccessMode,
+  allowed_users?: string[],
+  allowed_groups?: string[]
 ): Promise<void> {
   const payload: PolicyPayload = {
-    policy: { mode },
+    mode,
+    allowed_users,
+    allowed_groups,
   };
 
   await http(`/access-policies/${encodeURIComponent(ownerId)}`, {
@@ -31,46 +39,29 @@ export async function updateOwnerDefaultPolicy(
 // Update SINGLE endpoint policy
 // PUT /access-policies/{ownerId}/{endpointId}
 // =========================
-
-
-// export async function updateEndpointPolicy(
-//   ownerId: string,
-//   endpointId: string,
-//   mode: AccessMode
-//   ): Promise<void> {
-//   const payload: PolicyPayload = {
-//     policy: { mode },
-//   };
-
-
-
-//   await http(
-//     `/access-policies/${encodeURIComponent(ownerId)}/${encodeURIComponent(endpointId)}`,
-//     {
-//       method: 'PUT',
-//       body: JSON.stringify(payload),
-//     }
-//   );
-// }
-
-
 export async function updateEndpointPolicy(
   ownerId: string,
   endpointId: string,
-  mode: AccessMode
+  mode: AccessMode,
+  allowed_users?: string[],
+  allowed_groups?: string[]
 ) {
   if (typeof ownerId !== 'string' || typeof endpointId !== 'string') {
     throw new Error('ownerId and endpointId must be strings');
   }
+
+  const payload: PolicyPayload = {
+    mode,
+    allowed_users,
+    allowed_groups,
+  };
 
   const res = await fetch(
     `/access-policies/${encodeURIComponent(ownerId)}/${encodeURIComponent(endpointId)}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        policy: { mode }, // ✅ REQUIRED by backend
-      }),
+      body: JSON.stringify(payload),
     }
   );
 
@@ -103,13 +94,15 @@ export async function resetEndpointPolicy(
 export async function applyPolicyToAllEndpoints(
   ownerId: string,
   mode: AccessMode,
-  endpointIds: string[]
+  endpointIds: string[],
+  allowed_users?: string[],
+  allowed_groups?: string[]
 ): Promise<void> {
   const payload: PolicyPayload = {
-    policy: {
-      mode,
-      tool_ids: endpointIds,
-    },
+    mode,
+    tool_ids: endpointIds,
+    allowed_users,
+    allowed_groups,
   };
 
   await http(`/access-policies/${encodeURIComponent(ownerId)}/apply-all`, {

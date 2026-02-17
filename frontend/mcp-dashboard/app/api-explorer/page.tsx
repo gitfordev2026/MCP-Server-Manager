@@ -372,7 +372,7 @@ function ApiExplorerContent() {
                                         </span>
                                       </div>
                                       <p className="text-slate-600 text-xs">
-                                        {(response as Record<string, unknown>)?.description || 'No description provided'}
+                                        {((response as Record<string, unknown>)?.description as string) || 'No description provided'}
                                       </p>
                                     </div>
                                   ))}

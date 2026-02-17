@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 DEFAULT_TOOL_ID = "__default__"
@@ -47,6 +47,8 @@ class AccessPolicyModel(Base):
     owner_id: Mapped[str] = mapped_column(String, nullable=False)
     tool_id: Mapped[str] = mapped_column(String, nullable=False, default=DEFAULT_TOOL_ID)
     mode: Mapped[str] = mapped_column(String, nullable=False, default="approval")
+    allowed_users: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    allowed_groups: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 

@@ -17,6 +17,8 @@ class AccessMode(str, Enum):
 
 class AccessPolicyUpdate(BaseModel):
     mode: AccessMode
+    allowed_users: list[str] | None = None
+    allowed_groups: list[str] | None = None
 
 
 class AccessPolicyResponse(BaseModel):
@@ -25,11 +27,15 @@ class AccessPolicyResponse(BaseModel):
     default_mode: AccessMode | None = None
     tool_id: str | None = None
     mode: AccessMode | None = None
+    allowed_users: list[str] | None = None
+    allowed_groups: list[str] | None = None
 
 
 class AccessPolicyBulkUpdate(BaseModel):
     mode: AccessMode
     tool_ids: list[str]
+    allowed_users: list[str] | None = None
+    allowed_groups: list[str] | None = None
 
     @field_validator("tool_ids")
     @classmethod
@@ -62,13 +68,28 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
         for policy in policies:
             owner = result.setdefault(
                 policy.owner_id,
-                {"defaultMode": AccessMode.approval, "endpointModes": {}},
+                {
+                    "defaultMode": AccessMode.approval,
+                    "endpointModes": {},
+                    "defaultPolicy": {"mode": AccessMode.approval, "allowed_users": [], "allowed_groups": []},
+                    "endpointPolicies": {},
+                },
             )
 
             if policy.tool_id == DEFAULT_TOOL_ID:
                 owner["defaultMode"] = policy.mode
+                owner["defaultPolicy"] = {
+                    "mode": policy.mode,
+                    "allowed_users": policy.allowed_users or [],
+                    "allowed_groups": policy.allowed_groups or [],
+                }
             else:
                 owner["endpointModes"][policy.tool_id] = policy.mode
+                owner["endpointPolicies"][policy.tool_id] = {
+                    "mode": policy.mode,
+                    "allowed_users": policy.allowed_users or [],
+                    "allowed_groups": policy.allowed_groups or [],
+                }
 
         return {"policies": result}
 
@@ -89,6 +110,10 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
 
                 if existing:
                     existing.mode = policy.mode
+                    if policy.allowed_users is not None:
+                        existing.allowed_users = policy.allowed_users
+                    if policy.allowed_groups is not None:
+                        existing.allowed_groups = policy.allowed_groups
                     server_id, base_url_id = resolve_owner_fk_ids_fn(
                         db,
                         owner_id,
@@ -117,6 +142,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
             status="updated",
             owner_id=owner_id,
             default_mode=policy.mode,
+            allowed_users=policy.allowed_users,
+            allowed_groups=policy.allowed_groups,
         )
 
     @router.put("/access-policies/{owner_id}/{tool_id}", response_model=AccessPolicyResponse)
@@ -143,6 +170,10 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
 
                 if existing:
                     existing.mode = policy.mode
+                    if policy.allowed_users is not None:
+                        existing.allowed_users = policy.allowed_users
+                    if policy.allowed_groups is not None:
+                        existing.allowed_groups = policy.allowed_groups
                     server_id, base_url_id = resolve_owner_fk_ids_fn(
                         db,
                         owner_id,
@@ -158,6 +189,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                             owner_id=owner_id,
                             tool_id=tool_id,
                             mode=policy.mode,
+                            allowed_users=policy.allowed_users or [],
+                            allowed_groups=policy.allowed_groups or [],
                             server_id=server_id,
                             base_url_id=base_url_id,
                         )
@@ -177,6 +210,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
             owner_id=owner_id,
             tool_id=tool_id,
             mode=policy.mode,
+            allowed_users=policy.allowed_users,
+            allowed_groups=policy.allowed_groups,
         )
 
     @router.delete("/access-policies/{owner_id}/{tool_id}", response_model=AccessPolicyResponse)
@@ -232,6 +267,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                         owner_id=owner_id,
                         tool_id=DEFAULT_TOOL_ID,
                         mode=data.mode,
+                        allowed_users=data.allowed_users or [],
+                        allowed_groups=data.allowed_groups or [],
                         server_id=server_id,
                         base_url_id=base_url_id,
                     )
@@ -251,6 +288,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                             owner_id=owner_id,
                             tool_id=tool_id,
                             mode=data.mode,
+                            allowed_users=data.allowed_users or [],
+                            allowed_groups=data.allowed_groups or [],
                             server_id=server_id,
                             base_url_id=base_url_id,
                         )

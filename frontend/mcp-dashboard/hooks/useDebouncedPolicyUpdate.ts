@@ -6,6 +6,8 @@ type Args = {
   ownerId: string;
   endpointId: string;
   mode: AccessMode;
+  allowed_users?: string[];
+  allowed_groups?: string[];
 };
 
 export function useDebouncedEndpointPolicyUpdate(delay = 400) {

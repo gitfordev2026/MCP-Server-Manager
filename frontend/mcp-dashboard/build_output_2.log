@@ -1,0 +1,30 @@
+
+> mcp-dashboard@0.1.0 build
+> next build
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of D:\Practice\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * D:\Practice\MCP Server Manager\mcp-use-agent (3)\mcp-use-agent\frontend\mcp-dashboard\package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.6s
+  Running TypeScript ...
+Failed to compile.
+
+./app/api-explorer/page.tsx:375:41
+Type error: Type '{}' is not assignable to type 'ReactNode'.
+
+[0m [90m 373 |[39m                                       [33m<[39m[33m/[39m[33mdiv[39m[33m>[39m
+ [90m 374 |[39m                                       [33m<[39m[33mp[39m className[33m=[39m[32m"text-slate-600 text-xs"[39m[33m>[39m
+[31m[1m>[22m[39m[90m 375 |[39m                                         {(response [36mas[39m [33mRecord[39m[33m<[39m[33mstring[39m[33m,[39m unknown[33m>[39m)[33m?[39m[33m.[39mdescription [33m||[39m [32m'No description provided'[39m}
+ [90m     |[39m                                         [31m[1m^[22m[39m
+ [90m 376 |[39m                                       [33m<[39m[33m/[39m[33mp[39m[33m>[39m
+ [90m 377 |[39m                                     [33m<[39m[33m/[39m[33mdiv[39m[33m>[39m
+ [90m 378 |[39m                                   ))}[0m
+Next.js build worker exited with code: 1 and signal: null
