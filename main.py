@@ -1,37 +1,47 @@
 import os
 import asyncio
-import ipaddress
 import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
-from time import perf_counter, time
+from time import time
 from urllib.parse import quote, urlparse, urlunparse
-
 import httpx
-import jwt
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, Security, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import InvalidTokenError, PyJWKClient
-from langchain_core.callbacks import BaseCallbackHandler
-from langchain_ollama import ChatOllama
 from mcp.server.fastmcp import FastMCP
 from mcp.types import Tool as MCPTool
-from mcp_use import MCPAgent, MCPClient
-from pydantic import BaseModel, field_validator
+from mcp_use import MCPClient
 from sqlalchemy import (
-    Integer,
-    String,
-    create_engine,
     select,
-    event,
     inspect,
-    UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+from app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
+from app.core.db import DB_BACKEND, SessionLocal, engine
+from app.models.db_models import (
+    APIServerLinkModel,
+    AccessPolicyModel,
+    Base,
+    BaseURLModel,
+    DEFAULT_TOOL_ID,
+    GroupModel,
+    MCPToolModel,
+    ServerModel,
+    UserModel,
+    utc_now,
+)
+from app.routers.agent import create_agent_router
+from app.routers.access_policies import create_access_policy_router
+from app.routers.base_urls import create_base_urls_router
+from app.routers.catalog import create_catalog_router
+from app.routers.health import create_health_router
+from app.routers.servers import create_servers_router
+from app.schemas.registration import BaseURLRegistration, ServerRegistration
+from app.services.agent_runtime import build_default_agent
+from app.services.policy_utils import ensure_default_access_policy_for_owner, resolve_owner_fk_ids
 
 load_dotenv()
 
@@ -58,252 +68,158 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
-# ---------------------------------------------------
-# Database Configuration: PostgreSQL (primary) with SQLite fallback
-# ---------------------------------------------------
-SQLITE_DB_PATH = "servers.db"
-SQLITE_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH}"
 
-_configured_db_url = os.getenv("DATABASE_URL", "").strip()
-_fallback_enabled = os.getenv("DB_FALLBACK_SQLITE", "true").lower() == "true"
+def init_db() -> None:
+    expected_tables = set(Base.metadata.tables.keys())
+    if not expected_tables:
+        raise RuntimeError("No SQLAlchemy models are registered in Base.metadata")
 
+    Base.metadata.create_all(bind=engine)
+    sync_access_policy_links_and_defaults()
+    sync_api_server_links_by_host()
 
-def _ensure_pg_database_exists(url: str) -> None:
-    """Auto-create the PostgreSQL database if it doesn't exist yet."""
-    try:
-        from sqlalchemy import text as sa_text
-        from urllib.parse import urlparse as _urlparse
-        parsed = _urlparse(url)
-        db_name = parsed.path.lstrip("/")
-        if not db_name:
-            return
-        admin_url = url.rsplit("/", 1)[0] + "/postgres"
-        admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-        with admin_engine.connect() as conn:
-            exists = conn.execute(
-                sa_text("SELECT 1 FROM pg_database WHERE datname = :dbname"),
-                {"dbname": db_name},
-            ).fetchone()
-            if not exists:
-                conn.execute(sa_text(f'CREATE DATABASE "{db_name}"'))
-                print(f"[DB] Created PostgreSQL database '{db_name}'")
-        admin_engine.dispose()
-    except Exception as exc:
-        print(f"[DB] Warning: could not auto-create database: {exc}")
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    missing_tables = sorted(expected_tables - existing_tables)
+
+    if missing_tables:
+        # Retry once in case of race/reconnect on backend restart.
+        Base.metadata.create_all(bind=engine)
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        missing_tables = sorted(expected_tables - existing_tables)
+
+    if missing_tables:
+        raise RuntimeError(
+            f"Database startup check failed. Missing tables: {', '.join(missing_tables)}"
+        )
+
+    print(f"[DB] Startup check ok. Verified tables: {', '.join(sorted(expected_tables))}")
 
 
-def _create_pg_engine(url: str):
-    """Try to create and verify a PostgreSQL engine. Returns engine or None."""
-    try:
-        from sqlalchemy import text as sa_text
-        _ensure_pg_database_exists(url)
-        eng = create_engine(url, pool_pre_ping=True)
-        with eng.connect() as conn:
-            conn.execute(sa_text("SELECT 1"))
-        return eng
-    except Exception as exc:
-        print(f"[DB] PostgreSQL connection failed: {exc}")
-        return None
-
-
-def _setup_database():
-    """Determine and create the database engine. Returns (engine, backend_name)."""
-    if _configured_db_url and _configured_db_url.startswith("postgresql"):
-        pg_engine = _create_pg_engine(_configured_db_url)
-        if pg_engine is not None:
-            print(f"[DB] ✅ Database backend: postgresql ({_configured_db_url.split('@')[-1] if '@' in _configured_db_url else _configured_db_url})")
-            return pg_engine, "postgresql"
-        if _fallback_enabled:
-            print(f"[DB] ⚠️  PostgreSQL unavailable — falling back to SQLite ({SQLITE_DB_PATH})")
-        else:
-            raise RuntimeError(
-                "PostgreSQL connection failed and DB_FALLBACK_SQLITE is disabled. "
-                "Set DB_FALLBACK_SQLITE=true in .env to allow SQLite fallback."
+def sync_access_policy_links_and_defaults() -> None:
+    with SessionLocal() as db:
+        servers = db.scalars(select(ServerModel)).all()
+        for server in servers:
+            ensure_default_access_policy_for_owner(
+                db,
+                owner_id=f"mcp:{server.name}",
+                server_id=server.id,
             )
 
-    # SQLite fallback (or no DATABASE_URL configured)
-    sqlite_engine = create_engine(
-        SQLITE_DATABASE_URL,
-        connect_args={"check_same_thread": False},
-    )
-    if not _configured_db_url:
-        print(f"[DB] Database backend: sqlite (no DATABASE_URL configured, using {SQLITE_DB_PATH})")
-    else:
-        print(f"[DB] Database backend: sqlite (fallback → {SQLITE_DB_PATH})")
-    return sqlite_engine, "sqlite"
+        base_urls = db.scalars(select(BaseURLModel)).all()
+        for base_url in base_urls:
+            ensure_default_access_policy_for_owner(
+                db,
+                owner_id=f"app:{base_url.name}",
+                base_url_id=base_url.id,
+            )
+
+        policies = db.scalars(select(AccessPolicyModel)).all()
+        for policy in policies:
+            server_id, base_url_id = resolve_owner_fk_ids(
+                db,
+                policy.owner_id,
+                fallback_server_id=policy.server_id,
+                fallback_base_url_id=policy.base_url_id,
+            )
+            policy.server_id = server_id
+            policy.base_url_id = base_url_id
+
+        db.commit()
 
 
-engine, DB_BACKEND = _setup_database()
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
+def _host_of(url: str) -> str:
+    parsed = urlparse((url or "").strip())
+    return (parsed.netloc or parsed.hostname or "").lower()
 
 
-class Base(DeclarativeBase):
-    pass
+def sync_api_server_links_by_host() -> None:
+    """Link raw APIs to MCP servers when they share the same host:port."""
+    with SessionLocal() as db:
+        servers = db.scalars(select(ServerModel)).all()
+        apis = db.scalars(select(BaseURLModel)).all()
+        existing_links = {
+            (link.server_id, link.raw_api_id)
+            for link in db.scalars(select(APIServerLinkModel)).all()
+        }
+
+        for server in servers:
+            server_host = _host_of(server.url)
+            if not server_host:
+                continue
+            for api in apis:
+                if _host_of(api.url) != server_host:
+                    continue
+                key = (server.id, api.id)
+                if key in existing_links:
+                    continue
+                db.add(APIServerLinkModel(server_id=server.id, raw_api_id=api.id))
+                existing_links.add(key)
+
+        db.commit()
 
 
-class ServerModel(Base):
-    __tablename__ = "servers"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    url: Mapped[str] = mapped_column(String, nullable=False)
-
-
-class BaseURLModel(Base):
-    __tablename__ = "base_urls"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    url: Mapped[str] = mapped_column(String, nullable=False)
-    openapi_path: Mapped[str] = mapped_column(String, nullable=False, default="")
-    include_unreachable_tools: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-
-class AccessPolicyModel(Base):
-    __tablename__ = "access_policies"
-    __table_args__ = (UniqueConstraint("owner_id", "tool_id", name="uq_owner_tool"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    owner_id: Mapped[str] = mapped_column(String, nullable=False)
-    tool_id: Mapped[str] = mapped_column(String, nullable=False, default="__default__")
-    mode: Mapped[str] = mapped_column(String, nullable=False, default="approval")  # allow, approval, deny
-
-
-# ---------------------------------------------------
-# 1. Keycloak Auth Config + JWT Validation
-# ---------------------------------------------------
-KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "").rstrip("/")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "")
-KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "")
-KEYCLOAK_VERIFY_AUD = os.getenv("KEYCLOAK_VERIFY_AUD", "true").lower() == "true"
-AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").lower() == "true"
-
-if KEYCLOAK_SERVER_URL and KEYCLOAK_REALM:
-    KEYCLOAK_ISSUER = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}"
-    KEYCLOAK_JWKS_URL = f"{KEYCLOAK_ISSUER}/protocol/openid-connect/certs"
-    JWKS_CLIENT = PyJWKClient(KEYCLOAK_JWKS_URL)
-
-else:
-    KEYCLOAK_ISSUER = ""
-    KEYCLOAK_JWKS_URL = ""
-    JWKS_CLIENT = None
-
-# security = HTTPBearer(auto_error=False)
-
-
-# def get_current_user(
-#     credentials: HTTPAuthorizationCredentials | None = Security(security),
-# ) -> dict[str, Any]:
-#     """Validate bearer token from Keycloak and return JWT claims."""
-#     if not AUTH_ENABLED:
-#         return {"sub": "local-dev", "auth": "disabled"}
-
-#     if not KEYCLOAK_SERVER_URL or not KEYCLOAK_REALM:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Keycloak auth misconfigured: set KEYCLOAK_SERVER_URL and KEYCLOAK_REALM",
-#         )
-
-#     if KEYCLOAK_VERIFY_AUD and not KEYCLOAK_CLIENT_ID:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Keycloak auth misconfigured: set KEYCLOAK_CLIENT_ID when KEYCLOAK_VERIFY_AUD=true",
-#         )
-
-#     if credentials is None or not credentials.credentials:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Missing bearer token",
-#             headers={"WWW-Authenticate": "Bearer"},
-#         )
-
-#     token = credentials.credentials
-
-#     try:
-#         if JWKS_CLIENT is None:
-#             raise HTTPException(
-#                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                 detail="Keycloak JWKS client not initialized",
-#             )
-
-#         signing_key = JWKS_CLIENT.get_signing_key_from_jwt(token).key
-
-#         decode_kwargs: dict[str, Any] = {
-#             "key": signing_key,
-#             "algorithms": ["RS256"],
-#             "issuer": KEYCLOAK_ISSUER,
-#             "options": {"verify_aud": KEYCLOAK_VERIFY_AUD},
-#         }
-
-#         if KEYCLOAK_VERIFY_AUD:
-#             decode_kwargs["audience"] = KEYCLOAK_CLIENT_ID
-
-#         payload = jwt.decode(token, **decode_kwargs)
-#         return payload
-
-#     except InvalidTokenError as exc:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail=f"Invalid token: {exc}",
-#             headers={"WWW-Authenticate": "Bearer"},
-#         ) from exc
-#     except HTTPException:
-#         raise
-#     except Exception as exc:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail=f"Token validation failed: {exc}",
-#             headers={"WWW-Authenticate": "Bearer"},
-#         ) from exc
-
-
-# ---------------------------------------------------
-# 2. Initialize database (PostgreSQL or SQLite)
-# ---------------------------------------------------
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
-    migrate_base_urls_schema()
-
-
-def _get_existing_columns(conn, table_name: str) -> set[str]:
-    """Get existing column names for a table, works for both SQLite and PostgreSQL."""
-    if DB_BACKEND == "sqlite":
-        rows = conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()
-        return {row[1] for row in rows}
-    else:
-        # PostgreSQL: use information_schema
-        from sqlalchemy import text as sa_text
-        rows = conn.execute(
-            sa_text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = :tbl"
-            ),
-            {"tbl": table_name},
-        ).fetchall()
-        return {row[0] for row in rows}
-
-
-def migrate_base_urls_schema() -> None:
-    """Apply additive schema migrations for base_urls table (works for SQLite and PostgreSQL)."""
-    with engine.begin() as conn:
-        columns = _get_existing_columns(conn, "base_urls")
-
-        if "openapi_path" not in columns:
-            conn.exec_driver_sql("ALTER TABLE base_urls ADD COLUMN openapi_path TEXT")
-        if "include_unreachable_tools" not in columns:
-            if DB_BACKEND == "sqlite":
-                conn.exec_driver_sql(
-                    "ALTER TABLE base_urls ADD COLUMN include_unreachable_tools INTEGER NOT NULL DEFAULT 0"
+def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"]) -> None:
+    """Upsert OpenAPI-discovered tools into mcp_tools."""
+    with SessionLocal() as db:
+        for tool in tools.values():
+            owner_id = f"app:{tool.app_name}"
+            raw_api = db.scalar(select(BaseURLModel).where(BaseURLModel.name == tool.app_name))
+            existing = db.scalar(
+                select(MCPToolModel).where(
+                    MCPToolModel.source_type == "openapi",
+                    MCPToolModel.owner_id == owner_id,
+                    MCPToolModel.name == tool.name,
                 )
-            else:
-                conn.exec_driver_sql(
-                    "ALTER TABLE base_urls ADD COLUMN include_unreachable_tools INTEGER NOT NULL DEFAULT 0"
-                )
+            )
+            if existing:
+                existing.method = tool.method
+                existing.path = tool.path
+                existing.raw_api_id = raw_api.id if raw_api else existing.raw_api_id
+                continue
 
-        conn.exec_driver_sql("UPDATE base_urls SET openapi_path = '' WHERE openapi_path IS NULL")
-        conn.exec_driver_sql(
-            "UPDATE base_urls SET include_unreachable_tools = 0 WHERE include_unreachable_tools IS NULL"
-        )
+            db.add(
+                MCPToolModel(
+                    source_type="openapi",
+                    owner_id=owner_id,
+                    name=tool.name,
+                    method=tool.method,
+                    path=tool.path,
+                    raw_api_id=raw_api.id if raw_api else None,
+                )
+            )
+        db.commit()
+
+
+def sync_mcp_tool_registry_from_mcp(
+    discovered: dict[str, tuple[str, str, Any]],
+) -> None:
+    """Upsert MCP-native tools into mcp_tools."""
+    with SessionLocal() as db:
+        for _, (server_name, tool_name, _tool_obj) in discovered.items():
+            owner_id = f"mcp:{server_name}"
+            server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
+            existing = db.scalar(
+                select(MCPToolModel).where(
+                    MCPToolModel.source_type == "mcp",
+                    MCPToolModel.owner_id == owner_id,
+                    MCPToolModel.name == tool_name,
+                )
+            )
+            if existing:
+                existing.server_id = server.id if server else existing.server_id
+                continue
+
+            db.add(
+                MCPToolModel(
+                    source_type="mcp",
+                    owner_id=owner_id,
+                    name=tool_name,
+                    server_id=server.id if server else None,
+                )
+            )
+        db.commit()
 
 
 def get_servers_from_db() -> list[tuple[str, str]]:
@@ -339,48 +255,6 @@ def get_config() -> dict[str, dict[str, dict[str, str]]]:
 # ---------------------------------------------------
 # 3. Base models for server registration and config
 # ---------------------------------------------------
-class ServerRegistration(BaseModel):
-    name: str
-    url: str
-
-    @field_validator("url")
-    @classmethod
-    def validate_server_url(cls, value: str) -> str:
-        url = value.strip()
-        parsed = urlparse(url)
-
-        if parsed.scheme not in {"http", "https"}:
-            raise ValueError("URL must start with http:// or https://")
-        if not parsed.hostname:
-            raise ValueError("URL must include a valid hostname or IP address")
-
-        hostname = parsed.hostname
-        try:
-            ipaddress.ip_address(hostname)
-        except ValueError:
-            if hostname != "localhost" and "." not in hostname:
-                raise ValueError(
-                    "URL host must be a valid IP, localhost, or a fully qualified domain (e.g. api.example.com)"
-                )
-
-        try:
-            port = parsed.port
-        except ValueError as exc:
-            raise ValueError("URL must include a valid numeric port") from exc
-
-        if port is None:
-            raise ValueError("URL must include an explicit port, e.g. :8005")
-
-        return url
-
-
-class BaseURLRegistration(BaseModel):
-    name: str
-    url: str
-    openapi_path: str | None = ""
-    include_unreachable_tools: bool = False
-
-
 def normalize_openapi_path(openapi_path: str | None) -> str:
     if openapi_path is None:
         return ""
@@ -906,6 +780,7 @@ async def build_openapi_tool_catalog(
             sync_errors=sync_errors,
             apps=app_diagnostics,
         )
+        sync_mcp_tool_registry_from_openapi(openapi_tool_catalog.tools)
         return openapi_tool_catalog
 
 
@@ -1055,6 +930,7 @@ async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
         for prefixed_name, srv_name, orig_name, tool_obj in batch:
             result[prefixed_name] = (srv_name, orig_name, tool_obj)
 
+    sync_mcp_tool_registry_from_mcp(result)
     return result
 
 
@@ -1163,117 +1039,6 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
         return await invoke_openapi_tool(tool, arguments or {})
 
 
-# ---------------------------------------------------
-# 4. Auth helper endpoints
-# ---------------------------------------------------
-@app.get("/health")
-def health() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "db_backend": DB_BACKEND,
-        "auth_enabled": AUTH_ENABLED,
-        "issuer": KEYCLOAK_ISSUER,
-        "audience_check": KEYCLOAK_VERIFY_AUD,
-    }
-
-
-# @app.get("/auth/me")
-# def auth_me(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-#     return {
-#         "sub": current_user.get("sub"),
-#         "preferred_username": current_user.get("preferred_username"),
-#         "email": current_user.get("email"),
-#         "realm_access": current_user.get("realm_access", {}),
-#         "resource_access": current_user.get("resource_access", {}),
-#     }
-
-
-# ---------------------------------------------------
-# 5. Base URL Endpoints (App Registration)
-# ---------------------------------------------------
-@app.post("/register-base-url")
-def register_base_url(
-    data: BaseURLRegistration,
-) -> dict[str, Any]:
-    """Register base URL for app."""
-    global openapi_tool_catalog
-    normalized_openapi_path = normalize_openapi_path(data.openapi_path)
-    include_unreachable = 1 if data.include_unreachable_tools else 0
-    try:
-        with SessionLocal() as db:
-            existing = db.scalar(select(BaseURLModel).where(BaseURLModel.name == data.name))
-            if existing:
-                existing.url = data.url
-                existing.openapi_path = normalized_openapi_path
-                existing.include_unreachable_tools = include_unreachable
-            else:
-                db.add(
-                    BaseURLModel(
-                        name=data.name,
-                        url=data.url,
-                        openapi_path=normalized_openapi_path,
-                        include_unreachable_tools=include_unreachable,
-                    )
-                )
-            db.commit()
-
-        openapi_tool_catalog = OpenAPIToolCatalog(generated_at=0.0, tools={}, sync_errors=[], apps=[])
-
-        return {
-            "message": "Base URL registered successfully",
-            "name": data.name,
-            "url": data.url,
-            "openapi_path": normalized_openapi_path,
-            "include_unreachable_tools": bool(include_unreachable),
-        }
-
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/base-urls")
-def list_base_urls(
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, list[dict[str, Any]]]:
-    """Get all registered base URLs."""
-    _ = current_user
-    try:
-        with SessionLocal() as db:
-            rows = db.scalars(select(BaseURLModel)).all()
-            base_urls = [
-                {
-                    "name": row.name,
-                    "url": row.url,
-                    "openapi_path": row.openapi_path or "",
-                    "include_unreachable_tools": bool(row.include_unreachable_tools),
-                }
-                for row in rows
-            ]
-
-        return {"base_urls": base_urls}
-
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/openapi-spec")
-async def get_openapi_spec(
-    url: str,
-    openapi_path: str | None = None,
-    retries: int = Query(default=0, ge=0, le=5),
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Fetch OpenAPI JSON from a registered app URL via backend to avoid browser CORS issues."""
-    _ = current_user
-
-    try:
-        return await fetch_openapi_spec_from_base_url(url, openapi_path=openapi_path, retries=retries)
-    except ValueError as exc:
-        detail = str(exc)
-        status_code = 400 if detail.startswith("URL must") else 502
-        raise HTTPException(status_code=status_code, detail=detail) from exc
-
-
 combined_apps_mcp = CombinedAppsOpenAPIMCP(
     name="combined-apps-openapi",
     instructions=(
@@ -1285,516 +1050,65 @@ combined_apps_mcp = CombinedAppsOpenAPIMCP(
     stateless_http=True,
 )
 app.mount("/mcp/apps", combined_apps_mcp.streamable_http_app())
+agent = build_default_agent()
 
 
-@app.get("/mcp/openapi/catalog")
-async def get_openapi_tool_catalog(
-    force_refresh: bool = Query(default=True),
-    retries: int = Query(default=OPENAPI_MCP_FETCH_RETRIES, ge=0, le=5),
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Inspect generated MCP tools from registered app OpenAPI specs and native MCP servers."""
-    _ = current_user
-    catalog = await build_openapi_tool_catalog(force_refresh=force_refresh, retries_override=retries)
-    mcp_server_tools = await _fetch_all_mcp_server_tools()
-
-    app_count = len(catalog.apps)
-    healthy_count = sum(1 for app in catalog.apps if app.get("status") == "healthy")
-    zero_count = sum(1 for app in catalog.apps if app.get("status") == "zero_endpoints")
-    unreachable_count = sum(1 for app in catalog.apps if app.get("status") == "unreachable")
-
-    # Build map of access policies for efficient lookup
-    with SessionLocal() as db:
-        policies = db.scalars(select(AccessPolicyModel)).all()
-        # Map: owner_id -> { tool_id -> mode }
-        policy_map: dict[str, dict[str, str]] = {}
-        for p in policies:
-            if p.owner_id not in policy_map:
-                policy_map[p.owner_id] = {}
-            policy_map[p.owner_id][p.tool_id] = p.mode
-
-    def _get_mode(owner_id: str, tool_id: str) -> str:
-        owner_policies = policy_map.get(owner_id, {})
-        # Check specific tool
-        if tool_id in owner_policies:
-            return owner_policies[tool_id]
-        # Check default
-        if "__default__" in owner_policies:
-            return owner_policies["__default__"]
-        # Fallback
-        return "approval"
-
-    # Build combined tools list
-    tools_list = [
-        {
-            "name": tool.name,
-            "title": tool.title,
-            "app": tool.app_name,
-            "method": tool.method,
-            "path": tool.path,
-            "is_placeholder": tool.is_placeholder,
-            "placeholder_reason": tool.placeholder_reason,
-            "source": "openapi",
-            "access_mode": _get_mode(f"app:{tool.app_name}", tool.name),
-        }
-        for tool in catalog.tools.values()
-    ]
-
-    # Add native MCP server tools
-    mcp_server_tool_list = []
-    for prefixed_name, (server_name, orig_name, tool_obj) in mcp_server_tools.items():
-        entry = {
-            "name": prefixed_name,
-            "title": orig_name,
-            "app": server_name,
-            "method": "MCP",
-            "path": orig_name,
-            "is_placeholder": False,
-            "placeholder_reason": None,
-            "source": "mcp_server",
-            "access_mode": _get_mode(f"mcp:{server_name}", orig_name),
-        }
-        tools_list.append(entry)
-        mcp_server_tool_list.append(entry)
-
-    return {
-        "mcp_endpoint": "/mcp/apps",
-        "generated_at": catalog.generated_at,
-        "tool_count": len(tools_list),
-        "summary": {
-            "apps_total": app_count,
-            "healthy": healthy_count,
-            "zero_endpoints": zero_count,
-            "unreachable": unreachable_count,
-            "mcp_servers": len(set(s for _, (s, _, _) in mcp_server_tools.items())),
-            "mcp_server_tools": len(mcp_server_tools),
-        },
-        "settings": {
-            "retries": retries,
-            "cache_ttl_sec": OPENAPI_MCP_CACHE_TTL_SEC,
-        },
-        "sync_errors": catalog.sync_errors,
-        "apps": catalog.apps,
-        "tools": tools_list,
-        "mcp_server_tools": mcp_server_tool_list,
-    }
+def _reset_openapi_catalog() -> None:
+    global openapi_tool_catalog
+    openapi_tool_catalog = OpenAPIToolCatalog(generated_at=0.0, tools={}, sync_errors=[], apps=[])
 
 
-@app.get("/mcp/openapi/diagnostics")
-async def get_openapi_sync_diagnostics(
-    retries: int = Query(default=2, ge=0, le=5),
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Run app OpenAPI sync diagnostics with retries and return per-app health details."""
-    _ = current_user
-    catalog = await build_openapi_tool_catalog(force_refresh=True, retries_override=retries)
-    return {
-        "generated_at": catalog.generated_at,
-        "retries": retries,
-        "apps": catalog.apps,
-        "sync_errors": catalog.sync_errors,
-    }
-
-
-# ---------------------------------------------------
-# 6. Server Endpoints (MCP Servers)
-# ---------------------------------------------------
-@app.post("/register-server")
-async def register_server(
-    data: ServerRegistration,
-) -> dict[str, str]:
-    """Register MCP server."""
-    try:
-        probe_result = await probe_server_status(data.name, data.url, timeout_sec=8.0)
-        if probe_result["status"] != "alive":
-            error_detail = probe_result.get("error") or "Unknown connection error"
-            raise HTTPException(
-                status_code=400,
-                detail=f"Server endpoint is not reachable or not MCP-compatible: {error_detail}",
-            )
-
-        with SessionLocal() as db:
-            existing = db.scalar(select(ServerModel).where(ServerModel.name == data.name))
-            if existing:
-                existing.url = data.url
-            else:
-                db.add(ServerModel(name=data.name, url=data.url))
-            db.commit()
-
-        return {
-            "message": "Server registered successfully",
-            "name": data.name,
-            "url": data.url,
-        }
-
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/servers/{server_name}/tools")
-async def get_server_tools(
-    server_name: str,
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Get all tools available for a specific server."""
-    _ = current_user
-    try:
-        with SessionLocal() as db:
-            server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
-            
-            # Fetch access policies for this server
-            policies = db.scalars(
-                select(AccessPolicyModel).where(AccessPolicyModel.owner_id == f"mcp:{server_name}")
-            ).all()
-            
-            policy_map = {p.tool_id: p.mode for p in policies}
-            default_mode = policy_map.get("__default__", "approval")
-
-        if not server:
-            raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
-
-        server_url = server.url
-
-        # Create config for this server
-        config = {
-            "mcpServers": {
-                server_name: {"url": server_url},
-            }
-        }
-
-        # Initialize client for this server
-        client = MCPClient(config)
-        await client.create_all_sessions()
-
-        # Get session for the server
-        session = client.get_session(server_name)
-
-        # List all tools
-        tools = await session.list_tools()
-
-        tools_list = []
-        for tool in tools:
-            mode = policy_map.get(tool.name, default_mode)
-            tools_list.append(
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "inputSchema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
-                    "access_mode": mode,
-                }
-            )
-
-        return {
-            "server": server_name,
-            "url": server_url,
-            "tools": tools_list,
-            "tool_count": len(tools_list),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        print(f"Error getting tools for server {server_name}: {exc}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving tools: {exc}") from exc
-
-
-@app.get("/servers")
-def list_servers(
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, list[dict[str, str]]]:
-    """Get all registered MCP servers."""
-    _ = current_user
-    try:
-        with SessionLocal() as db:
-            rows = db.scalars(select(ServerModel)).all()
-            servers = [{"name": row.name, "url": row.url} for row in rows]
-
-        return {"servers": servers}
-
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-async def probe_server_status(server_name: str, server_url: str, timeout_sec: float = 8.0) -> dict[str, Any]:
-    """Check if an MCP server is reachable by creating a session and listing tools."""
-    started = perf_counter()
-    server_config = {"mcpServers": {server_name: {"url": server_url}}}
-    probe_client = MCPClient(server_config)
-
-    try:
-        await asyncio.wait_for(probe_client.create_all_sessions(), timeout=timeout_sec)
-        session = probe_client.get_session(server_name)
-        tools = await asyncio.wait_for(session.list_tools(), timeout=timeout_sec)
-
-        latency_ms = int((perf_counter() - started) * 1000)
-        return {
-            "name": server_name,
-            "url": server_url,
-            "status": "alive",
-            "latency_ms": latency_ms,
-            "tool_count": len(tools),
-            "error": None,
-        }
-    except Exception as exc:
-        latency_ms = int((perf_counter() - started) * 1000)
-        return {
-            "name": server_name,
-            "url": server_url,
-            "status": "down",
-            "latency_ms": latency_ms,
-            "tool_count": 0,
-            "error": str(exc),
-        }
-
-
-@app.get("/servers/status")
-async def list_servers_status(
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Get live status for all registered MCP servers."""
-    _ = current_user
-    try:
-        with SessionLocal() as db:
-            rows = db.scalars(select(ServerModel)).all()
-            servers = [{"name": row.name, "url": row.url} for row in rows]
-
-        checks = [probe_server_status(s["name"], s["url"]) for s in servers]
-        statuses = await asyncio.gather(*checks)
-
-        alive_count = sum(1 for s in statuses if s["status"] == "alive")
-        down_count = len(statuses) - alive_count
-
-        return {
-            "servers": statuses,
-            "summary": {
-                "total": len(statuses),
-                "alive": alive_count,
-                "down": down_count,
-            },
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error retrieving server statuses: {exc}") from exc
-
-
-@app.get("/servers/{server_name}/status")
-async def get_server_status(
-    server_name: str,
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Get live status for one MCP server."""
-    _ = current_user
-    try:
-        with SessionLocal() as db:
-            server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
-
-        if not server:
-            raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
-
-        return await probe_server_status(server.name, server.url)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error retrieving server status: {exc}") from exc
-
-
-class LLMDebugCallback(BaseCallbackHandler):
-    def on_llm_start(self, serialized, prompts, **kwargs):
-        print("\n=================== LLM PROMPT SENT ===================")
-        for prompt in prompts:
-            print(prompt)
-        print("=======================================================\n")
-
-    def on_llm_end(self, response, **kwargs):
-        print("\n=================== RAW LLM RESPONSE ===================")
-        print(response)
-        print("=======================================================\n")
-
-
-config = {
-    "mcpServers": {
-        "http_server": {
-            "url": "http://11.0.25.132:8005/mcp",
-        }
-    }
-}
-
-client = MCPClient(config)
-
-llm = ChatOllama(
-    model="gpt-oss:120b",
-    base_url="http://11.0.25.132:11434",
-    temperature=0.7,
-    callbacks=[LLMDebugCallback()],
+app.include_router(
+    create_health_router(
+        DB_BACKEND,
+        AUTH_ENABLED,
+        KEYCLOAK_ISSUER,
+        KEYCLOAK_VERIFY_AUD,
+    )
 )
-
-agent = MCPAgent(llm=llm, client=client, callbacks=[LLMDebugCallback()])
-
-
-# ---------------------------------------------------
-# 7. Direct agent reply
-# ---------------------------------------------------
-@app.get("/agent/query")
-async def query(
-    prompt: str,
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    _ = current_user
-    result = await agent.run(prompt)
-    return {"response": result}
-
-
-# ---------------------------------------------------
-# 8. Access Control API
-# ---------------------------------------------------
-class AccessPolicyUpdate(BaseModel):
-    mode: str  # allow, approval, deny
-
-class AccessPolicyBulkUpdate(BaseModel):
-    mode: str
-    tool_ids: list[str]
-
-
-@app.get("/access-policies")
-def list_access_policies(
-    current_user: dict[str, Any] | None = None,
-) -> dict[str, dict[str, Any]]:
-    """Get all access policies grouped by owner."""
-    _ = current_user
-    with SessionLocal() as db:
-        policies = db.scalars(select(AccessPolicyModel)).all()
-
-    # Format: { owner_id: { defaultMode: ..., endpointModes: { tool_id: mode } } }
-    result: dict[str, dict[str, Any]] = {}
-    for p in policies:
-        if p.owner_id not in result:
-            result[p.owner_id] = {"defaultMode": "approval", "endpointModes": {}}
-        
-        if p.tool_id == "__default__":
-            result[p.owner_id]["defaultMode"] = p.mode
-        else:
-            result[p.owner_id]["endpointModes"][p.tool_id] = p.mode
-
-    return {"policies": result}
-
-
-@app.put("/access-policies/{owner_id}")
-def update_owner_default_policy(
-    owner_id: str,
-    policy: AccessPolicyUpdate,
-    current_user: dict[str, Any] | None = None,
-):
-    """Update default access mode for an owner."""
-    _ = current_user
-    with SessionLocal() as db:
-        existing = db.scalar(
-            select(AccessPolicyModel).where(
-                AccessPolicyModel.owner_id == owner_id,
-                AccessPolicyModel.tool_id == "__default__",
-            )
-        )
-        if existing:
-            existing.mode = policy.mode
-        else:
-            db.add(AccessPolicyModel(owner_id=owner_id, tool_id="__default__", mode=policy.mode))
-        db.commit()
-    return {"status": "updated", "owner_id": owner_id, "default_mode": policy.mode}
-
-
-@app.put("/access-policies/{owner_id}/{tool_id}")
-def update_tool_policy(
-    owner_id: str,
-    tool_id: str,
-    policy: AccessPolicyUpdate,
-    current_user: dict[str, Any] | None = None,
-):
-    """Update access mode for a specific tool."""
-    _ = current_user
-    with SessionLocal() as db:
-        existing = db.scalar(
-            select(AccessPolicyModel).where(
-                AccessPolicyModel.owner_id == owner_id,
-                AccessPolicyModel.tool_id == tool_id,
-            )
-        )
-        if existing:
-            existing.mode = policy.mode
-        else:
-            db.add(AccessPolicyModel(owner_id=owner_id, tool_id=tool_id, mode=policy.mode))
-        db.commit()
-    return {"status": "updated", "owner_id": owner_id, "tool_id": tool_id, "mode": policy.mode}
-
-
-@app.delete("/access-policies/{owner_id}/{tool_id}")
-def delete_tool_policy(
-    owner_id: str,
-    tool_id: str,
-    current_user: dict[str, Any] | None = None,
-):
-    """Reset a tool's policy to use the owner default."""
-    _ = current_user
-    with SessionLocal() as db:
-        existing = db.scalar(
-            select(AccessPolicyModel).where(
-                AccessPolicyModel.owner_id == owner_id,
-                AccessPolicyModel.tool_id == tool_id,
-            )
-        )
-        if existing:
-            db.delete(existing)
-            db.commit()
-    return {"status": "deleted", "owner_id": owner_id, "tool_id": tool_id}
-
-
-@app.post("/access-policies/{owner_id}/apply-all")
-def bulk_apply_policy(
-    owner_id: str,
-    data: AccessPolicyBulkUpdate,
-    current_user: dict[str, Any] | None = None,
-):
-    """Apply a mode to multiple tools and update valid tools list (cleanup old)."""
-    _ = current_user
-    with SessionLocal() as db:
-        # 1. Update default
-        default_policy = db.scalar(
-            select(AccessPolicyModel).where(
-                AccessPolicyModel.owner_id == owner_id,
-                AccessPolicyModel.tool_id == "__default__",
-            )
-        )
-        if default_policy:
-            default_policy.mode = data.mode
-        else:
-            db.add(AccessPolicyModel(owner_id=owner_id, tool_id="__default__", mode=data.mode))
-
-        # 2. Update all specific tools to match match
-        # (Optimized: Instead of upserting every single row if they match default, 
-        # usually apply-all means 'set default and clear overrides' 
-        # OR 'set specific overrides for all currently known tools')
-        
-        # Strategy: Clear all specific overrides for this owner? 
-        # The frontend semantics of "Apply to all" in the previous code was:
-        # set defaultMode AND set endpointModes for all visible endpoints.
-        # But if they match, we can just clear specific overrides to save DB space?
-        # Let's stick to explicit saving to match frontend expectation if it wants explicit control.
-        # But actually, simpler is: set default, and clear specific overrides? 
-        # For now, let's just Upsert all provided tools to be safe.
-        
-        for tool_id in data.tool_ids:
-             existing = db.scalar(
-                select(AccessPolicyModel).where(
-                    AccessPolicyModel.owner_id == owner_id,
-                    AccessPolicyModel.tool_id == tool_id,
-                )
-            )
-             if existing:
-                 existing.mode = data.mode
-             else:
-                 db.add(AccessPolicyModel(owner_id=owner_id, tool_id=tool_id, mode=data.mode))
-        
-        db.commit()
-
-    return {"status": "bulk_updated", "owner_id": owner_id, "mode": data.mode}
+app.include_router(
+    create_base_urls_router(
+        SessionLocal,
+        BaseURLModel,
+        BaseURLRegistration,
+        normalize_openapi_path,
+        ensure_default_access_policy_for_owner,
+        sync_api_server_links_by_host,
+        _reset_openapi_catalog,
+        fetch_openapi_spec_from_base_url,
+    )
+)
+app.include_router(
+    create_catalog_router(
+        SessionLocal,
+        AccessPolicyModel,
+        build_openapi_tool_catalog,
+        _fetch_all_mcp_server_tools,
+        OPENAPI_MCP_FETCH_RETRIES,
+        OPENAPI_MCP_CACHE_TTL_SEC,
+    )
+)
+app.include_router(
+    create_servers_router(
+        SessionLocal,
+        ServerModel,
+        AccessPolicyModel,
+        ServerRegistration,
+        MCPClient,
+        ensure_default_access_policy_for_owner,
+        sync_api_server_links_by_host,
+    )
+)
+app.include_router(create_agent_router(agent))
+app.include_router(
+    create_access_policy_router(
+        SessionLocal,
+        resolve_owner_fk_ids,
+    )
+)
 
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8090, reload=True)
+
+

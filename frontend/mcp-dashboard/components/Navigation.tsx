@@ -41,7 +41,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
 
   return (
     <nav
-      className={`fixed top-0 w-full z-50 ${isDark
+      className={`fixed top-0 w-full z-100 ${isDark
           ? 'bg-gradient-to-r from-slate-900/95 to-slate-800/95 border-b border-slate-700/50 shadow-lg shadow-slate-900/50'
           : 'bg-gradient-to-r from-white/95 to-slate-50/95 border-b border-amber-400/30 shadow-lg shadow-amber-200/20'
         } backdrop-blur-3xl transition-all duration-500`}
