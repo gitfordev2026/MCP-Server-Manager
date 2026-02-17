@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Navigation from '@/components/Navigation';
@@ -43,7 +43,7 @@ const methodColors: Record<string, string> = {
   options: 'bg-slate-600',
 };
 
-export default function ApiExplorerPage() {
+function ApiExplorerContent() {
   const searchParams = useSearchParams();
   const url = searchParams.get('url') || '';
   const name = searchParams.get('name') || 'API';
@@ -259,9 +259,8 @@ export default function ApiExplorerPage() {
                       <td className="border border-slate-200/50 px-6 py-4 text-center">
                         <button className="cursor-pointer text-blue-600 hover:text-blue-700 transition">
                           <span
-                            className={`inline-block transition-transform ${
-                              selectedMethod === `${idx}-${methodIdx}` ? 'rotate-180' : ''
-                            }`}
+                            className={`inline-block transition-transform ${selectedMethod === `${idx}-${methodIdx}` ? 'rotate-180' : ''
+                              }`}
                           >
                             ▼
                           </span>
@@ -338,23 +337,21 @@ export default function ApiExplorerPage() {
                                   {Object.entries(method.responses).map(([statusCode, response]) => (
                                     <div
                                       key={statusCode}
-                                      className={`border rounded-lg p-4 hover:shadow-lg transition-all ${
-                                        statusCode.startsWith('2')
-                                          ? 'bg-emerald-100 border-emerald-300/50 hover:bg-emerald-100/80'
-                                          : statusCode.startsWith('4')
-                                            ? 'bg-amber-100 border-amber-300/50 hover:bg-amber-100/80'
-                                            : 'bg-red-100 border-red-300/50 hover:bg-red-100/80'
-                                      }`}
+                                      className={`border rounded-lg p-4 hover:shadow-lg transition-all ${statusCode.startsWith('2')
+                                        ? 'bg-emerald-100 border-emerald-300/50 hover:bg-emerald-100/80'
+                                        : statusCode.startsWith('4')
+                                          ? 'bg-amber-100 border-amber-300/50 hover:bg-amber-100/80'
+                                          : 'bg-red-100 border-red-300/50 hover:bg-red-100/80'
+                                        }`}
                                     >
                                       <div className="flex items-center gap-2 mb-2">
                                         <span
-                                          className={`text-sm font-bold px-3 py-1 rounded-full text-white ${
-                                            statusCode.startsWith('2')
-                                              ? 'bg-emerald-600'
-                                              : statusCode.startsWith('4')
-                                                ? 'bg-amber-600'
-                                                : 'bg-red-600'
-                                          }`}
+                                          className={`text-sm font-bold px-3 py-1 rounded-full text-white ${statusCode.startsWith('2')
+                                            ? 'bg-emerald-600'
+                                            : statusCode.startsWith('4')
+                                              ? 'bg-amber-600'
+                                              : 'bg-red-600'
+                                            }`}
                                         >
                                           {statusCode}
                                         </span>
@@ -394,5 +391,17 @@ export default function ApiExplorerPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function ApiExplorerPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+      </div>
+    }>
+      <ApiExplorerContent />
+    </Suspense>
   );
 }
