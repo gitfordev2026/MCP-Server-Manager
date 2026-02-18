@@ -1,208 +1,123 @@
 # MCP Use Agent - Project Memory
 
-## Purpose
-- Backend: Manage MCP server registrations, app base URLs, server tool discovery, server health checks, and agent chat query forwarding.
-- Frontend: Provide a dashboard UI for MCP servers/apps, API explorer for OpenAPI endpoints, and chat UI for `/agent/query`.
+Last refreshed: 2026-02-18
 
-## Tech Stack
-- Backend: FastAPI + SQLAlchemy + PostgreSQL (primary) / SQLite fallback (`servers.db`) in `main.py`.
-- Frontend: Next.js App Router + React + Tailwind in `frontend/mcp-dashboard`.
+## What This Project Is
+A full-stack MCP management platform with:
+- Backend (FastAPI): registers MCP servers and raw API base URLs, discovers tools, exposes a combined MCP endpoint, applies access policies, and proxies agent queries.
+- Frontend (Next.js App Router): dashboard, server/app registration, API explorer, chat, and access-control UI.
 
-## Backend Overview
-- Entry file: `main.py`
-- Database tables:
-  - `servers` (`name`, `url`)
-  - `base_urls` (`name`, `url`, `openapi_path`, `include_unreachable_tools`)
-- Public endpoints (currently open by design):
+## Repository Layout
+- `backend/main.py`: main app bootstrap, lifespan, router wiring, combined MCP mount, OpenAPI tool generation/invocation.
+- `backend/app/core/*`: DB and auth config.
+- `backend/app/models/db_models.py`: SQLAlchemy models.
+- `backend/app/routers/*`: feature routers (`health`, `servers`, `base_urls`, `catalog`, `agent`, `access_policies`).
+- `backend/app/services/*`: agent runtime + access policy helpers.
+- `frontend/mcp-dashboard`: Next.js app.
+
+## Backend Architecture
+- Framework: FastAPI + SQLAlchemy.
+- DB strategy:
+  - Primary: PostgreSQL via `DATABASE_URL`.
+  - Fallback: SQLite `servers.db` when `DB_FALLBACK_SQLITE=true`.
+  - Auto-creates PostgreSQL database if needed and verifies all tables on startup.
+- CORS: currently wide-open (`*`) in `backend/main.py`.
+- Auth config exists (Keycloak settings), but route-level auth is currently permissive (`current_user` optional across routers).
+
+## Data Model (Current Tables)
+From `backend/app/models/db_models.py`:
+- `mcp_servers`: MCP server registrations.
+- `raw_apis`: external app/base URL registrations (+ `openapi_path`, `include_unreachable_tools`).
+- `exposed_mcp_tools`: access policy rows (`owner_id`, `tool_id`, `mode`, allowlists).
+- `users`, `groups`: ownership/group scaffolding.
+- `apis_server`: links raw APIs to MCP servers by matching host:port.
+- `mcp_tools`: registry of discovered tools from both sources (`source_type` = `mcp|openapi`).
+
+## Core Runtime Behavior
+- Startup (`init_db`):
+  - creates tables,
+  - ensures default owner policies,
+  - syncs owner FK links,
+  - syncs raw-api <-> server links by host.
+- Combined MCP endpoint mounted at:
+  - `/mcp/apps` (streamable HTTP transport)
+- Combined MCP merges:
+  - OpenAPI-derived tools from registered `raw_apis`, and
+  - Native tools from registered MCP servers (prefixed `mcp__{server}__{tool}`).
+- Tool invocation path in combined MCP:
+  - checks access policy (`deny` blocks; `approval` currently treated as allow),
+  - dispatches to either native MCP tool call or proxied HTTP OpenAPI call.
+
+## Backend API Surface (Current)
+- Health:
   - `GET /health`
+- Raw API app registration:
   - `POST /register-base-url`
   - `GET /base-urls`
   - `GET /openapi-spec?url=...&openapi_path=...&retries=...`
-  - `GET /mcp/openapi/catalog`
-  - `GET /mcp/openapi/diagnostics`
-  - `POST /register-server`
+- MCP server registration/monitoring:
+  - `POST /register-server` (strict URL validation + live MCP compatibility probe)
   - `GET /servers`
   - `GET /servers/{server_name}/tools`
   - `GET /servers/status`
   - `GET /servers/{server_name}/status`
+- Combined catalog/diagnostics:
+  - `GET /mcp/openapi/catalog`
+  - `GET /mcp/openapi/diagnostics`
+- Agent:
   - `GET /agent/query?prompt=...`
-- MCP transport endpoint:
-  - Combined app OpenAPI MCP server mounted at `POST/GET /mcp/apps` (Streamable HTTP)
-  - Exposes registered app OpenAPI operations as MCP tools for MCP clients.
-- Input validation:
-  - `POST /register-server` now enforces strict URL format:
-    - Must use `http` or `https`
-    - Must include hostname/IP
-    - Must include explicit numeric port (example: `http://10.0.0.5:8005/mcp`)
-    - Host must be one of:
-      - valid IP address
-      - `localhost`
-      - fully qualified domain (contains dot), e.g. `api.example.com`
-  - `POST /register-server` performs a live endpoint probe before saving:
-    - Attempts MCP session creation and tool listing
-    - Registration is rejected if endpoint is down/unreachable/not MCP-compatible
+- Access policy management:
+  - `GET /access-policies`
+  - `PUT /access-policies/{owner_id}`
+  - `PUT /access-policies/{owner_id}/{tool_id}`
+  - `DELETE /access-policies/{owner_id}/{tool_id}`
+  - `POST /access-policies/{owner_id}/apply-all`
 
-## Register Server UX Validation
-- `frontend/mcp-dashboard/app/register-server/page.tsx` now performs client-side pre-validation before submit:
-  - requires `http/https`
-  - requires explicit port
-  - requires host to be IP/localhost/FQDN
-- Backend remains source of truth for strict validation and MCP-compatibility probe.
-- Error messaging now prefixes failed submit responses with `Registration failed:` for clearer user feedback.
-- Auth note:
-  - Keycloak config scaffolding exists.
-  - Token validation route dependency is intentionally disabled/commented for now.
+## Validation Rules Worth Remembering
+- `ServerRegistration.url` requires:
+  - `http` or `https`,
+  - valid host (IP / `localhost` / FQDN),
+  - explicit numeric port.
+- `POST /register-server` rejects servers that cannot create MCP session + list tools.
 
-## Frontend Overview
-- Main routes:
-  - `/` and `/dashboard` dashboards
-  - `/register-server`
-  - `/servers/[name]` server tools
-  - `/register-app`
-  - `/register-app/[name]`
-  - `/access-control`
-  - `/api-explorer`
-  - `/chat`
-  - `/login` (placeholder page to satisfy existing auth/register redirect)
-  - `/auth/register`
-- Internal API route:
-  - `app/api/register/route.ts` (mock in-memory registration only)
+## Agent Runtime (Current Default)
+- Defined in `backend/app/services/agent_runtime.py`.
+- Default MCP target and LLM backend are hardcoded (`http_server`, Ollama endpoint/model).
+- Agent route `/agent/query` delegates to this runtime.
 
-## Live Server Monitoring
-- Implemented on `frontend/mcp-dashboard/app/page.tsx`.
-- Dashboard now polls backend every 10 seconds using:
-  - `GET /servers`
-  - `GET /base-urls`
-  - `GET /servers/status`
-- Live data shown:
-  - Per-server status badge (`Alive` / `Down`)
-  - Per-server latency (ms)
-  - Per-server tool count
-  - Summary cards based on live status:
-    - Alive count
-    - Down/total counts
-    - Average live latency
-  - Last refresh timestamp and in-progress refresh indicator.
+## Frontend Architecture
+- Framework: Next.js (App Router), React 19, Tailwind 4, React Query.
+- API base URL: `NEXT_PUBLIC_BE_API_URL`.
+- Shared HTTP helper: `frontend/mcp-dashboard/services/http.ts`.
 
-## Live App Monitoring
-- Implemented on `frontend/mcp-dashboard/app/page.tsx`.
-- On each dashboard refresh cycle, every registered app base URL is probed via:
-  - `GET /openapi-spec?url={baseUrl}` (backend proxy)
-- App card live data:
-  - Status badge (`Alive` / `Down`)
-  - OpenAPI probe latency (ms)
-  - Endpoint count (from total OpenAPI operations across all paths/methods)
-- App section summary now shows:
-  - Alive count
-  - Down count
-  - Total monitored apps
+## Frontend Routes (Current)
+- `app/page.tsx`: main dashboard (servers + apps live monitoring).
+- `app/register-server/page.tsx`: MCP server registration.
+- `app/servers/[name]/page.tsx`: server detail/tools.
+- `app/register-app/page.tsx`: raw API base URL registration.
+- `app/register-app/[name]/page.tsx`: registered app details.
+- `app/api-explorer/page.tsx`: OpenAPI endpoint exploration via backend proxy.
+- `app/chat/page.tsx`: prompt to `/agent/query`.
+- `app/access-control/page.tsx`: owner policy management UI.
+- `app/mcp-endpoints/page.tsx`: MCP endpoints UI.
+- `app/dashboard/page.tsx` and `app/dashboard/[id]/page.tsx`: dashboard/legacy path.
+- `app/login/page.tsx`, `app/auth/register/page.tsx`: auth placeholder flows.
 
-## Runtime Configuration
-- Frontend backend URL env:
-  - `NEXT_PUBLIC_BE_API_URL`
-- Example value:
-  - `http://127.0.0.1:8090`
+## Access Control Notes (Updated)
+- Policies are now backend-persisted in DB (`exposed_mcp_tools`).
+- Frontend uses React Query hooks in `frontend/mcp-dashboard/hooks/useAccessPolicies.ts`.
+- API service lives in `frontend/mcp-dashboard/services/accessPolicies.api.ts`.
+- This supersedes older localStorage-only policy behavior.
 
-## Known Conventions
-- Keep backend endpoints open until auth phase starts.
-- Frontend should consume backend base URL from env (do not hardcode per-page URLs).
-- Keep this file updated whenever code changes are made.
+## Operational Notes
+- Backend default run: `uvicorn.run("main:app", host="0.0.0.0", port=8090, reload=True)` from `backend/main.py`.
+- Frontend uses standard Next scripts (`dev`, `build`, `start`, `lint`).
+- There is historical/legacy logic in top-level `backend/main.py`; modular routers under `backend/app/routers` are source-of-truth for route behavior.
 
-## Database Configuration
-- Primary: PostgreSQL via `DATABASE_URL` env var (e.g. `postgresql://postgres:postgres@localhost:5432/mcp_manager`).
-- Fallback: SQLite (`servers.db`) when PostgreSQL is unavailable and `DB_FALLBACK_SQLITE=true`.
-- On startup, the backend auto-creates the PostgreSQL database and all tables if they don't exist.
-- The `/health` endpoint reports `db_backend` (`"postgresql"` or `"sqlite"`).
-- Migration logic in `migrate_base_urls_schema()` is cross-DB compatible (uses `information_schema` for PostgreSQL, `PRAGMA` for SQLite).
-
-## Access Control Module
-- New page: `frontend/mcp-dashboard/app/access-control/page.tsx`
-- Purpose:
-  - Lists all app servers and MCP servers.
-  - On owner selection, lists MCP-exposed endpoints/tools:
-    - App owners use combined catalog from `GET /mcp/openapi/catalog`
-    - MCP servers load tools from `GET /servers/{server_name}/tools`
-  - Provides endpoint-level access control with:
-    - Owner-level default policy (`Allow`, `Require Approval`, `Deny`)
-    - `Apply Selected Mode To All Endpoints`
-    - Per-endpoint override controls and reset
-- Current persistence:
-  - Policies are stored in browser local storage key `mcp_access_control_policies_v1` (frontend-only for now).
-
-## Change Log
-- 2026-02-13
-  - Added custom app OpenAPI sync controls and diagnostics:
-    - `base_urls` schema now stores per-app `openapi_path` and `include_unreachable_tools`.
-    - `POST /register-base-url` and `GET /base-urls` now accept/return those fields.
-    - OpenAPI candidate resolution now supports custom paths (relative path, absolute path, or full URL).
-    - Added retry-aware diagnostics endpoint `GET /mcp/openapi/diagnostics?retries=...`.
-    - Enhanced `GET /mcp/openapi/catalog` to return app-level diagnostics for all apps (healthy, unreachable, zero-endpoints) including attempts, latency, candidate URLs, and placeholder status.
-    - Added placeholder tool policy: if enabled per app and sync is unreachable/zero-endpoints, combined MCP exposes a placeholder tool instead of dropping visibility.
-  - Updated frontend register-app page:
-    - Added inputs for custom OpenAPI path and include-unreachable-placeholder policy.
-    - Registered app cards now show configured OpenAPI path and placeholder policy status.
-  - Updated frontend access-control page:
-    - Added combined MCP diagnostics panel for all app servers, including unreachable and zero-endpoint apps.
-    - Added retry selector that refreshes catalog diagnostics with configurable retry count.
-    - Placeholder tools are labeled in endpoint lists with placeholder reason.
-  - Updated dashboard and API explorer OpenAPI fetch flow:
-    - Dashboard app health probes now forward `openapi_path` to backend `/openapi-spec`.
-    - API Explorer now accepts `openapi_path` query param and uses it when loading OpenAPI specs.
-    - App-to-Explorer links now include `openapi_path` when configured.
-  - Added frontend access-control page (`/access-control`):
-    - Lists all app servers and MCP servers.
-    - Shows MCP-exposed endpoints/tools for selected owner.
-    - Supports apply-all and per-endpoint access policy controls.
-    - Persists policies locally in browser storage for now.
-  - Updated top navigation to include `Access Control` route and active-state highlighting.
-  - Added combined OpenAPI-to-MCP backend server in `main.py`:
-    - New dynamic MCP endpoint at `/mcp/apps` (Streamable HTTP transport).
-    - Auto-discovers tools from all registered app `base_urls` OpenAPI specs.
-    - Converts each API operation into an MCP tool with request schema for `path`, `query`, `headers`, `cookies`, `body`, and optional `timeout_sec`.
-    - Tool invocation executes the upstream HTTP API call and returns structured response payload (`status_code`, `url`, `ok`, `body`).
-    - Added catalog debug endpoint `GET /mcp/openapi/catalog` to inspect generated tools and sync errors.
-    - Added cache+refresh behavior (`OPENAPI_MCP_CACHE_TTL_SEC`, cache invalidation on app registration).
-    - Fixed mounted MCP lifecycle integration by running `combined_apps_mcp.session_manager.run()` inside FastAPI lifespan.
-  - Fixed dashboard rendering regression in `app/page.tsx` where `normalizeOpenApiUrl` was referenced after refactor but not defined, which could break dashboard card rendering and hide server/app lists.
-  - Improved dashboard fetch resilience in `app/page.tsx`:
-    - Switched primary data calls (`/servers`, `/base-urls`, `/servers/status`) to `Promise.allSettled`.
-    - Prevented single status fetch failure from blocking all dashboard data.
-    - Render server/app lists immediately after list fetches while status/app health probes continue in background.
-    - Added explicit frontend error when `NEXT_PUBLIC_BE_API_URL` is missing.
-    - Preserved last-known server/app status and counts during refresh checks; dashboard no longer clears to waiting/empty while probes are in-flight.
-    - Added overlap-safe live polling with in-flight guard to prevent concurrent refresh races.
-    - Added failure smoothing for status transitions:
-      - Alive -> Down now requires consecutive failed probes (`DOWN_AFTER_FAILURES=2`) before UI flips down.
-      - Last-known tool/endpoint counts remain visible during transient probe failures.
-  - Corrected endpoint counting logic on frontend:
-    - Dashboard app cards now count OpenAPI operations (HTTP methods across paths), not only path keys.
-    - API Explorer "Total Endpoints" now shows total operations for consistency with dashboard.
-  - Improved server/app card metric messaging:
-    - Tool count and endpoint count now show "unavailable" when status is down instead of misleading zero values.
-  - Fixed app endpoint discovery in API Explorer by routing OpenAPI fetch through backend:
-    - Added `GET /openapi-spec?url=...` in `main.py`.
-    - Backend now resolves OpenAPI candidates (registered path + root fallback) and returns first valid JSON spec.
-  - Updated frontend API Explorer (`app/api-explorer/page.tsx`) to use backend `/openapi-spec` instead of direct browser fetch to `{baseUrl}/openapi.json`.
-  - Updated main dashboard app monitoring (`app/page.tsx`) to probe OpenAPI via backend `/openapi-spec`, improving app health/endpoint count reliability for CORS-restricted APIs.
-- 2026-02-12
-  - Added `project.md` as persistent project memory.
-  - Fixed navigation route recognition for server details:
-    - `Navigation` now treats `/servers/[name]` as server details and active server section.
-  - Fixed chat page JSX className typos (removed stray trailing backslashes that break markup).
-  - Replaced obsolete `/dashboard/[id]` implementation that referenced missing `/api/urls/*` endpoints with a safe legacy notice page.
-  - Added `/login` placeholder route to resolve broken redirect/link from `/auth/register`.
-  - Updated frontend env example to include `NEXT_PUBLIC_BE_API_URL` used by current pages.
-  - Added live server monitoring on the main dashboard (`app/page.tsx`) with 10s polling of `/servers/status` and real-time server health details.
-  - Added live registered-app monitoring on the main dashboard (`app/page.tsx`) by probing each app OpenAPI URL and rendering status/latency/endpoint count.
-  - Fixed `register-server` runtime error where backend validation objects were rendered directly in JSX:
-    - Added robust `toErrorMessage` normalization in `app/register-server/page.tsx`.
-    - All error paths now render as strings, avoiding `Objects are not valid as a React child`.
-  - Fixed backend validation regression causing `"Field required"` on register POST requests:
-    - Removed unused `current_user` parameters from `POST /register-server` and `POST /register-base-url` in `main.py`.
-    - These endpoints now correctly accept plain JSON bodies (`{name, url}`) from frontend forms.
-  - Added strict backend server URL validation in `main.py` for `ServerRegistration.url`:
-    - Rejects incomplete URLs like `http://10`
-    - Requires explicit port and valid scheme/host.
-  - Tightened URL host validation to reject shorthand hosts like `http://12:80` unless host is valid IP/localhost/FQDN.
-  - Updated `POST /register-server` to verify live MCP connectivity before insert/update; non-live endpoints now return HTTP 400 and are not stored.
-  - Added frontend register-server pre-validation and clearer user-facing error strings to surface URL/compatibility issues earlier.
+## How To Keep This Memory Fresh
+When significant changes land, update this file first:
+1. Routes added/removed or payload changes.
+2. DB schema/table renames.
+3. Access policy behavior changes.
+4. Combined MCP generation/invocation behavior changes.
+5. Frontend pages/hooks service-path changes.

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -52,12 +52,16 @@ class AccessPolicyBulkResponse(BaseModel):
     updated_count: int
 
 
+def _optional_current_user() -> dict[str, Any] | None:
+    return None
+
+
 def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     router = APIRouter()
 
     @router.get("/access-policies")
     def list_access_policies(
-        current_user: dict[str, Any] | None = None,
+        current_user: dict[str, Any] | None = Depends(_optional_current_user),
     ) -> dict[str, Any]:
         _ = current_user
         with session_local_factory() as db:
@@ -97,7 +101,7 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     def update_owner_default_policy(
         owner_id: str,
         policy: AccessPolicyUpdate,
-        current_user: dict[str, Any] | None = None,
+        current_user: dict[str, Any] | None = Depends(_optional_current_user),
     ) -> AccessPolicyResponse:
         _ = current_user
         with session_local_factory() as db:
@@ -151,7 +155,7 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
         owner_id: str,
         tool_id: str,
         policy: AccessPolicyUpdate,
-        current_user: dict[str, Any] | None = None,
+        current_user: dict[str, Any] | None = Depends(_optional_current_user),
     ) -> AccessPolicyResponse:
         _ = current_user
         if tool_id == DEFAULT_TOOL_ID:
@@ -218,7 +222,7 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     def delete_tool_policy(
         owner_id: str,
         tool_id: str,
-        current_user: dict[str, Any] | None = None,
+        current_user: dict[str, Any] | None = Depends(_optional_current_user),
     ) -> AccessPolicyResponse:
         _ = current_user
         with session_local_factory() as db:
@@ -256,7 +260,7 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     def bulk_apply_policy(
         owner_id: str,
         data: AccessPolicyBulkUpdate,
-        current_user: dict[str, Any] | None = None,
+        current_user: dict[str, Any] | None = Depends(_optional_current_user),
     ) -> AccessPolicyBulkResponse:
         _ = current_user
         with session_local_factory() as db:

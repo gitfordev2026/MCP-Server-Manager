@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import sys
 import asyncio
 import re
 from contextlib import asynccontextmanager
@@ -19,6 +20,14 @@ from sqlalchemy import (
     select,
     inspect,
 )
+
+# Allow running `python main.py` from the `backend/` directory.
+# In that mode, Python does not automatically include the repository root
+# in sys.path, so absolute imports like `backend.app.*` would fail.
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
 from backend.app.core.db import DB_BACKEND, SessionLocal, engine
@@ -44,7 +53,9 @@ from backend.app.schemas.registration import BaseURLRegistration, ServerRegistra
 from backend.app.services.agent_runtime import build_default_agent
 from backend.app.services.policy_utils import ensure_default_access_policy_for_owner, resolve_owner_fk_ids
 
-_ENV_PATH = Path(__file__).resolve().parent / "backend" / ".env"
+_ENV_PATH = CURRENT_DIR / ".env"
+if not _ENV_PATH.exists():
+    _ENV_PATH = CURRENT_DIR / "backend" / ".env"
 load_dotenv(_ENV_PATH)
 
 @asynccontextmanager
@@ -77,6 +88,7 @@ def init_db() -> None:
         raise RuntimeError("No SQLAlchemy models are registered in Base.metadata")
 
     Base.metadata.create_all(bind=engine)
+    ensure_access_policy_schema_columns()
     sync_access_policy_links_and_defaults()
     sync_api_server_links_by_host()
 
@@ -97,6 +109,31 @@ def init_db() -> None:
         )
 
     print(f"[DB] Startup check ok. Verified tables: {', '.join(sorted(expected_tables))}")
+
+
+def ensure_access_policy_schema_columns() -> None:
+    table_name = AccessPolicyModel.__tablename__
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    if table_name not in existing_tables:
+        return
+
+    existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+    missing_columns = [
+        col_name
+        for col_name in ("allowed_users", "allowed_groups")
+        if col_name not in existing_columns
+    ]
+    if not missing_columns:
+        return
+
+    with engine.begin() as conn:
+        for col_name in missing_columns:
+            # Keep this migration simple and cross-dialect (PostgreSQL + SQLite).
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table_name} ADD COLUMN {col_name} JSON"
+            )
+    print(f"[DB] Added missing columns on {table_name}: {', '.join(missing_columns)}")
 
 
 def sync_access_policy_links_and_defaults() -> None:

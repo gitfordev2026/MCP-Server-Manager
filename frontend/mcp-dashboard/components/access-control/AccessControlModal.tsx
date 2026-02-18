@@ -9,6 +9,7 @@ interface AccessControlModalProps {
     onClose: () => void;
     ownerId: string;
     policy: OwnerPolicy;
+    availableEndpointIds?: string[];
 }
 
 const ACCESS_MODES: { value: AccessMode; label: string }[] = [
@@ -17,25 +18,42 @@ const ACCESS_MODES: { value: AccessMode; label: string }[] = [
     { value: 'deny', label: 'Deny' },
 ];
 
-export default function AccessControlModal({ isOpen, onClose, ownerId, policy }: AccessControlModalProps) {
+type EditableEndpointPolicy = {
+    mode: AccessMode;
+    allowed_users: string[];
+    allowed_groups: string[];
+};
+
+type EndpointSaveData = {
+    toolId: string;
+    mode: AccessMode;
+    allowed_users: string[];
+    allowed_groups: string[];
+};
+
+export default function AccessControlModal({ isOpen, onClose, ownerId, policy, availableEndpointIds = [] }: AccessControlModalProps) {
     const [activeTab, setActiveTab] = useState<'default' | 'endpoints'>('default');
     const isMcpOwner = ownerId.startsWith('mcp:');
     const endpointsTabLabel = isMcpOwner ? 'Tools' : 'Endpoints';
+    const effectiveEndpointCount = (() => {
+        const overridden = Object.keys(policy.endpointPolicies || {});
+        return Array.from(new Set([...availableEndpointIds, ...overridden])).length;
+    })();
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Access Control: ${ownerId}`}>
-            <div className="flex border-b mb-4">
+            <div className="flex bg-slate-100 rounded-xl p-1 mb-4">
                 <button
-                    className={`px-4 py-2 text-sm font-medium ${activeTab === 'default' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${activeTab === 'default' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     onClick={() => setActiveTab('default')}
                 >
                     Default Policy
                 </button>
                 <button
-                    className={`px-4 py-2 text-sm font-medium ${activeTab === 'endpoints' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${activeTab === 'endpoints' ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     onClick={() => setActiveTab('endpoints')}
                 >
-                    {endpointsTabLabel} ({policy.endpointPolicies ? Object.keys(policy.endpointPolicies).length : 0})
+                    {endpointsTabLabel} ({effectiveEndpointCount})
                 </button>
             </div>
 
@@ -44,7 +62,7 @@ export default function AccessControlModal({ isOpen, onClose, ownerId, policy }:
             )}
 
             {activeTab === 'endpoints' && (
-                <EndpointsList ownerId={ownerId} policy={policy} />
+                <EndpointsList ownerId={ownerId} policy={policy} availableEndpointIds={availableEndpointIds} />
             )}
         </Modal>
     );
@@ -108,7 +126,7 @@ function DefaultPolicyForm({ ownerId, policy }: { ownerId: string; policy: Owner
             </div>
 
             <div className="pt-2">
-                <Button onClick={handleSave} disabled={mutation.isPending}>
+                <Button onClick={handleSave} disabled={mutation.isPending} variant="primary">
                     {mutation.isPending ? 'Saving...' : 'Save Default Policy'}
                 </Button>
             </div>
@@ -116,14 +134,25 @@ function DefaultPolicyForm({ ownerId, policy }: { ownerId: string; policy: Owner
     );
 }
 
-function EndpointsList({ ownerId, policy }: { ownerId: string; policy: OwnerPolicy }) {
+function EndpointsList({
+    ownerId,
+    policy,
+    availableEndpointIds = [],
+}: {
+    ownerId: string;
+    policy: OwnerPolicy;
+    availableEndpointIds?: string[];
+}) {
     const mutation = useUpdateEndpointPolicy();
     const [editingId, setEditingId] = useState<string | null>(null);
     const isMcpOwner = ownerId.startsWith('mcp:');
 
-    const endpoints = Object.entries(policy.endpointPolicies || {});
+    const endpointPolicies = policy.endpointPolicies || {};
+    const endpointIds = Array.from(
+        new Set([...availableEndpointIds, ...Object.keys(endpointPolicies)])
+    ).sort((a, b) => a.localeCompare(b));
 
-    if (endpoints.length === 0) {
+    if (endpointIds.length === 0) {
         return (
             <div className="text-gray-500 text-sm p-4">
                 No {isMcpOwner ? 'tool' : 'endpoint'} policies configured.
@@ -131,7 +160,7 @@ function EndpointsList({ ownerId, policy }: { ownerId: string; policy: OwnerPoli
         );
     }
 
-    const handleSaveEndpoint = (data: any) => {
+    const handleSaveEndpoint = (data: EndpointSaveData) => {
         mutation.mutate({
             ownerId,
             endpointId: data.toolId,
@@ -144,12 +173,25 @@ function EndpointsList({ ownerId, policy }: { ownerId: string; policy: OwnerPoli
 
     return (
         <div className="space-y-4">
-            {endpoints.map(([toolId, toolPolicy]) => {
+            {endpointIds.map((toolId) => {
+                const hasOverride = !!endpointPolicies[toolId];
+                const toolPolicy = endpointPolicies[toolId] || {
+                    mode: policy.defaultPolicy?.mode || 'approval',
+                    allowed_users: policy.defaultPolicy?.allowed_users || [],
+                    allowed_groups: policy.defaultPolicy?.allowed_groups || [],
+                };
                 const isEditing = editingId === toolId;
                 return (
                     <div key={toolId} className="border rounded-lg p-3 transition-colors hover:bg-slate-50">
                         <div className="flex justify-between items-center mb-2">
-                            <span className="font-medium text-sm">{toolId}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium text-sm truncate" title={toolId}>{toolId}</span>
+                                {!hasOverride && (
+                                    <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600">
+                                        inherited
+                                    </span>
+                                )}
+                            </div>
                             <Button
                                 size="sm"
                                 variant="ghost"
@@ -186,7 +228,17 @@ function EndpointsList({ ownerId, policy }: { ownerId: string; policy: OwnerPoli
     );
 }
 
-function EndpointForm({ toolId, initialPolicy, onSave, isSaving }: any) {
+function EndpointForm({
+    toolId,
+    initialPolicy,
+    onSave,
+    isSaving,
+}: {
+    toolId: string;
+    initialPolicy: EditableEndpointPolicy;
+    onSave: (data: EndpointSaveData) => void;
+    isSaving: boolean;
+}) {
     const [mode, setMode] = useState<AccessMode>(initialPolicy.mode);
     const [users, setUsers] = useState((initialPolicy.allowed_users || []).join(', '));
     const [groups, setGroups] = useState((initialPolicy.allowed_groups || []).join(', '));
@@ -224,7 +276,7 @@ function EndpointForm({ toolId, initialPolicy, onSave, isSaving }: any) {
                 />
             </div>
             <div className="flex justify-end pt-2">
-                <Button size="sm" onClick={() => onSave({
+                <Button size="sm" variant="primary" onClick={() => onSave({
                     toolId,
                     mode,
                     allowed_users: users.split(',').map((s: string) => s.trim()).filter(Boolean),

@@ -45,7 +45,7 @@ export async function updateEndpointPolicy(
   mode: AccessMode,
   allowed_users?: string[],
   allowed_groups?: string[]
-) {
+): Promise<void> {
   if (typeof ownerId !== 'string' || typeof endpointId !== 'string') {
     throw new Error('ownerId and endpointId must be strings');
   }
@@ -56,18 +56,13 @@ export async function updateEndpointPolicy(
     allowed_groups,
   };
 
-  const res = await fetch(
+  await http(
     `/access-policies/${encodeURIComponent(ownerId)}/${encodeURIComponent(endpointId)}`,
     {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }
   );
-
-  if (!res.ok) {
-    throw new Error('Failed to update endpoint policy');
-  }
 }
 
 
