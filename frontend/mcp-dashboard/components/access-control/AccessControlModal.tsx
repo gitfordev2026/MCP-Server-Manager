@@ -19,6 +19,8 @@ const ACCESS_MODES: { value: AccessMode; label: string }[] = [
 
 export default function AccessControlModal({ isOpen, onClose, ownerId, policy }: AccessControlModalProps) {
     const [activeTab, setActiveTab] = useState<'default' | 'endpoints'>('default');
+    const isMcpOwner = ownerId.startsWith('mcp:');
+    const endpointsTabLabel = isMcpOwner ? 'Tools' : 'Endpoints';
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Access Control: ${ownerId}`}>
@@ -33,7 +35,7 @@ export default function AccessControlModal({ isOpen, onClose, ownerId, policy }:
                     className={`px-4 py-2 text-sm font-medium ${activeTab === 'endpoints' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
                     onClick={() => setActiveTab('endpoints')}
                 >
-                    Endpoints ({policy.endpointPolicies ? Object.keys(policy.endpointPolicies).length : 0})
+                    {endpointsTabLabel} ({policy.endpointPolicies ? Object.keys(policy.endpointPolicies).length : 0})
                 </button>
             </div>
 
@@ -117,11 +119,16 @@ function DefaultPolicyForm({ ownerId, policy }: { ownerId: string; policy: Owner
 function EndpointsList({ ownerId, policy }: { ownerId: string; policy: OwnerPolicy }) {
     const mutation = useUpdateEndpointPolicy();
     const [editingId, setEditingId] = useState<string | null>(null);
+    const isMcpOwner = ownerId.startsWith('mcp:');
 
     const endpoints = Object.entries(policy.endpointPolicies || {});
 
     if (endpoints.length === 0) {
-        return <div className="text-gray-500 text-sm p-4">No endpoint policies configured.</div>;
+        return (
+            <div className="text-gray-500 text-sm p-4">
+                No {isMcpOwner ? 'tool' : 'endpoint'} policies configured.
+            </div>
+        );
     }
 
     const handleSaveEndpoint = (data: any) => {

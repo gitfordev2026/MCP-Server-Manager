@@ -6,6 +6,8 @@ interface ApplicationCardProps {
 }
 
 export default function ApplicationCard({ owner, onClick }: ApplicationCardProps) {
+    const isMcpOwner = owner.type === 'mcp';
+
     return (
         <div
             onClick={onClick}
@@ -22,7 +24,7 @@ export default function ApplicationCard({ owner, onClick }: ApplicationCardProps
 
             <div className="text-sm text-slate-500">
                 <div className="flex justify-between">
-                    <span>Endpoints:</span>
+                    <span>{isMcpOwner ? 'Tools:' : 'Endpoints:'}</span>
                     <span className="font-medium text-slate-700">{owner.endpointCount}</span>
                 </div>
                 <div className="truncate text-xs mt-1" title={owner.url}>

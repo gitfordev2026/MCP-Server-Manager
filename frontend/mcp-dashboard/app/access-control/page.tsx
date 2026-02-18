@@ -22,13 +22,11 @@ export default function AccessPolicyPage() {
   const owners = useMemo(() => {
     return Object.keys(policies).map((ownerId) => ({
       id: ownerId,
-      type: (ownerId.startsWith('mcp:') ? 'mcp' : 'app') as any, // Simple inference
+      type: (ownerId.startsWith('mcp:') ? 'mcp' : 'app') as any,
       name: ownerId,
-      url: ownerId, // We don't have URL in policy map, using ID as placeholder
-      endpointCount: Object.keys(policies[ownerId]?.endpointModes || {}).length,
+      url: ownerId,
+      endpointCount: Object.keys(policies[ownerId]?.endpointPolicies || {}).length,
     }));
-    // Note: To get real URL and type, we'd need to fetch from /mcp/apps catalog or similar.
-    // For now, consistent with previous implementation derived from policies map.
   }, [policies]);
 
   const selectedPolicy: OwnerPolicy | null = detailsModalOwnerId
