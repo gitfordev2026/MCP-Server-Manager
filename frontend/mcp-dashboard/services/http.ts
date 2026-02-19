@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_BE_API_URL;
+import { publicEnv } from '@/lib/env';
+
+const API_BASE = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
 if (!API_BASE) {
   throw new Error('NEXT_PUBLIC_BE_API_URL is not configured');

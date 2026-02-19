@@ -7,8 +7,9 @@ import AccessControlModal from '@/components/access-control/AccessControlModal';
 import Button from '@/components/ui/Button';
 import { usePolicies } from '@/hooks/useAccessPolicies';
 import { OwnerPolicy, OwnerType } from '@/types/accessPolicies';
+import { publicEnv } from '@/lib/env';
 
-const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL;
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
 export default function AccessPolicyPage() {
   const { data, isLoading, isError, refetch } = usePolicies();
@@ -203,3 +204,4 @@ export default function AccessPolicyPage() {
     </div>
   );
 }
+

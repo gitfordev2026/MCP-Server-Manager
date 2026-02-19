@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import Card from '@/components/ui/Card';
+import { publicEnv } from '@/lib/env';
 
-const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
 
 interface Tool {

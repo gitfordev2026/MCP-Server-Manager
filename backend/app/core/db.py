@@ -1,17 +1,13 @@
-import os
-
-from pathlib import Path
-from dotenv import load_dotenv
 from sqlalchemy import column, create_engine, literal, select, table
 from sqlalchemy.orm import sessionmaker
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+from backend.env import ENV
 
 SQLITE_DB_PATH = "servers.db"
 SQLITE_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH}"
 
-_configured_db_url = os.getenv("DATABASE_URL", "").strip()
-_fallback_enabled = os.getenv("DB_FALLBACK_SQLITE", "true").lower() == "true"
+_configured_db_url = ENV.database_url
+_fallback_enabled = ENV.db_fallback_sqlite
 
 
 def _ensure_pg_database_exists(url: str) -> None:

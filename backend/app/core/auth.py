@@ -1,10 +1,10 @@
-import os
+from backend.env import ENV
 
-KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "").rstrip("/")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "")
-KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "")
-KEYCLOAK_VERIFY_AUD = os.getenv("KEYCLOAK_VERIFY_AUD", "true").lower() == "true"
-AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").lower() == "true"
+KEYCLOAK_SERVER_URL = ENV.keycloak_server_url
+KEYCLOAK_REALM = ENV.keycloak_realm
+KEYCLOAK_CLIENT_ID = ENV.keycloak_client_id
+KEYCLOAK_VERIFY_AUD = ENV.keycloak_verify_aud
+AUTH_ENABLED = ENV.auth_enabled
 
 if KEYCLOAK_SERVER_URL and KEYCLOAK_REALM:
     KEYCLOAK_ISSUER = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}"

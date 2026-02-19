@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import sys
 import asyncio
@@ -6,11 +5,10 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
-from time import time
+from time import perf_counter, time
 from urllib.parse import quote, urlparse, urlunparse
 import httpx
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from mcp.server.fastmcp import FastMCP
@@ -29,6 +27,7 @@ PROJECT_ROOT = CURRENT_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.env import ENV
 from backend.app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
 from backend.app.core.db import DB_BACKEND, SessionLocal, engine
 from backend.app.models.db_models import (
@@ -52,11 +51,6 @@ from backend.app.routers.servers import create_servers_router
 from backend.app.schemas.registration import BaseURLRegistration, ServerRegistration
 from backend.app.services.agent_runtime import build_default_agent
 from backend.app.services.policy_utils import ensure_default_access_policy_for_owner, resolve_owner_fk_ids
-
-_ENV_PATH = CURRENT_DIR / ".env"
-if not _ENV_PATH.exists():
-    _ENV_PATH = CURRENT_DIR / "backend" / ".env"
-load_dotenv(_ENV_PATH)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -356,8 +350,8 @@ def build_openapi_candidates(raw_url: str, openapi_path: str | None = "") -> lis
 
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
-OPENAPI_MCP_CACHE_TTL_SEC = int(os.getenv("OPENAPI_MCP_CACHE_TTL_SEC", "30"))
-OPENAPI_MCP_FETCH_RETRIES = int(os.getenv("OPENAPI_MCP_FETCH_RETRIES", "1"))
+OPENAPI_MCP_CACHE_TTL_SEC = ENV.openapi_mcp_cache_ttl_sec
+OPENAPI_MCP_FETCH_RETRIES = ENV.openapi_mcp_fetch_retries
 
 
 @dataclass

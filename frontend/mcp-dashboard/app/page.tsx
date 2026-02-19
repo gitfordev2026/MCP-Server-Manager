@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
+import { publicEnv } from '@/lib/env';
 
 
-const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 const STATUS_POLL_MS = 10000;
 const DOWN_AFTER_FAILURES = 2;
 
@@ -744,3 +745,4 @@ export default function Home() {
     </div>
   );
 }
+

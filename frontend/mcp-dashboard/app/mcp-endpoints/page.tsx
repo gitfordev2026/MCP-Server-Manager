@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Navigation from '@/components/Navigation';
+import { publicEnv } from '@/lib/env';
 
-const NEXT_PUBLIC_BE_API_URL = process.env.NEXT_PUBLIC_BE_API_URL;
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 const POLICY_STORAGE_KEY = 'mcp_access_control_policies_v1';
 
 /* ------------------------------------------------------------------ */
@@ -519,3 +520,4 @@ export default function McpEndpointsPage() {
     </div>
   );
 }
+
