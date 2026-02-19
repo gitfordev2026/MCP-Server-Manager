@@ -7,6 +7,7 @@ from pydantic import BaseModel, field_validator
 class ServerRegistration(BaseModel):
     name: str
     url: str
+    description: str | None = ""
 
     @field_validator("url")
     @classmethod
@@ -42,5 +43,6 @@ class ServerRegistration(BaseModel):
 class BaseURLRegistration(BaseModel):
     name: str
     url: str
+    description: str | None = ""
     openapi_path: str | None = ""
     include_unreachable_tools: bool = False

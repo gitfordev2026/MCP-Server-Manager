@@ -1,6 +1,7 @@
 from typing import Any, Callable
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 
 
@@ -13,22 +14,47 @@ def create_base_urls_router(
     sync_api_server_links_by_host_fn,
     reset_openapi_catalog_fn: Callable[[], None],
     fetch_openapi_spec_from_base_url_fn,
+    write_audit_log_fn,
+    audit_log_model,
+    get_actor_dep,
 ) -> APIRouter:
     router = APIRouter()
+
+    class BaseURLUpdate(BaseModel):
+        description: str | None = None
+        url: str | None = None
+        openapi_path: str | None = None
+        include_unreachable_tools: bool | None = None
+        is_enabled: bool | None = None
 
     @router.post("/register-base-url")
     def register_base_url(
         data: base_url_registration_model,
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
         normalized_openapi_path = normalize_openapi_path_fn(data.openapi_path)
         include_unreachable = 1 if data.include_unreachable_tools else 0
+        description = (getattr(data, "description", "") or "").strip()
         try:
             with session_local_factory() as db:
                 existing = db.scalar(select(base_url_model).where(base_url_model.name == data.name))
+                before_state = None
                 if existing:
+                    before_state = {
+                        "name": existing.name,
+                        "url": existing.url,
+                        "description": existing.description or "",
+                        "openapi_path": existing.openapi_path or "",
+                        "include_unreachable_tools": bool(existing.include_unreachable_tools),
+                        "is_enabled": bool(existing.is_enabled),
+                        "is_deleted": bool(existing.is_deleted),
+                    }
                     existing.url = data.url
+                    existing.description = description
                     existing.openapi_path = normalized_openapi_path
                     existing.include_unreachable_tools = include_unreachable
+                    existing.is_enabled = True
+                    existing.is_deleted = False
                     db.flush()
                     ensure_default_access_policy_for_owner_fn(
                         db,
@@ -39,8 +65,11 @@ def create_base_urls_router(
                     base_url = base_url_model(
                         name=data.name,
                         url=data.url,
+                        description=description,
                         openapi_path=normalized_openapi_path,
                         include_unreachable_tools=include_unreachable,
+                        is_enabled=True,
+                        is_deleted=False,
                     )
                     db.add(base_url)
                     db.flush()
@@ -49,6 +78,24 @@ def create_base_urls_router(
                         owner_id=f"app:{base_url.name}",
                         base_url_id=base_url.id,
                     )
+                write_audit_log_fn(
+                    db,
+                    audit_log_model,
+                    actor=actor.get("username", "system"),
+                    action="base_url.upsert",
+                    resource_type="application",
+                    resource_id=data.name,
+                    before_state=before_state,
+                    after_state={
+                        "name": data.name,
+                        "url": data.url,
+                        "description": description,
+                        "openapi_path": normalized_openapi_path,
+                        "include_unreachable_tools": bool(include_unreachable),
+                        "is_enabled": True,
+                        "is_deleted": False,
+                    },
+                )
                 db.commit()
 
             sync_api_server_links_by_host_fn()
@@ -58,6 +105,7 @@ def create_base_urls_router(
                 "message": "Base URL registered successfully",
                 "name": data.name,
                 "url": data.url,
+                "description": description,
                 "openapi_path": normalized_openapi_path,
                 "include_unreachable_tools": bool(include_unreachable),
             }
@@ -77,8 +125,11 @@ def create_base_urls_router(
                     {
                         "name": row.name,
                         "url": row.url,
+                        "description": row.description or "",
                         "openapi_path": row.openapi_path or "",
                         "include_unreachable_tools": bool(row.include_unreachable_tools),
+                        "is_enabled": bool(row.is_enabled),
+                        "is_deleted": bool(row.is_deleted),
                     }
                     for row in rows
                 ]
@@ -103,5 +154,102 @@ def create_base_urls_router(
             detail = str(exc)
             status_code = 400 if detail.startswith("URL must") else 502
             raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    @router.patch("/base-urls/{name}")
+    def update_base_url(
+        name: str,
+        payload: BaseURLUpdate,
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        with session_local_factory() as db:
+            row = db.scalar(select(base_url_model).where(base_url_model.name == name))
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Base URL '{name}' not found")
+
+            before_state = {
+                "name": row.name,
+                "url": row.url,
+                "description": row.description or "",
+                "openapi_path": row.openapi_path or "",
+                "include_unreachable_tools": bool(row.include_unreachable_tools),
+                "is_enabled": bool(row.is_enabled),
+                "is_deleted": bool(row.is_deleted),
+            }
+
+            if payload.url is not None:
+                row.url = payload.url
+            if payload.description is not None:
+                row.description = payload.description.strip()
+            if payload.openapi_path is not None:
+                row.openapi_path = normalize_openapi_path_fn(payload.openapi_path)
+            if payload.include_unreachable_tools is not None:
+                row.include_unreachable_tools = 1 if payload.include_unreachable_tools else 0
+            if payload.is_enabled is not None:
+                row.is_enabled = payload.is_enabled
+
+            write_audit_log_fn(
+                db,
+                audit_log_model,
+                actor=actor.get("username", "system"),
+                action="application.update",
+                resource_type="application",
+                resource_id=name,
+                before_state=before_state,
+                after_state={
+                    "name": row.name,
+                    "url": row.url,
+                    "description": row.description or "",
+                    "openapi_path": row.openapi_path or "",
+                    "include_unreachable_tools": bool(row.include_unreachable_tools),
+                    "is_enabled": bool(row.is_enabled),
+                    "is_deleted": bool(row.is_deleted),
+                },
+            )
+            db.commit()
+
+        reset_openapi_catalog_fn()
+        return {"status": "updated", "name": name}
+
+    @router.delete("/base-urls/{name}")
+    def delete_base_url(
+        name: str,
+        hard: bool = Query(default=False),
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        with session_local_factory() as db:
+            row = db.scalar(select(base_url_model).where(base_url_model.name == name))
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Base URL '{name}' not found")
+            before_state = {
+                "name": row.name,
+                "url": row.url,
+                "description": row.description or "",
+                "is_enabled": bool(row.is_enabled),
+                "is_deleted": bool(row.is_deleted),
+            }
+            if hard:
+                db.delete(row)
+                action = "application.delete.hard"
+                after_state = None
+            else:
+                row.is_deleted = True
+                row.is_enabled = False
+                action = "application.delete.soft"
+                after_state = {"is_deleted": True, "is_enabled": False}
+
+            write_audit_log_fn(
+                db,
+                audit_log_model,
+                actor=actor.get("username", "system"),
+                action=action,
+                resource_type="application",
+                resource_id=name,
+                before_state=before_state,
+                after_state=after_state,
+            )
+            db.commit()
+
+        reset_openapi_catalog_fn()
+        return {"status": "deleted", "name": name, "hard": hard}
 
     return router

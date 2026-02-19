@@ -29,28 +29,45 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.env import ENV
 from backend.app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
+from backend.app.core.rbac import build_require_permission, get_request_actor
 from backend.app.core.db import DB_BACKEND, SessionLocal, engine
 from backend.app.models.db_models import (
+    APIEndpointModel,
     APIServerLinkModel,
     AccessPolicyModel,
+    AuditLogModel,
     Base,
     BaseURLModel,
     DEFAULT_TOOL_ID,
     GroupModel,
     MCPToolModel,
+    PermissionModel,
+    RoleModel,
+    RolePermissionModel,
     ServerModel,
+    ToolVersionModel,
+    EndpointVersionModel,
     UserModel,
     utc_now,
 )
+from backend.app.routers.audit import create_audit_router
 from backend.app.routers.agent import create_agent_router
 from backend.app.routers.access_policies import create_access_policy_router
 from backend.app.routers.base_urls import create_base_urls_router
 from backend.app.routers.catalog import create_catalog_router
+from backend.app.routers.dashboard import create_dashboard_router
+from backend.app.routers.endpoints import create_endpoints_router
 from backend.app.routers.health import create_health_router
 from backend.app.routers.servers import create_servers_router
+from backend.app.routers.tools import create_tools_router
 from backend.app.schemas.registration import BaseURLRegistration, ServerRegistration
 from backend.app.services.agent_runtime import build_default_agent
-from backend.app.services.policy_utils import ensure_default_access_policy_for_owner, resolve_owner_fk_ids
+from backend.app.services.audit import write_audit_log
+from backend.app.services.policy_utils import (
+    ensure_default_access_policy_for_owner,
+    ensure_tool_access_policy_for_owner,
+    resolve_owner_fk_ids,
+)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -83,7 +100,10 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     ensure_access_policy_schema_columns()
+    ensure_phase2_schema_columns()
+    sync_rbac_baseline()
     sync_access_policy_links_and_defaults()
+    sync_tool_policies_from_registry()
     sync_api_server_links_by_host()
 
     inspector = inspect(engine)
@@ -103,6 +123,65 @@ def init_db() -> None:
         )
 
     print(f"[DB] Startup check ok. Verified tables: {', '.join(sorted(expected_tables))}")
+
+
+def sync_rbac_baseline() -> None:
+    role_definitions = (
+        ("super_admin", "Super Admin"),
+        ("admin", "Admin"),
+        ("operator", "Operator"),
+        ("read_only", "Read Only"),
+    )
+    permission_definitions = (
+        ("dashboard:view", "Read dashboard stats"),
+        ("application:manage", "Create/update/delete applications"),
+        ("mcp_server:manage", "Create/update/delete MCP servers"),
+        ("tool:manage", "Create/update/delete tools"),
+        ("endpoint:manage", "Create/update/delete endpoints"),
+        ("policy:manage", "Manage access policies"),
+        ("audit:view", "Read audit logs"),
+    )
+    role_permission_map = {
+        "super_admin": {code for code, _ in permission_definitions},
+        "admin": {code for code, _ in permission_definitions},
+        "operator": {"dashboard:view", "tool:manage", "endpoint:manage", "policy:manage", "audit:view"},
+        "read_only": {"dashboard:view", "audit:view"},
+    }
+    with SessionLocal() as db:
+        existing_roles = {row.name for row in db.scalars(select(RoleModel)).all()}
+        for role_name, role_description in role_definitions:
+            if role_name in existing_roles:
+                continue
+            db.add(RoleModel(name=role_name, description=role_description))
+
+        existing_permissions = {row.code for row in db.scalars(select(PermissionModel)).all()}
+        for code, description in permission_definitions:
+            if code in existing_permissions:
+                continue
+            db.add(PermissionModel(code=code, description=description))
+        db.flush()
+
+        roles_by_name = {row.name: row for row in db.scalars(select(RoleModel)).all()}
+        permissions_by_code = {row.code: row for row in db.scalars(select(PermissionModel)).all()}
+        existing_pairs = {
+            (row.role_id, row.permission_id)
+            for row in db.scalars(select(RolePermissionModel)).all()
+        }
+        for role_name, permission_codes in role_permission_map.items():
+            role = roles_by_name.get(role_name)
+            if role is None:
+                continue
+            for code in permission_codes:
+                permission = permissions_by_code.get(code)
+                if permission is None:
+                    continue
+                pair = (role.id, permission.id)
+                if pair in existing_pairs:
+                    continue
+                db.add(RolePermissionModel(role_id=role.id, permission_id=permission.id))
+                existing_pairs.add(pair)
+
+        db.commit()
 
 
 def ensure_access_policy_schema_columns() -> None:
@@ -128,6 +207,43 @@ def ensure_access_policy_schema_columns() -> None:
                 f"ALTER TABLE {table_name} ADD COLUMN {col_name} JSON"
             )
     print(f"[DB] Added missing columns on {table_name}: {', '.join(missing_columns)}")
+
+
+def ensure_phase2_schema_columns() -> None:
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    table_to_columns: dict[str, list[tuple[str, str]]] = {
+        MCPToolModel.__tablename__: [
+            ("description", "TEXT"),
+            ("current_version", "VARCHAR(64)"),
+            ("is_enabled", "BOOLEAN"),
+            ("is_deleted", "BOOLEAN"),
+        ],
+        ServerModel.__tablename__: [
+            ("description", "TEXT"),
+            ("is_enabled", "BOOLEAN"),
+            ("is_deleted", "BOOLEAN"),
+        ],
+        BaseURLModel.__tablename__: [
+            ("description", "TEXT"),
+            ("is_enabled", "BOOLEAN"),
+            ("is_deleted", "BOOLEAN"),
+        ],
+        EndpointVersionModel.__tablename__: [
+            ("endpoint_id", "INTEGER"),
+        ],
+    }
+    for table_name, additions in table_to_columns.items():
+        if table_name not in existing_tables:
+            continue
+        existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+        missing = [(name, col_type) for name, col_type in additions if name not in existing_columns]
+        if not missing:
+            continue
+        with engine.begin() as conn:
+            for name, col_type in missing:
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {name} {col_type}")
+        print(f"[DB] Added missing columns on {table_name}: {', '.join(name for name, _ in missing)}")
 
 
 def sync_access_policy_links_and_defaults() -> None:
@@ -159,6 +275,29 @@ def sync_access_policy_links_and_defaults() -> None:
             policy.server_id = server_id
             policy.base_url_id = base_url_id
 
+        db.commit()
+
+
+def sync_tool_policies_from_registry() -> None:
+    """Ensure every registered tool has an explicit deny policy row by default."""
+    with SessionLocal() as db:
+        tools = db.scalars(select(MCPToolModel)).all()
+        for tool in tools:
+            if not tool.owner_id or not tool.name:
+                continue
+            ensure_default_access_policy_for_owner(
+                db,
+                owner_id=tool.owner_id,
+                server_id=tool.server_id,
+                base_url_id=tool.raw_api_id,
+            )
+            ensure_tool_access_policy_for_owner(
+                db,
+                owner_id=tool.owner_id,
+                tool_id=tool.name,
+                server_id=tool.server_id,
+                base_url_id=tool.raw_api_id,
+            )
         db.commit()
 
 
@@ -199,6 +338,17 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
         for tool in tools.values():
             owner_id = f"app:{tool.app_name}"
             raw_api = db.scalar(select(BaseURLModel).where(BaseURLModel.name == tool.app_name))
+            ensure_default_access_policy_for_owner(
+                db,
+                owner_id=owner_id,
+                base_url_id=raw_api.id if raw_api else None,
+            )
+            ensure_tool_access_policy_for_owner(
+                db,
+                owner_id=owner_id,
+                tool_id=tool.name,
+                base_url_id=raw_api.id if raw_api else None,
+            )
             existing = db.scalar(
                 select(MCPToolModel).where(
                     MCPToolModel.source_type == "openapi",
@@ -233,6 +383,17 @@ def sync_mcp_tool_registry_from_mcp(
         for _, (server_name, tool_name, _tool_obj) in discovered.items():
             owner_id = f"mcp:{server_name}"
             server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
+            ensure_default_access_policy_for_owner(
+                db,
+                owner_id=owner_id,
+                server_id=server.id if server else None,
+            )
+            ensure_tool_access_policy_for_owner(
+                db,
+                owner_id=owner_id,
+                tool_id=tool_name,
+                server_id=server.id if server else None,
+            )
             existing = db.scalar(
                 select(MCPToolModel).where(
                     MCPToolModel.source_type == "mcp",
@@ -967,6 +1128,30 @@ async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
     return result
 
 
+def _load_policy_mode_map(owner_ids: set[str]) -> dict[str, dict[str, str]]:
+    if not owner_ids:
+        return {}
+    with SessionLocal() as db:
+        rows = db.scalars(
+            select(AccessPolicyModel).where(AccessPolicyModel.owner_id.in_(list(owner_ids)))
+        ).all()
+    policy_map: dict[str, dict[str, str]] = {}
+    for row in rows:
+        owner_map = policy_map.setdefault(row.owner_id, {})
+        owner_map[row.tool_id] = row.mode
+    return policy_map
+
+
+def _effective_access_mode(policy_map: dict[str, dict[str, str]], owner_id: str, tool_id: str) -> str:
+    owner_policies = policy_map.get(owner_id, {})
+    if tool_id in owner_policies:
+        return owner_policies[tool_id]
+    if DEFAULT_TOOL_ID in owner_policies:
+        return owner_policies[DEFAULT_TOOL_ID]
+    # Strict fallback: if no policy row exists yet, deny exposure/execution.
+    return "deny"
+
+
 class CombinedAppsOpenAPIMCP(FastMCP[Any]):
     async def list_tools(self) -> list[MCPTool]:
         import asyncio as _aio
@@ -976,19 +1161,28 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
         mcp_task = _fetch_all_mcp_server_tools()
         catalog, mcp_tools = await _aio.gather(catalog_task, mcp_task)
 
-        # OpenAPI app tools
-        tools: list[MCPTool] = [
-            MCPTool(
-                name=tool.name,
-                title=tool.title,
-                description=tool.description,
-                inputSchema=tool.input_schema,
-            )
-            for tool in catalog.tools.values()
-        ]
+        owner_ids = {f"app:{tool.app_name}" for tool in catalog.tools.values()}
+        owner_ids.update({f"mcp:{server_name}" for server_name, _, _ in mcp_tools.values()})
+        policy_map = _load_policy_mode_map(owner_ids)
 
-        # Native MCP server tools
-        for prefixed_name, (server_name, _orig_name, tool_obj) in mcp_tools.items():
+        tools: list[MCPTool] = []
+        for tool in catalog.tools.values():
+            owner_id = f"app:{tool.app_name}"
+            if _effective_access_mode(policy_map, owner_id, tool.name) == "deny":
+                continue
+            tools.append(
+                MCPTool(
+                    name=tool.name,
+                    title=tool.title,
+                    description=tool.description,
+                    inputSchema=tool.input_schema,
+                )
+            )
+
+        for prefixed_name, (server_name, orig_name, tool_obj) in mcp_tools.items():
+            owner_id = f"mcp:{server_name}"
+            if _effective_access_mode(policy_map, owner_id, orig_name) == "deny":
+                continue
             tools.append(
                 MCPTool(
                     name=prefixed_name,
@@ -1004,29 +1198,13 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         # Helper to check access policy
         def _check_access(owner_id: str, tool_id: str) -> None:
-            with SessionLocal() as db:
-                # 1. Check specific tool policy
-                policy = db.scalar(
-                    select(AccessPolicyModel).where(
-                        AccessPolicyModel.owner_id == owner_id,
-                        AccessPolicyModel.tool_id == tool_id
-                    )
-                )
-                if not policy:
-                    # 2. Check owner default
-                    policy = db.scalar(
-                        select(AccessPolicyModel).where(
-                            AccessPolicyModel.owner_id == owner_id,
-                            AccessPolicyModel.tool_id == "__default__"
-                        )
-                    )
-
-                mode = policy.mode if policy else "approval"  # Default to approval if no policy exists
-
-                if mode == "deny":
-                    raise HTTPException(status_code=403, detail=f"Access denied to tool '{tool_id}' on '{owner_id}'")
-                # We treat 'approval' as 'allow' for now in the automated agent context,
-                # or we could block. For this implementation, we only block 'deny'.
+            mode = _effective_access_mode(
+                _load_policy_mode_map({owner_id}),
+                owner_id=owner_id,
+                tool_id=tool_id,
+            )
+            if mode == "deny":
+                raise HTTPException(status_code=403, detail=f"Access denied to tool '{tool_id}' on '{owner_id}'")
 
         # ---- Native MCP server tool ----
         if name.startswith("mcp__"):
@@ -1084,6 +1262,12 @@ combined_apps_mcp = CombinedAppsOpenAPIMCP(
 )
 app.mount("/mcp/apps", combined_apps_mcp.streamable_http_app())
 agent = build_default_agent()
+require_permission = build_require_permission(
+    SessionLocal,
+    RoleModel,
+    PermissionModel,
+    RolePermissionModel,
+)
 
 
 def _reset_openapi_catalog() -> None:
@@ -1109,6 +1293,9 @@ app.include_router(
         sync_api_server_links_by_host,
         _reset_openapi_catalog,
         fetch_openapi_spec_from_base_url,
+        write_audit_log,
+        AuditLogModel,
+        get_request_actor,
     )
 )
 app.include_router(
@@ -1130,6 +1317,9 @@ app.include_router(
         MCPClient,
         ensure_default_access_policy_for_owner,
         sync_api_server_links_by_host,
+        write_audit_log,
+        AuditLogModel,
+        get_request_actor,
     )
 )
 app.include_router(create_agent_router(agent))
@@ -1137,6 +1327,44 @@ app.include_router(
     create_access_policy_router(
         SessionLocal,
         resolve_owner_fk_ids,
+        write_audit_log,
+        AuditLogModel,
+        get_request_actor,
+    )
+)
+app.include_router(
+    create_dashboard_router(
+        SessionLocal,
+        BaseURLModel,
+        ServerModel,
+        MCPToolModel,
+        MCPClient,
+    )
+)
+app.include_router(
+    create_audit_router(
+        SessionLocal,
+        AuditLogModel,
+    )
+)
+app.include_router(
+    create_tools_router(
+        SessionLocal,
+        MCPToolModel,
+        ToolVersionModel,
+        write_audit_log,
+        AuditLogModel,
+        require_permission,
+    )
+)
+app.include_router(
+    create_endpoints_router(
+        SessionLocal,
+        APIEndpointModel,
+        EndpointVersionModel,
+        write_audit_log,
+        AuditLogModel,
+        require_permission,
     )
 )
 

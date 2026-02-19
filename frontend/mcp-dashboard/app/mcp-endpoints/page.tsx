@@ -336,7 +336,7 @@ export default function McpEndpointsPage() {
                           </div>
                           <div className="grid gap-2 ml-4">
                             {tools.map((tool) => {
-                              const mode = tool.access_mode || 'approval';
+                              const mode = tool.access_mode || 'deny';
                               return (
                                 <div
                                   key={tool.name}
@@ -487,7 +487,7 @@ export default function McpEndpointsPage() {
                           {tools && tools.length > 0 && (
                             <div className="grid gap-2">
                               {tools.map((tool) => {
-                                const mode = tool.access_mode || 'approval';
+                                const mode = tool.access_mode || 'deny';
                                 return (
                                   <div
                                     key={tool.name}

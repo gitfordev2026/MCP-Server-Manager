@@ -56,7 +56,13 @@ def _optional_current_user() -> dict[str, Any] | None:
     return None
 
 
-def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
+def create_access_policy_router(
+    session_local_factory,
+    resolve_owner_fk_ids_fn,
+    write_audit_log_fn,
+    audit_log_model,
+    get_actor_dep,
+):
     router = APIRouter()
 
     @router.get("/access-policies")
@@ -73,9 +79,9 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
             owner = result.setdefault(
                 policy.owner_id,
                 {
-                    "defaultMode": AccessMode.approval,
+                    "defaultMode": AccessMode.deny,
                     "endpointModes": {},
-                    "defaultPolicy": {"mode": AccessMode.approval, "allowed_users": [], "allowed_groups": []},
+                    "defaultPolicy": {"mode": AccessMode.deny, "allowed_users": [], "allowed_groups": []},
                     "endpointPolicies": {},
                 },
             )
@@ -101,9 +107,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     def update_owner_default_policy(
         owner_id: str,
         policy: AccessPolicyUpdate,
-        current_user: dict[str, Any] | None = Depends(_optional_current_user),
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> AccessPolicyResponse:
-        _ = current_user
         with session_local_factory() as db:
             try:
                 stmt = select(AccessPolicyModel).where(
@@ -113,6 +118,11 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                 existing = db.scalar(stmt)
 
                 if existing:
+                    before_state = {
+                        "mode": existing.mode,
+                        "allowed_users": existing.allowed_users or [],
+                        "allowed_groups": existing.allowed_groups or [],
+                    }
                     existing.mode = policy.mode
                     if policy.allowed_users is not None:
                         existing.allowed_users = policy.allowed_users
@@ -132,6 +142,21 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                         owner_id=owner_id,
                         default_mode=None,
                     )
+
+                write_audit_log_fn(
+                    db,
+                    audit_log_model,
+                    actor=actor.get("username", "system"),
+                    action="access_policy.update_default",
+                    resource_type="access_policy",
+                    resource_id=f"{owner_id}:{DEFAULT_TOOL_ID}",
+                    before_state=before_state if existing else None,
+                    after_state={
+                        "mode": policy.mode.value,
+                        "allowed_users": policy.allowed_users or [],
+                        "allowed_groups": policy.allowed_groups or [],
+                    },
+                )
 
                 db.commit()
 
@@ -155,9 +180,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
         owner_id: str,
         tool_id: str,
         policy: AccessPolicyUpdate,
-        current_user: dict[str, Any] | None = Depends(_optional_current_user),
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> AccessPolicyResponse:
-        _ = current_user
         if tool_id == DEFAULT_TOOL_ID:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -173,6 +197,11 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                 existing = db.scalar(stmt)
 
                 if existing:
+                    before_state = {
+                        "mode": existing.mode,
+                        "allowed_users": existing.allowed_users or [],
+                        "allowed_groups": existing.allowed_groups or [],
+                    }
                     existing.mode = policy.mode
                     if policy.allowed_users is not None:
                         existing.allowed_users = policy.allowed_users
@@ -199,6 +228,22 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                             base_url_id=base_url_id,
                         )
                     )
+                    before_state = None
+
+                write_audit_log_fn(
+                    db,
+                    audit_log_model,
+                    actor=actor.get("username", "system"),
+                    action="access_policy.update_tool",
+                    resource_type="access_policy",
+                    resource_id=f"{owner_id}:{tool_id}",
+                    before_state=before_state,
+                    after_state={
+                        "mode": policy.mode.value,
+                        "allowed_users": policy.allowed_users or [],
+                        "allowed_groups": policy.allowed_groups or [],
+                    },
+                )
 
                 db.commit()
 
@@ -222,9 +267,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     def delete_tool_policy(
         owner_id: str,
         tool_id: str,
-        current_user: dict[str, Any] | None = Depends(_optional_current_user),
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> AccessPolicyResponse:
-        _ = current_user
         with session_local_factory() as db:
             try:
                 stmt = delete(AccessPolicyModel).where(
@@ -239,6 +283,17 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail="Policy not found",
                     )
+
+                write_audit_log_fn(
+                    db,
+                    audit_log_model,
+                    actor=actor.get("username", "system"),
+                    action="access_policy.delete_tool",
+                    resource_type="access_policy",
+                    resource_id=f"{owner_id}:{tool_id}",
+                    before_state=None,
+                    after_state=None,
+                )
 
             except SQLAlchemyError as exc:
                 db.rollback()
@@ -260,9 +315,8 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
     def bulk_apply_policy(
         owner_id: str,
         data: AccessPolicyBulkUpdate,
-        current_user: dict[str, Any] | None = Depends(_optional_current_user),
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> AccessPolicyBulkResponse:
-        _ = current_user
         with session_local_factory() as db:
             try:
                 server_id, base_url_id = resolve_owner_fk_ids_fn(db, owner_id)
@@ -298,6 +352,22 @@ def create_access_policy_router(session_local_factory, resolve_owner_fk_ids_fn):
                             base_url_id=base_url_id,
                         )
                     )
+
+                write_audit_log_fn(
+                    db,
+                    audit_log_model,
+                    actor=actor.get("username", "system"),
+                    action="access_policy.bulk_apply",
+                    resource_type="access_policy",
+                    resource_id=owner_id,
+                    before_state=None,
+                    after_state={
+                        "mode": data.mode.value,
+                        "tool_ids": data.tool_ids,
+                        "allowed_users": data.allowed_users or [],
+                        "allowed_groups": data.allowed_groups or [],
+                    },
+                )
 
                 db.commit()
 

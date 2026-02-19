@@ -47,7 +47,45 @@ def ensure_default_access_policy_for_owner(
         AccessPolicyModel(
             owner_id=owner_id,
             tool_id=DEFAULT_TOOL_ID,
-            mode="approval",
+            mode="deny",
+            server_id=resolved_server_id,
+            base_url_id=resolved_base_url_id,
+        )
+    )
+
+
+def ensure_tool_access_policy_for_owner(
+    db,
+    owner_id: str,
+    tool_id: str,
+    server_id: int | None = None,
+    base_url_id: int | None = None,
+) -> None:
+    if not tool_id or tool_id == DEFAULT_TOOL_ID:
+        return
+
+    resolved_server_id, resolved_base_url_id = resolve_owner_fk_ids(
+        db,
+        owner_id,
+        fallback_server_id=server_id,
+        fallback_base_url_id=base_url_id,
+    )
+    policy = db.scalar(
+        select(AccessPolicyModel).where(
+            AccessPolicyModel.owner_id == owner_id,
+            AccessPolicyModel.tool_id == tool_id,
+        )
+    )
+    if policy:
+        policy.server_id = resolved_server_id
+        policy.base_url_id = resolved_base_url_id
+        return
+
+    db.add(
+        AccessPolicyModel(
+            owner_id=owner_id,
+            tool_id=tool_id,
+            mode="deny",
             server_id=resolved_server_id,
             base_url_id=resolved_base_url_id,
         )

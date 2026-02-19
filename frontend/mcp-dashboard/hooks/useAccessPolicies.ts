@@ -43,9 +43,9 @@ export function useUpdateEndpointPolicy() {
         // Ensure structure exists
         if (!next.policies[ownerId]) {
           next.policies[ownerId] = {
-            defaultMode: 'approval',
+            defaultMode: 'deny',
             endpointModes: {},
-            defaultPolicy: { mode: 'approval', allowed_users: [], allowed_groups: [] },
+            defaultPolicy: { mode: 'deny', allowed_users: [], allowed_groups: [] },
             endpointPolicies: {},
           };
         }
@@ -108,9 +108,9 @@ export function useUpdateOwnerDefaultPolicy() {
         // Ensure structure exists
         if (!next.policies[ownerId]) {
           next.policies[ownerId] = {
-            defaultMode: 'approval',
+            defaultMode: 'deny',
             endpointModes: {},
-            defaultPolicy: { mode: 'approval', allowed_users: [], allowed_groups: [] },
+            defaultPolicy: { mode: 'deny', allowed_users: [], allowed_groups: [] },
             endpointPolicies: {},
           };
         }

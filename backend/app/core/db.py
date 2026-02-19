@@ -1,7 +1,29 @@
 from sqlalchemy import column, create_engine, literal, select, table
 from sqlalchemy.orm import sessionmaker
-
+import logging
+from colorlog import ColoredFormatter
 from backend.env import ENV
+
+
+
+handler = logging.StreamHandler()
+handler.setFormatter(
+    ColoredFormatter(
+        "%(log_color)s%(levelname)s:%(name)s:%(message)s",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "red",
+            "ERROR": "red,bg_white",
+            "CRITICAL": "red,bg_white",
+        },
+    )
+)
+
+logger = logging.getLogger()
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
 
 SQLITE_DB_PATH = "servers.db"
 SQLITE_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH}"
@@ -31,7 +53,8 @@ def _ensure_pg_database_exists(url: str) -> None:
                 print(f"[DB] Created PostgreSQL database '{db_name}'")
         admin_engine.dispose()
     except Exception as exc:
-        print(f"[DB] Warning: could not auto-create database: {exc}")
+        # print(f"[DB] Warning: could not auto-create database: {exc}")
+        logger.error(f"[DB] Warning: could not auto-create database: {exc}")
 
 
 def _create_pg_engine(url: str):
@@ -42,6 +65,7 @@ def _create_pg_engine(url: str):
             conn.execute(select(literal(1)))
         return eng
     except Exception as exc:
+        logger.error(f"[DB] PostgreSQL connection failed: {exc}")
         print(f"[DB] PostgreSQL connection failed: {exc}")
         return None
 
@@ -51,10 +75,11 @@ def _setup_database():
         pg_engine = _create_pg_engine(_configured_db_url)
         if pg_engine is not None:
             endpoint = _configured_db_url.split("@")[-1] if "@" in _configured_db_url else _configured_db_url
-            print(f"[DB] Database backend: postgresql ({endpoint})")
+            logger.info(f"[DB] Database backend: postgresql ({endpoint})")
             return pg_engine, "postgresql"
 
         if _fallback_enabled:
+            logger.warning("PostgreSQL connection failed, falling back to SQLite. This is not recommended for production use.")
             print(f"[DB] PostgreSQL unavailable - falling back to SQLite ({SQLITE_DB_PATH})")
         else:
             raise RuntimeError(

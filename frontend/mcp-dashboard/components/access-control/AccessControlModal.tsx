@@ -72,7 +72,7 @@ function DefaultPolicyForm({ ownerId, policy }: { ownerId: string; policy: Owner
     const mutation = useUpdateOwnerDefaultPolicy();
 
     // Local state for form, with safe defaults
-    const defaultMode = policy.defaultPolicy?.mode || 'approval';
+    const defaultMode = policy.defaultPolicy?.mode || 'deny';
     const defaultUsers = policy.defaultPolicy?.allowed_users || [];
     const defaultGroups = policy.defaultPolicy?.allowed_groups || [];
 
@@ -176,7 +176,7 @@ function EndpointsList({
             {endpointIds.map((toolId) => {
                 const hasOverride = !!endpointPolicies[toolId];
                 const toolPolicy = endpointPolicies[toolId] || {
-                    mode: policy.defaultPolicy?.mode || 'approval',
+                    mode: policy.defaultPolicy?.mode || 'deny',
                     allowed_users: policy.defaultPolicy?.allowed_users || [],
                     allowed_groups: policy.defaultPolicy?.allowed_groups || [],
                 };

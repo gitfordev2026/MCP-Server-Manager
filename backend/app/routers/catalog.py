@@ -43,7 +43,7 @@ def create_catalog_router(
                 return owner_policies[tool_id]
             if "__default__" in owner_policies:
                 return owner_policies["__default__"]
-            return "approval"
+            return "deny"
 
         tools_list = [
             {
