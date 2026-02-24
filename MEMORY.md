@@ -159,3 +159,17 @@ Last updated: 2026-02-19
   - Enforced left/right separation with `justify-between` and explicit `ml-6` on button rail.
   - Made brand link non-shrinking (`shrink-0`) to prevent title/button collision.
   - Removed extra left margin from first button and kept horizontal overflow behavior for narrow screens.
+- 2026-02-24: Swagger grouping improved via router tags in `backend/main.py`.
+  - Added explicit `tags=[...]` on all `app.include_router(...)` registrations.
+  - Current tag groups: Health, Applications, Catalog, MCP Servers, Agent, Access Policies, Dashboard, Audit Logs, Tools, API Endpoints.
+- 2026-02-24: Request body schemas hardened to remove free-form extra properties in Swagger and runtime.
+  - Added `model_config = ConfigDict(extra=\"forbid\")` to request models in:
+    - `backend/app/routers/tools.py`
+    - `backend/app/routers/endpoints.py`
+    - `backend/app/routers/access_policies.py`
+    - `backend/app/routers/base_urls.py`
+    - `backend/app/routers/servers.py`
+    - `backend/app/schemas/registration.py`
+- 2026-02-24: Added Swagger operation metadata on all router endpoints.
+  - Added `summary` + `description` to each route decorator.
+  - Each description includes `Source: backend/app/routers/<file>.py` for quick implementation traceability.

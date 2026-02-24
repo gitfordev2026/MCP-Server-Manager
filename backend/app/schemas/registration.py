@@ -1,10 +1,12 @@
 import ipaddress
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ServerRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     url: str
     description: str | None = ""
@@ -41,6 +43,8 @@ class ServerRegistration(BaseModel):
 
 
 class BaseURLRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     url: str
     description: str | None = ""

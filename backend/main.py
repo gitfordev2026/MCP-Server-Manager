@@ -1281,7 +1281,8 @@ app.include_router(
         AUTH_ENABLED,
         KEYCLOAK_ISSUER,
         KEYCLOAK_VERIFY_AUD,
-    )
+    ),
+    tags=["Health"],
 )
 app.include_router(
     create_base_urls_router(
@@ -1296,7 +1297,8 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         get_request_actor,
-    )
+    ),
+    tags=["Applications"],
 )
 app.include_router(
     create_catalog_router(
@@ -1306,7 +1308,8 @@ app.include_router(
         _fetch_all_mcp_server_tools,
         OPENAPI_MCP_FETCH_RETRIES,
         OPENAPI_MCP_CACHE_TTL_SEC,
-    )
+    ),
+    tags=["Catalog"],
 )
 app.include_router(
     create_servers_router(
@@ -1320,9 +1323,10 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         get_request_actor,
-    )
+    ),
+    tags=["MCP Servers"],
 )
-app.include_router(create_agent_router(agent))
+app.include_router(create_agent_router(agent), tags=["Agent"])
 app.include_router(
     create_access_policy_router(
         SessionLocal,
@@ -1330,7 +1334,8 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         get_request_actor,
-    )
+    ),
+    tags=["Access Policies"],
 )
 app.include_router(
     create_dashboard_router(
@@ -1339,13 +1344,15 @@ app.include_router(
         ServerModel,
         MCPToolModel,
         MCPClient,
-    )
+    ),
+    tags=["Dashboard"],
 )
 app.include_router(
     create_audit_router(
         SessionLocal,
         AuditLogModel,
-    )
+    ),
+    tags=["Audit Logs"],
 )
 app.include_router(
     create_tools_router(
@@ -1355,7 +1362,8 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         require_permission,
-    )
+    ),
+    tags=["Tools"],
 )
 app.include_router(
     create_endpoints_router(
@@ -1365,7 +1373,8 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         require_permission,
-    )
+    ),
+    tags=["API Endpoints"],
 )
 
 

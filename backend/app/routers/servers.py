@@ -3,7 +3,7 @@ from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 
@@ -22,6 +22,8 @@ def create_servers_router(
     router = APIRouter()
 
     class ServerUpdate(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         description: str | None = None
         url: str | None = None
         is_enabled: bool | None = None
@@ -56,7 +58,11 @@ def create_servers_router(
                 "error": str(exc),
             }
 
-    @router.post("/register-server")
+    @router.post(
+        "/register-server",
+        summary="Register MCP Server",
+        description="Create or update an MCP server registration after connectivity probe. Source: backend/app/routers/servers.py",
+    )
     async def register_server(
         data: server_registration_model,
         actor: dict[str, Any] = Depends(get_actor_dep),
@@ -136,7 +142,11 @@ def create_servers_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @router.get("/servers/{server_name}/tools")
+    @router.get(
+        "/servers/{server_name}/tools",
+        summary="List MCP Server Tools",
+        description="List tools from a specific MCP server with effective access mode. Source: backend/app/routers/servers.py",
+    )
     async def get_server_tools(
         server_name: str,
         current_user: dict[str, Any] | None = None,
@@ -191,7 +201,11 @@ def create_servers_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Error retrieving tools: {exc}") from exc
 
-    @router.get("/servers")
+    @router.get(
+        "/servers",
+        summary="List MCP Servers",
+        description="List all registered MCP servers. Source: backend/app/routers/servers.py",
+    )
     def list_servers(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
@@ -215,7 +229,11 @@ def create_servers_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @router.get("/servers/status")
+    @router.get(
+        "/servers/status",
+        summary="Get MCP Servers Status",
+        description="Health/status rollup for all registered MCP servers. Source: backend/app/routers/servers.py",
+    )
     async def list_servers_status(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -242,7 +260,11 @@ def create_servers_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Error retrieving server statuses: {exc}") from exc
 
-    @router.get("/servers/{server_name}/status")
+    @router.get(
+        "/servers/{server_name}/status",
+        summary="Get MCP Server Status",
+        description="Health/status details for one MCP server. Source: backend/app/routers/servers.py",
+    )
     async def get_server_status(
         server_name: str,
         current_user: dict[str, Any] | None = None,
@@ -261,7 +283,11 @@ def create_servers_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Error retrieving server status: {exc}") from exc
 
-    @router.patch("/servers/{server_name}")
+    @router.patch(
+        "/servers/{server_name}",
+        summary="Update MCP Server",
+        description="Update MCP server metadata/settings by name. Source: backend/app/routers/servers.py",
+    )
     def update_server(
         server_name: str,
         payload: ServerUpdate,
@@ -305,7 +331,11 @@ def create_servers_router(
             db.commit()
         return {"status": "updated", "name": server_name}
 
-    @router.delete("/servers/{server_name}")
+    @router.delete(
+        "/servers/{server_name}",
+        summary="Delete MCP Server",
+        description="Soft-delete or hard-delete an MCP server by name. Source: backend/app/routers/servers.py",
+    )
     def delete_server(
         server_name: str,
         hard: bool = Query(default=False),

@@ -61,7 +61,11 @@ def create_dashboard_router(
                 "error": str(exc),
             }
 
-    @router.get("/dashboard/stats")
+    @router.get(
+        "/dashboard/stats",
+        summary="Get Dashboard Stats",
+        description="Return dashboard cards and live status checks for apps and MCP servers. Source: backend/app/routers/dashboard.py",
+    )
     async def get_dashboard_stats() -> dict[str, Any]:
         with session_local_factory() as db:
             apps = db.scalars(select(base_url_model).where(base_url_model.is_deleted == False)).all()  # noqa: E712

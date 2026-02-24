@@ -1,11 +1,13 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 
 class EndpointCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     owner_id: str
     method: str
     path: str
@@ -19,6 +21,8 @@ class EndpointCreate(BaseModel):
 
 
 class EndpointUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     method: str | None = None
     path: str | None = None
     description: str | None = None
@@ -40,7 +44,11 @@ def create_endpoints_router(
 ) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/endpoints")
+    @router.get(
+        "/endpoints",
+        summary="List API Endpoints",
+        description="List all non-deleted API endpoints from the registry. Source: backend/app/routers/endpoints.py",
+    )
     def list_endpoints() -> dict[str, Any]:
         with session_local_factory() as db:
             rows = db.scalars(
@@ -64,7 +72,11 @@ def create_endpoints_router(
             ]
         }
 
-    @router.post("/endpoints")
+    @router.post(
+        "/endpoints",
+        summary="Create API Endpoint",
+        description="Create an API endpoint and write initial version metadata. Source: backend/app/routers/endpoints.py",
+    )
     def create_endpoint(
         payload: EndpointCreate,
         actor: dict[str, Any] = Depends(require_permission_fn("endpoint:manage")),
@@ -133,7 +145,11 @@ def create_endpoints_router(
             db.commit()
             return {"status": "created", "id": endpoint.id}
 
-    @router.patch("/endpoints/{endpoint_id}")
+    @router.patch(
+        "/endpoints/{endpoint_id}",
+        summary="Update API Endpoint",
+        description="Update API endpoint metadata/state and optionally append a new version. Source: backend/app/routers/endpoints.py",
+    )
     def update_endpoint(
         endpoint_id: int,
         payload: EndpointUpdate,
@@ -222,7 +238,11 @@ def create_endpoints_router(
             db.commit()
             return {"status": "updated", "id": endpoint.id}
 
-    @router.delete("/endpoints/{endpoint_id}")
+    @router.delete(
+        "/endpoints/{endpoint_id}",
+        summary="Delete API Endpoint",
+        description="Soft-delete or hard-delete an API endpoint by id. Source: backend/app/routers/endpoints.py",
+    )
     def delete_endpoint(
         endpoint_id: int,
         hard: bool = False,

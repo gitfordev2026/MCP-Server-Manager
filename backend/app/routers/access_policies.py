@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -16,6 +16,8 @@ class AccessMode(str, Enum):
 
 
 class AccessPolicyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     mode: AccessMode
     allowed_users: list[str] | None = None
     allowed_groups: list[str] | None = None
@@ -32,6 +34,8 @@ class AccessPolicyResponse(BaseModel):
 
 
 class AccessPolicyBulkUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     mode: AccessMode
     tool_ids: list[str]
     allowed_users: list[str] | None = None
@@ -65,7 +69,11 @@ def create_access_policy_router(
 ):
     router = APIRouter()
 
-    @router.get("/access-policies")
+    @router.get(
+        "/access-policies",
+        summary="List Access Policies",
+        description="List default and per-tool access policies grouped by owner. Source: backend/app/routers/access_policies.py",
+    )
     def list_access_policies(
         current_user: dict[str, Any] | None = Depends(_optional_current_user),
     ) -> dict[str, Any]:
@@ -103,7 +111,12 @@ def create_access_policy_router(
 
         return {"policies": result}
 
-    @router.put("/access-policies/{owner_id}", response_model=AccessPolicyResponse)
+    @router.put(
+        "/access-policies/{owner_id}",
+        response_model=AccessPolicyResponse,
+        summary="Update Default Owner Policy",
+        description="Update default (__default__) access policy for an owner. Source: backend/app/routers/access_policies.py",
+    )
     def update_owner_default_policy(
         owner_id: str,
         policy: AccessPolicyUpdate,
@@ -175,7 +188,12 @@ def create_access_policy_router(
             allowed_groups=policy.allowed_groups,
         )
 
-    @router.put("/access-policies/{owner_id}/{tool_id}", response_model=AccessPolicyResponse)
+    @router.put(
+        "/access-policies/{owner_id}/{tool_id}",
+        response_model=AccessPolicyResponse,
+        summary="Update Tool Policy",
+        description="Create or update access policy for one tool under an owner. Source: backend/app/routers/access_policies.py",
+    )
     def update_tool_policy(
         owner_id: str,
         tool_id: str,
@@ -263,7 +281,12 @@ def create_access_policy_router(
             allowed_groups=policy.allowed_groups,
         )
 
-    @router.delete("/access-policies/{owner_id}/{tool_id}", response_model=AccessPolicyResponse)
+    @router.delete(
+        "/access-policies/{owner_id}/{tool_id}",
+        response_model=AccessPolicyResponse,
+        summary="Delete Tool Policy",
+        description="Delete a per-tool access policy for an owner. Source: backend/app/routers/access_policies.py",
+    )
     def delete_tool_policy(
         owner_id: str,
         tool_id: str,
@@ -311,6 +334,8 @@ def create_access_policy_router(
     @router.post(
         "/access-policies/{owner_id}/apply-all",
         response_model=AccessPolicyBulkResponse,
+        summary="Bulk Apply Policy",
+        description="Apply one policy mode/users/groups across owner default and selected tools. Source: backend/app/routers/access_policies.py",
     )
     def bulk_apply_policy(
         owner_id: str,

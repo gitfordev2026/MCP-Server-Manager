@@ -7,7 +7,11 @@ from sqlalchemy import select
 def create_audit_router(session_local_factory, audit_log_model) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/audit-logs")
+    @router.get(
+        "/audit-logs",
+        summary="List Audit Logs",
+        description="Return latest audit trail entries with before/after state snapshots. Source: backend/app/routers/audit.py",
+    )
     def list_audit_logs(
         limit: int = Query(default=100, ge=1, le=1000),
     ) -> dict[str, Any]:
@@ -35,4 +39,3 @@ def create_audit_router(session_local_factory, audit_log_model) -> APIRouter:
         }
 
     return router
-

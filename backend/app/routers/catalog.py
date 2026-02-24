@@ -14,7 +14,11 @@ def create_catalog_router(
 ) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/mcp/openapi/catalog")
+    @router.get(
+        "/mcp/openapi/catalog",
+        summary="Get Unified Tool Catalog",
+        description="Return OpenAPI + MCP server tool catalog with policy modes. Source: backend/app/routers/catalog.py",
+    )
     async def get_openapi_tool_catalog(
         force_refresh: bool = Query(default=True),
         retries: int = Query(default=openapi_mcp_fetch_retries, ge=0, le=5),
@@ -98,7 +102,11 @@ def create_catalog_router(
             "mcp_server_tools": mcp_server_tool_list,
         }
 
-    @router.get("/mcp/openapi/diagnostics")
+    @router.get(
+        "/mcp/openapi/diagnostics",
+        summary="Get Catalog Diagnostics",
+        description="Return OpenAPI sync diagnostics and per-app discovery status. Source: backend/app/routers/catalog.py",
+    )
     async def get_openapi_sync_diagnostics(
         retries: int = Query(default=2, ge=0, le=5),
         current_user: dict[str, Any] | None = None,

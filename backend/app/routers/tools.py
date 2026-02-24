@@ -1,11 +1,13 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 
 class ToolCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     owner_id: str
     name: str
     description: str = Field(min_length=1)
@@ -19,6 +21,8 @@ class ToolCreate(BaseModel):
 
 
 class ToolUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     description: str | None = None
     version: str | None = None
@@ -39,7 +43,11 @@ def create_tools_router(
 ) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/tools")
+    @router.get(
+        "/tools",
+        summary="List Tools",
+        description="List all non-deleted tools from the registry. Source: backend/app/routers/tools.py",
+    )
     def list_tools() -> dict[str, Any]:
         with session_local_factory() as db:
             rows = db.scalars(
@@ -63,7 +71,11 @@ def create_tools_router(
             ]
         }
 
-    @router.post("/tools")
+    @router.post(
+        "/tools",
+        summary="Create Tool",
+        description="Create a tool and write initial version metadata. Source: backend/app/routers/tools.py",
+    )
     def create_tool(
         payload: ToolCreate,
         actor: dict[str, Any] = Depends(require_permission_fn("tool:manage")),
@@ -123,7 +135,11 @@ def create_tools_router(
             db.commit()
             return {"status": "created", "id": tool.id}
 
-    @router.patch("/tools/{tool_id}")
+    @router.patch(
+        "/tools/{tool_id}",
+        summary="Update Tool",
+        description="Update tool metadata/state and optionally append a new version. Source: backend/app/routers/tools.py",
+    )
     def update_tool(
         tool_id: int,
         payload: ToolUpdate,
@@ -199,7 +215,11 @@ def create_tools_router(
             db.commit()
             return {"status": "updated", "id": tool.id}
 
-    @router.delete("/tools/{tool_id}")
+    @router.delete(
+        "/tools/{tool_id}",
+        summary="Delete Tool",
+        description="Soft-delete or hard-delete a tool by id. Source: backend/app/routers/tools.py",
+    )
     def delete_tool(
         tool_id: int,
         hard: bool = False,
@@ -237,4 +257,3 @@ def create_tools_router(
             return {"status": "deleted", "hard": hard}
 
     return router
-

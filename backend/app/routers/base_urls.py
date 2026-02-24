@@ -1,7 +1,7 @@
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 
@@ -21,13 +21,19 @@ def create_base_urls_router(
     router = APIRouter()
 
     class BaseURLUpdate(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         description: str | None = None
         url: str | None = None
         openapi_path: str | None = None
         include_unreachable_tools: bool | None = None
         is_enabled: bool | None = None
 
-    @router.post("/register-base-url")
+    @router.post(
+        "/register-base-url",
+        summary="Register Application",
+        description="Create or update an application base URL registration. Source: backend/app/routers/base_urls.py",
+    )
     def register_base_url(
         data: base_url_registration_model,
         actor: dict[str, Any] = Depends(get_actor_dep),
@@ -113,7 +119,11 @@ def create_base_urls_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @router.get("/base-urls")
+    @router.get(
+        "/base-urls",
+        summary="List Applications",
+        description="List all registered application base URLs. Source: backend/app/routers/base_urls.py",
+    )
     def list_base_urls(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
@@ -139,7 +149,11 @@ def create_base_urls_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @router.get("/openapi-spec")
+    @router.get(
+        "/openapi-spec",
+        summary="Fetch OpenAPI Spec",
+        description="Fetch and validate OpenAPI spec for a target URL/path. Source: backend/app/routers/base_urls.py",
+    )
     async def get_openapi_spec(
         url: str,
         openapi_path: str | None = None,
@@ -155,7 +169,11 @@ def create_base_urls_router(
             status_code = 400 if detail.startswith("URL must") else 502
             raise HTTPException(status_code=status_code, detail=detail) from exc
 
-    @router.patch("/base-urls/{name}")
+    @router.patch(
+        "/base-urls/{name}",
+        summary="Update Application",
+        description="Update application metadata/settings by name. Source: backend/app/routers/base_urls.py",
+    )
     def update_base_url(
         name: str,
         payload: BaseURLUpdate,
@@ -210,7 +228,11 @@ def create_base_urls_router(
         reset_openapi_catalog_fn()
         return {"status": "updated", "name": name}
 
-    @router.delete("/base-urls/{name}")
+    @router.delete(
+        "/base-urls/{name}",
+        summary="Delete Application",
+        description="Soft-delete or hard-delete an application by name. Source: backend/app/routers/base_urls.py",
+    )
     def delete_base_url(
         name: str,
         hard: bool = Query(default=False),

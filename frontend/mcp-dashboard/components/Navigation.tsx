@@ -49,111 +49,47 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
             : 'bg-gradient-to-r from-white/95 to-slate-50/95 border-b border-amber-400/30 shadow-lg shadow-amber-200/20'
           } backdrop-blur-3xl transition-all duration-500`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-6">
-        <Link href="/" className="shrink-0">
-          <div className="flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform duration-300 flex-shrink-0 min-w-max">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg shadow-amber-500/30">
-              <span className="text-lg font-bold text-slate-950">M</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-22 py-4 flex items-center gap-4">
+          
+          {/* Logo - fixed width, never shrinks */}
+          <Link href="/" className="flex-shrink-0">
+            <div className="flex items-center gap-2 cursor-pointer hover:scale-105 transition-transform duration-300">
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg shadow-amber-500/30">
+                <span className="text-lg font-bold text-slate-950">M</span>
+              </div>
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold bg-gradient-to-r from-amber-400 to-amber-300 bg-clip-text text-transparent whitespace-nowrap leading-none">
+                  MCP Server Manager
+                </h1>
+                <p className={`text-xs font-medium whitespace-nowrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {getPageName()}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-400 to-amber-300 bg-clip-text text-transparent whitespace-nowrap leading-none">
-                MCP Server Manager
-              </h1>
-              <p className={`text-xs font-medium whitespace-nowrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{getPageName()}</p>
+          </Link>
+
+          {/* Nav buttons - scrolls horizontally if needed */}
+          <div className="flex-1 overflow-x-auto">
+            <div className="flex gap-2 items-center justify-end flex-nowrap">
+              <Link href="/"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Dashboard</Button></Link>
+
+              <Link href="/register-server"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-server' || pathname.includes('/servers/') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register Server</Button></Link>
+
+              <Link href="/register-app"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register App</Button></Link>
+
+              <Link href="/access-control"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Access Control</Button></Link>
+
+              <Link href="/mcp-endpoints"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>MCP Endpoints</Button></Link>
+
+              <Link href="/chat"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Chat</Button></Link>
+
+              <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Admin</Button></Link>
             </div>
           </div>
-        </Link>
 
-        <div className="ml-6 flex-1 min-w-0">
-        <div className="flex gap-2 md:gap-3 items-center flex-nowrap justify-end overflow-x-auto whitespace-nowrap pb-1">
-          <Link href="/">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/'
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 shadow-md shadow-amber-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              Dashboard
-            </Button>
-          </Link>
-
-          <Link href="/register-server">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-server' || pathname.includes('/servers/')
-                  ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 shadow-md shadow-emerald-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              Register Server
-            </Button>
-          </Link>
-
-          <Link href="/register-app">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/')
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 shadow-md shadow-blue-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              Register App
-            </Button>
-          </Link>
-
-          <Link href="/access-control">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/access-control'
-                  ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700 shadow-md shadow-indigo-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              Access Control
-            </Button>
-          </Link>
-
-          <Link href="/mcp-endpoints">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints'
-                  ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700 shadow-md shadow-purple-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              MCP Endpoints
-            </Button>
-          </Link>
-
-          <Link href="/chat">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat'
-                  ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white hover:from-violet-600 hover:to-violet-700 shadow-md shadow-violet-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              Chat
-            </Button>
-          </Link>
-
-          <Link href="/admin">
-            <Button
-              variant="ghost"
-              className={`px-4 py-2 rounded-lg text-sm md:text-base font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin'
-                  ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white hover:from-rose-600 hover:to-orange-600 shadow-md shadow-rose-300/30'
-                  : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'
-                }`}
-            >
-              Admin
-            </Button>
-          </Link>
-        </div>
-        </div>
         </div>
       </nav>
-      <div className="h-[92px] md:h-[96px]" aria-hidden="true"></div>
+      <div className="h-[80px]" aria-hidden="true"></div>
     </>
   );
 }
