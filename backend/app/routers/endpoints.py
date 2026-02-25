@@ -37,6 +37,8 @@ class EndpointUpdate(BaseModel):
 def create_endpoints_router(
     session_local_factory,
     api_endpoint_model,
+    server_model,
+    base_url_model,
     endpoint_version_model,
     write_audit_log_fn,
     audit_log_model,
@@ -51,9 +53,41 @@ def create_endpoints_router(
     )
     def list_endpoints() -> dict[str, Any]:
         with session_local_factory() as db:
+            active_server_names = {
+                row.name
+                for row in db.scalars(
+                    select(server_model).where(
+                        server_model.is_deleted == False,  # noqa: E712
+                        server_model.is_enabled == True,  # noqa: E712
+                    )
+                ).all()
+            }
+            active_base_url_names = {
+                row.name
+                for row in db.scalars(
+                    select(base_url_model).where(
+                        base_url_model.is_deleted == False,  # noqa: E712
+                        base_url_model.is_enabled == True,  # noqa: E712
+                    )
+                ).all()
+            }
             rows = db.scalars(
                 select(api_endpoint_model).where(api_endpoint_model.is_deleted == False)  # noqa: E712
             ).all()
+
+        visible_rows = []
+        for row in rows:
+            owner_id = row.owner_id or ""
+            if owner_id.startswith("mcp:"):
+                owner_name = owner_id[4:]
+                if owner_name not in active_server_names:
+                    continue
+            elif owner_id.startswith("app:"):
+                owner_name = owner_id[4:]
+                if owner_name not in active_base_url_names:
+                    continue
+            visible_rows.append(row)
+
         return {
             "endpoints": [
                 {
@@ -68,7 +102,7 @@ def create_endpoints_router(
                     "exposed_to_mcp": row.exposed_to_mcp,
                     "exposure_approved": row.exposure_approved,
                 }
-                for row in rows
+                for row in visible_rows
             ]
         }
 
@@ -204,18 +238,32 @@ def create_endpoints_router(
                         detail="version is required when updating endpoint metadata",
                     )
                 endpoint.current_version = payload.version
-                db.add(
-                    endpoint_version_model(
-                        endpoint_id=endpoint.id,
-                        owner_id=endpoint.owner_id,
-                        method=endpoint.method,
-                        path=endpoint.path,
-                        version=payload.version,
-                        description=endpoint.description,
-                        schema=payload.payload_schema,
-                        exposed_to_mcp=endpoint.exposed_to_mcp,
+                version_row = db.scalar(
+                    select(endpoint_version_model).where(
+                        endpoint_version_model.endpoint_id == endpoint.id,
+                        endpoint_version_model.version == payload.version,
                     )
                 )
+                if version_row:
+                    version_row.owner_id = endpoint.owner_id
+                    version_row.method = endpoint.method
+                    version_row.path = endpoint.path
+                    version_row.description = endpoint.description
+                    version_row.schema = payload.payload_schema
+                    version_row.exposed_to_mcp = endpoint.exposed_to_mcp
+                else:
+                    db.add(
+                        endpoint_version_model(
+                            endpoint_id=endpoint.id,
+                            owner_id=endpoint.owner_id,
+                            method=endpoint.method,
+                            path=endpoint.path,
+                            version=payload.version,
+                            description=endpoint.description,
+                            schema=payload.payload_schema,
+                            exposed_to_mcp=endpoint.exposed_to_mcp,
+                        )
+                    )
 
             write_audit_log_fn(
                 db,

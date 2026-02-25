@@ -1,28 +1,10 @@
 from sqlalchemy import column, create_engine, literal, select, table
 from sqlalchemy.orm import sessionmaker
-import logging
-from colorlog import ColoredFormatter
 from backend.env import ENV
+from backend.app.core.logger import get_logger
 
 
-
-handler = logging.StreamHandler()
-handler.setFormatter(
-    ColoredFormatter(
-        "%(log_color)s%(levelname)s:%(name)s:%(message)s",
-        log_colors={
-            "DEBUG": "cyan",
-            "INFO": "green",
-            "WARNING": "red",
-            "ERROR": "red,bg_white",
-            "CRITICAL": "red,bg_white",
-        },
-    )
-)
-
-logger = logging.getLogger()
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+logger = get_logger(__name__)
 
 
 SQLITE_DB_PATH = "servers.db"
@@ -50,7 +32,8 @@ def _ensure_pg_database_exists(url: str) -> None:
             ).fetchone()
             if not exists:
                 conn.exec_driver_sql(f'CREATE DATABASE "{db_name}"')
-                print(f"[DB] Created PostgreSQL database '{db_name}'")
+                logger.info(f"[DB] Created PostgreSQL database '{db_name}'")
+                # print(f"[DB] Created PostgreSQL database '{db_name}'")
         admin_engine.dispose()
     except Exception as exc:
         # print(f"[DB] Warning: could not auto-create database: {exc}")

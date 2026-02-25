@@ -62,6 +62,8 @@ def _optional_current_user() -> dict[str, Any] | None:
 
 def create_access_policy_router(
     session_local_factory,
+    server_model,
+    base_url_model,
     resolve_owner_fk_ids_fn,
     write_audit_log_fn,
     audit_log_model,
@@ -79,11 +81,33 @@ def create_access_policy_router(
     ) -> dict[str, Any]:
         _ = current_user
         with session_local_factory() as db:
+            active_owner_ids = {
+                f"mcp:{row.name}"
+                for row in db.scalars(
+                    select(server_model).where(
+                        server_model.is_deleted == False,  # noqa: E712
+                        server_model.is_enabled == True,  # noqa: E712
+                    )
+                ).all()
+            }
+            active_owner_ids.update(
+                {
+                    f"app:{row.name}"
+                    for row in db.scalars(
+                        select(base_url_model).where(
+                            base_url_model.is_deleted == False,  # noqa: E712
+                            base_url_model.is_enabled == True,  # noqa: E712
+                        )
+                    ).all()
+                }
+            )
             policies = db.scalars(select(AccessPolicyModel)).all()
 
         result: dict[str, dict[str, Any]] = {}
 
         for policy in policies:
+            if policy.owner_id not in active_owner_ids:
+                continue
             owner = result.setdefault(
                 policy.owner_id,
                 {

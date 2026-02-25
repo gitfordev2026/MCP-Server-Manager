@@ -2,6 +2,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_ollama import ChatOllama
 from mcp_use import MCPAgent, MCPClient
 
+from backend.env import ENV
+
 
 class LLMDebugCallback(BaseCallbackHandler):
     def on_llm_start(self, serialized, prompts, **kwargs):
@@ -19,19 +21,20 @@ class LLMDebugCallback(BaseCallbackHandler):
 def build_default_agent() -> MCPAgent:
     config = {
         "mcpServers": {
-            "http_server": {
-                "url": "http://11.0.25.132:8005/mcp",
+            ENV.agent_mcp_server_name: {
+                "url": ENV.agent_mcp_server_url,
             }
         }
     }
 
     client = MCPClient(config)
+    callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
 
     llm = ChatOllama(
-        model="gpt-oss:120b",
-        base_url="http://11.0.25.132:11434",
-        temperature=0.7,
-        callbacks=[LLMDebugCallback()],
+        model=ENV.agent_ollama_model,
+        base_url=ENV.agent_ollama_base_url,
+        temperature=ENV.agent_ollama_temperature,
+        callbacks=callbacks,
     )
 
-    return MCPAgent(llm=llm, client=client, callbacks=[LLMDebugCallback()])
+    return MCPAgent(llm=llm, client=client, callbacks=callbacks)

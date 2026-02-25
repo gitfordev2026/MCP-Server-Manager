@@ -3,6 +3,8 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uni
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 DEFAULT_TOOL_ID = "__default__"
+DOMAIN_ADM = "ADM"
+DOMAIN_OPS = "OPS"
 
 
 def utc_now() -> datetime.datetime:
@@ -20,6 +22,9 @@ class ServerModel(Base):
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     url: Mapped[str] = mapped_column(String, nullable=False)
+    domain_type: Mapped[str] = mapped_column(String(16), nullable=False, default=DOMAIN_ADM)
+    auth_profile_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    selected_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
@@ -33,6 +38,9 @@ class BaseURLModel(Base):
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     url: Mapped[str] = mapped_column(String, nullable=False)
+    domain_type: Mapped[str] = mapped_column(String(16), nullable=False, default=DOMAIN_ADM)
+    auth_profile_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    selected_endpoints: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
     openapi_path: Mapped[str] = mapped_column(String, nullable=False, default="")
     include_unreachable_tools: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -241,3 +249,18 @@ class HealthStatusHistoryModel(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     detail: Mapped[str] = mapped_column(String, nullable=False, default="")
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+
+
+class DomainAuthProfileModel(Base):
+    __tablename__ = "domain_auth_profiles"
+    __table_args__ = (UniqueConstraint("domain_type", name="uq_domain_auth_profiles_domain"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    domain_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    issuer_url: Mapped[str] = mapped_column(String, nullable=False, default="")
+    realm: Mapped[str] = mapped_column(String, nullable=False, default="")
+    client_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    profile_metadata: Mapped[dict[str, object] | None] = mapped_column("metadata", JSON, nullable=True)
+    created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)

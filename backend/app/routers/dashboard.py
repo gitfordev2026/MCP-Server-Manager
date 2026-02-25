@@ -72,6 +72,21 @@ def create_dashboard_router(
             servers = db.scalars(select(server_model).where(server_model.is_deleted == False)).all()  # noqa: E712
             tools = db.scalars(select(mcp_tool_model).where(mcp_tool_model.is_deleted == False)).all()  # noqa: E712
 
+        active_server_ids = {server.id for server in servers if getattr(server, "is_enabled", True)}
+        active_api_ids = {app.id for app in apps if getattr(app, "is_enabled", True)}
+        visible_tools = []
+        for tool in tools:
+            source_type = getattr(tool, "source_type", "")
+            if source_type == "mcp":
+                server_id = getattr(tool, "server_id", None)
+                if server_id is not None and server_id not in active_server_ids:
+                    continue
+            elif source_type == "openapi":
+                raw_api_id = getattr(tool, "raw_api_id", None)
+                if raw_api_id is not None and raw_api_id not in active_api_ids:
+                    continue
+            visible_tools.append(tool)
+
         app_checks = [probe_app_status(app.name, app.url) for app in apps]
         server_checks = [probe_server_status(server.name, server.url) for server in servers]
         app_statuses = await asyncio.gather(*app_checks) if app_checks else []
@@ -88,8 +103,8 @@ def create_dashboard_router(
                 "total_mcp_servers": len(servers),
                 "mcp_servers_alive": servers_alive,
                 "mcp_servers_down": len(servers) - servers_alive,
-                "total_tools": sum(1 for t in tools if getattr(t, "source_type", "") == "mcp"),
-                "total_api_endpoints": sum(1 for t in tools if getattr(t, "source_type", "") == "openapi"),
+                "total_tools": sum(1 for t in visible_tools if getattr(t, "source_type", "") == "mcp"),
+                "total_api_endpoints": sum(1 for t in visible_tools if getattr(t, "source_type", "") == "openapi"),
             },
             "applications": app_statuses,
             "mcp_servers": server_statuses,

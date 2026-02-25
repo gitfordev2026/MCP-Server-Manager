@@ -42,6 +42,19 @@ class BackendEnv:
     db_fallback_sqlite: bool
     openapi_mcp_cache_ttl_sec: int
     openapi_mcp_fetch_retries: int
+    agent_mcp_server_name: str
+    agent_mcp_server_url: str
+    agent_ollama_model: str
+    agent_ollama_base_url: str
+    agent_ollama_temperature: float
+    agent_debug_callbacks: bool
+    log_level: str
+    adm_keycloak_server_url: str
+    adm_keycloak_realm: str
+    adm_keycloak_client_id: str
+    ops_keycloak_server_url: str
+    ops_keycloak_realm: str
+    ops_keycloak_client_id: str
 
 
 def load_backend_env() -> BackendEnv:
@@ -68,6 +81,19 @@ def load_backend_env() -> BackendEnv:
         db_fallback_sqlite=os.getenv("DB_FALLBACK_SQLITE", "true").strip().lower() == "true",
         openapi_mcp_cache_ttl_sec=int(os.getenv("OPENAPI_MCP_CACHE_TTL_SEC", "30").strip()),
         openapi_mcp_fetch_retries=int(os.getenv("OPENAPI_MCP_FETCH_RETRIES", "1").strip()),
+        agent_mcp_server_name=os.getenv("AGENT_MCP_SERVER_NAME", "http_server").strip() or "http_server",
+        agent_mcp_server_url=os.getenv("AGENT_MCP_SERVER_URL", "http://11.0.25.132:8005/mcp").strip(),
+        agent_ollama_model=os.getenv("AGENT_OLLAMA_MODEL", "gpt-oss:120b").strip(),
+        agent_ollama_base_url=os.getenv("AGENT_OLLAMA_BASE_URL", "http://11.0.25.132:11434").strip(),
+        agent_ollama_temperature=float(os.getenv("AGENT_OLLAMA_TEMPERATURE", "0.7").strip()),
+        agent_debug_callbacks=os.getenv("AGENT_DEBUG_CALLBACKS", "true").strip().lower() == "true",
+        log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
+        adm_keycloak_server_url=os.getenv("ADM_KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
+        adm_keycloak_realm=os.getenv("ADM_KEYCLOAK_REALM", "").strip(),
+        adm_keycloak_client_id=os.getenv("ADM_KEYCLOAK_CLIENT_ID", "").strip(),
+        ops_keycloak_server_url=os.getenv("OPS_KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
+        ops_keycloak_realm=os.getenv("OPS_KEYCLOAK_REALM", "").strip(),
+        ops_keycloak_client_id=os.getenv("OPS_KEYCLOAK_CLIENT_ID", "").strip(),
     )
 
 

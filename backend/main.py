@@ -11,7 +11,6 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from mcp.server.fastmcp import FastMCP
 from mcp.types import Tool as MCPTool
 from mcp_use import MCPClient
 from sqlalchemy import (
@@ -30,6 +29,12 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.env import ENV
 from backend.app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
 from backend.app.core.rbac import build_require_permission, get_request_actor
+from backend.app.core.mcp_runtime import (
+    MCP_RUNTIME_INFO,
+    FastMCP,
+    build_fastmcp_asgi_app,
+    run_mcp_server_lifespan,
+)
 from backend.app.core.db import DB_BACKEND, SessionLocal, engine
 from backend.app.models.db_models import (
     APIEndpointModel,
@@ -47,7 +52,10 @@ from backend.app.models.db_models import (
     ServerModel,
     ToolVersionModel,
     EndpointVersionModel,
+    DomainAuthProfileModel,
     UserModel,
+    DOMAIN_ADM,
+    DOMAIN_OPS,
     utc_now,
 )
 from backend.app.routers.audit import create_audit_router
@@ -77,7 +85,7 @@ async def lifespan(_: FastAPI):
         yield
         return
 
-    async with mcp_server.session_manager.run():
+    async with run_mcp_server_lifespan(mcp_server):
         yield
 
 
@@ -93,6 +101,16 @@ app.add_middleware(
 )
 
 
+@app.get(
+    "/mcp/runtime",
+    tags=["Health"],
+    summary="MCP Runtime Info",
+    description="Shows active FastMCP runtime implementation/version and fallback state. Source: backend/main.py",
+)
+def get_mcp_runtime() -> dict[str, Any]:
+    return MCP_RUNTIME_INFO
+
+
 def init_db() -> None:
     expected_tables = set(Base.metadata.tables.keys())
     if not expected_tables:
@@ -101,7 +119,9 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_access_policy_schema_columns()
     ensure_phase2_schema_columns()
+    ensure_domain_defaults()
     sync_rbac_baseline()
+    sync_domain_auth_profiles()
     sync_access_policy_links_and_defaults()
     sync_tool_policies_from_registry()
     sync_api_server_links_by_host()
@@ -184,6 +204,51 @@ def sync_rbac_baseline() -> None:
         db.commit()
 
 
+def sync_domain_auth_profiles() -> None:
+    domain_rows = (
+        (
+            DOMAIN_ADM,
+            ENV.adm_keycloak_server_url,
+            ENV.adm_keycloak_realm,
+            ENV.adm_keycloak_client_id,
+        ),
+        (
+            DOMAIN_OPS,
+            ENV.ops_keycloak_server_url,
+            ENV.ops_keycloak_realm,
+            ENV.ops_keycloak_client_id,
+        ),
+    )
+
+    with SessionLocal() as db:
+        existing = {
+            row.domain_type: row
+            for row in db.scalars(select(DomainAuthProfileModel)).all()
+        }
+        for domain_type, issuer_url, realm, client_id in domain_rows:
+            profile = existing.get(domain_type)
+            enabled = bool(issuer_url and realm and client_id)
+            if profile is None:
+                db.add(
+                    DomainAuthProfileModel(
+                        domain_type=domain_type,
+                        issuer_url=issuer_url,
+                        realm=realm,
+                        client_id=client_id,
+                        enabled=enabled,
+                        profile_metadata={"source": "env"},
+                    )
+                )
+                continue
+
+            profile.issuer_url = issuer_url
+            profile.realm = realm
+            profile.client_id = client_id
+            profile.enabled = enabled
+            profile.profile_metadata = {"source": "env"}
+        db.commit()
+
+
 def ensure_access_policy_schema_columns() -> None:
     table_name = AccessPolicyModel.__tablename__
     inspector = inspect(engine)
@@ -223,11 +288,17 @@ def ensure_phase2_schema_columns() -> None:
             ("description", "TEXT"),
             ("is_enabled", "BOOLEAN"),
             ("is_deleted", "BOOLEAN"),
+            ("domain_type", "VARCHAR(16)"),
+            ("auth_profile_ref", "VARCHAR(64)"),
+            ("selected_tools", "JSON"),
         ],
         BaseURLModel.__tablename__: [
             ("description", "TEXT"),
             ("is_enabled", "BOOLEAN"),
             ("is_deleted", "BOOLEAN"),
+            ("domain_type", "VARCHAR(16)"),
+            ("auth_profile_ref", "VARCHAR(64)"),
+            ("selected_endpoints", "JSON"),
         ],
         EndpointVersionModel.__tablename__: [
             ("endpoint_id", "INTEGER"),
@@ -244,6 +315,22 @@ def ensure_phase2_schema_columns() -> None:
             for name, col_type in missing:
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {name} {col_type}")
         print(f"[DB] Added missing columns on {table_name}: {', '.join(name for name, _ in missing)}")
+
+
+def ensure_domain_defaults() -> None:
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            f"UPDATE {ServerModel.__tablename__} SET domain_type = '{DOMAIN_ADM}' WHERE domain_type IS NULL OR domain_type = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET domain_type = '{DOMAIN_ADM}' WHERE domain_type IS NULL OR domain_type = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {ServerModel.__tablename__} SET selected_tools = '[]' WHERE selected_tools IS NULL"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET selected_endpoints = '[]' WHERE selected_endpoints IS NULL"
+        )
 
 
 def sync_access_policy_links_and_defaults() -> None:
@@ -309,8 +396,18 @@ def _host_of(url: str) -> str:
 def sync_api_server_links_by_host() -> None:
     """Link raw APIs to MCP servers when they share the same host:port."""
     with SessionLocal() as db:
-        servers = db.scalars(select(ServerModel)).all()
-        apis = db.scalars(select(BaseURLModel)).all()
+        servers = db.scalars(
+            select(ServerModel).where(
+                ServerModel.is_deleted == False,  # noqa: E712
+                ServerModel.is_enabled == True,  # noqa: E712
+            )
+        ).all()
+        apis = db.scalars(
+            select(BaseURLModel).where(
+                BaseURLModel.is_deleted == False,  # noqa: E712
+                BaseURLModel.is_enabled == True,  # noqa: E712
+            )
+        ).all()
         existing_links = {
             (link.server_id, link.raw_api_id)
             for link in db.scalars(select(APIServerLinkModel)).all()
@@ -335,9 +432,24 @@ def sync_api_server_links_by_host() -> None:
 def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"]) -> None:
     """Upsert OpenAPI-discovered tools into mcp_tools."""
     with SessionLocal() as db:
+        selected_names_by_owner: dict[str, set[str]] = {}
         for tool in tools.values():
             owner_id = f"app:{tool.app_name}"
             raw_api = db.scalar(select(BaseURLModel).where(BaseURLModel.name == tool.app_name))
+            selected_endpoints = (
+                [str(item).strip() for item in (raw_api.selected_endpoints or []) if str(item).strip()]
+                if raw_api is not None
+                else []
+            )
+            endpoint_key = f"{tool.method.upper()} {tool.path}"
+            # Backward compatible matching: allow method+path key or tool name.
+            is_selected = not selected_endpoints or (
+                endpoint_key in selected_endpoints or tool.name in selected_endpoints
+            )
+            if not is_selected:
+                continue
+
+            selected_names_by_owner.setdefault(owner_id, set()).add(tool.name)
             ensure_default_access_policy_for_owner(
                 db,
                 owner_id=owner_id,
@@ -372,6 +484,28 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                     raw_api_id=raw_api.id if raw_api else None,
                 )
             )
+
+        # If owner has explicit selection, hide unselected OpenAPI tools.
+        base_rows = db.scalars(select(BaseURLModel)).all()
+        for base in base_rows:
+            owner_id = f"app:{base.name}"
+            selected_endpoints = [str(item).strip() for item in (base.selected_endpoints or []) if str(item).strip()]
+            if not selected_endpoints:
+                continue
+            selected_names = selected_names_by_owner.get(owner_id, set())
+            rows = db.scalars(
+                select(MCPToolModel).where(
+                    MCPToolModel.source_type == "openapi",
+                    MCPToolModel.owner_id == owner_id,
+                )
+            ).all()
+            for row in rows:
+                if row.name in selected_names:
+                    row.is_deleted = False
+                    row.is_enabled = True
+                else:
+                    row.is_deleted = True
+                    row.is_enabled = False
         db.commit()
 
 
@@ -380,9 +514,19 @@ def sync_mcp_tool_registry_from_mcp(
 ) -> None:
     """Upsert MCP-native tools into mcp_tools."""
     with SessionLocal() as db:
+        selected_names_by_owner: dict[str, set[str]] = {}
         for _, (server_name, tool_name, _tool_obj) in discovered.items():
             owner_id = f"mcp:{server_name}"
             server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
+            selected_tools = (
+                [str(item).strip() for item in (server.selected_tools or []) if str(item).strip()]
+                if server is not None
+                else []
+            )
+            if selected_tools and tool_name not in selected_tools:
+                continue
+
+            selected_names_by_owner.setdefault(owner_id, set()).add(tool_name)
             ensure_default_access_policy_for_owner(
                 db,
                 owner_id=owner_id,
@@ -413,6 +557,27 @@ def sync_mcp_tool_registry_from_mcp(
                     server_id=server.id if server else None,
                 )
             )
+
+        server_rows = db.scalars(select(ServerModel)).all()
+        for server in server_rows:
+            owner_id = f"mcp:{server.name}"
+            selected_tools = [str(item).strip() for item in (server.selected_tools or []) if str(item).strip()]
+            if not selected_tools:
+                continue
+            selected_names = selected_names_by_owner.get(owner_id, set())
+            rows = db.scalars(
+                select(MCPToolModel).where(
+                    MCPToolModel.source_type == "mcp",
+                    MCPToolModel.owner_id == owner_id,
+                )
+            ).all()
+            for row in rows:
+                if row.name in selected_names:
+                    row.is_deleted = False
+                    row.is_enabled = True
+                else:
+                    row.is_deleted = True
+                    row.is_enabled = False
         db.commit()
 
 
@@ -420,7 +585,12 @@ def get_servers_from_db() -> list[tuple[str, str]]:
     """Get all registered MCP servers from database."""
     try:
         with SessionLocal() as db:
-            rows = db.scalars(select(ServerModel)).all()
+            rows = db.scalars(
+                select(ServerModel).where(
+                    ServerModel.is_deleted == False,  # noqa: E712
+                    ServerModel.is_enabled == True,  # noqa: E712
+                )
+            ).all()
             return [(row.name, row.url) for row in rows]
     except Exception as exc:
         print(f"Error getting servers from database: {exc}")
@@ -866,7 +1036,12 @@ async def build_openapi_tool_catalog(
             return openapi_tool_catalog
 
         with SessionLocal() as db:
-            rows = db.scalars(select(BaseURLModel)).all()
+            rows = db.scalars(
+                select(BaseURLModel).where(
+                    BaseURLModel.is_deleted == False,  # noqa: E712
+                    BaseURLModel.is_enabled == True,  # noqa: E712
+                )
+            ).all()
             base_urls = [
                 {
                     "name": row.name,
@@ -1092,7 +1267,12 @@ async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
     import asyncio as _aio
 
     with SessionLocal() as db:
-        rows = db.scalars(select(ServerModel)).all()
+        rows = db.scalars(
+            select(ServerModel).where(
+                ServerModel.is_deleted == False,  # noqa: E712
+                ServerModel.is_enabled == True,  # noqa: E712
+            )
+        ).all()
         servers = [(row.name, row.url) for row in rows]
 
     if not servers:
@@ -1249,18 +1429,35 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
 
         return await invoke_openapi_tool(tool, arguments or {})
 
+def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
+    base_kwargs = {
+        "name": "combined-apps-openapi",
+        "instructions": (
+            "Combined MCP server exposing all registered app OpenAPI operations as tools. "
+            "Use list_tools to discover operations and call_tool to invoke them."
+        ),
+    }
+    variants = (
+        ("minimal", {}),
+        ("streamable-path-only", {"streamable_http_path": "/"}),
+        ("mcp-legacy-http", {"streamable_http_path": "/", "json_response": True, "stateless_http": True}),
+    )
+    last_error: Exception | None = None
+    for variant_name, extra_kwargs in variants:
+        try:
+            server = CombinedAppsOpenAPIMCP(**base_kwargs, **extra_kwargs)
+            MCP_RUNTIME_INFO["constructor_variant"] = variant_name
+            return server
+        except TypeError as exc:
+            last_error = exc
+            continue
+    raise RuntimeError(f"Failed to initialize FastMCP server with known constructor variants: {last_error}")
 
-combined_apps_mcp = CombinedAppsOpenAPIMCP(
-    name="combined-apps-openapi",
-    instructions=(
-        "Combined MCP server exposing all registered app OpenAPI operations as tools. "
-        "Use list_tools to discover operations and call_tool to invoke them."
-    ),
-    streamable_http_path="/",
-    json_response=True,
-    stateless_http=True,
-)
-app.mount("/mcp/apps", combined_apps_mcp.streamable_http_app())
+
+combined_apps_mcp = _create_combined_apps_mcp()
+combined_mcp_asgi_app = build_fastmcp_asgi_app(combined_apps_mcp, path="/")
+app.mount("/mcp/apps", combined_mcp_asgi_app)
+MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
 agent = build_default_agent()
 require_permission = build_require_permission(
     SessionLocal,
@@ -1288,6 +1485,12 @@ app.include_router(
     create_base_urls_router(
         SessionLocal,
         BaseURLModel,
+        AccessPolicyModel,
+        MCPToolModel,
+        APIEndpointModel,
+        APIServerLinkModel,
+        ToolVersionModel,
+        EndpointVersionModel,
         BaseURLRegistration,
         normalize_openapi_path,
         ensure_default_access_policy_for_owner,
@@ -1316,6 +1519,11 @@ app.include_router(
         SessionLocal,
         ServerModel,
         AccessPolicyModel,
+        MCPToolModel,
+        APIEndpointModel,
+        APIServerLinkModel,
+        ToolVersionModel,
+        EndpointVersionModel,
         ServerRegistration,
         MCPClient,
         ensure_default_access_policy_for_owner,
@@ -1330,6 +1538,8 @@ app.include_router(create_agent_router(agent), tags=["Agent"])
 app.include_router(
     create_access_policy_router(
         SessionLocal,
+        ServerModel,
+        BaseURLModel,
         resolve_owner_fk_ids,
         write_audit_log,
         AuditLogModel,
@@ -1358,6 +1568,8 @@ app.include_router(
     create_tools_router(
         SessionLocal,
         MCPToolModel,
+        ServerModel,
+        BaseURLModel,
         ToolVersionModel,
         write_audit_log,
         AuditLogModel,
@@ -1369,6 +1581,8 @@ app.include_router(
     create_endpoints_router(
         SessionLocal,
         APIEndpointModel,
+        ServerModel,
+        BaseURLModel,
         EndpointVersionModel,
         write_audit_log,
         AuditLogModel,
@@ -1379,6 +1593,6 @@ app.include_router(
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8090, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8091, reload=True)
 
 

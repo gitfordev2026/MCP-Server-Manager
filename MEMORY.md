@@ -173,3 +173,171 @@ Last updated: 2026-02-19
 - 2026-02-24: Added Swagger operation metadata on all router endpoints.
   - Added `summary` + `description` to each route decorator.
   - Each description includes `Source: backend/app/routers/<file>.py` for quick implementation traceability.
+- 2026-02-25: FastMCP upgrade path + backend MCP runtime hardening.
+  - Added `fastmcp==2.14.5` in `backend/requirements.txt`.
+  - Added compatibility runtime layer `backend/app/core/mcp_runtime.py`:
+    - Prefer `fastmcp` package, fallback to `mcp.server.fastmcp`.
+    - Runtime metadata (`MCP_RUNTIME_INFO`) with active implementation/version.
+    - ASGI app builder supporting multiple FastMCP runtime shapes.
+  - Updated `backend/main.py`:
+    - Uses runtime compatibility imports instead of direct `mcp.server.fastmcp`.
+    - Added `/mcp/runtime` health/debug endpoint for runtime visibility.
+    - Added constructor-variant fallback logic for FastMCP server init.
+    - Mounted MCP app via compatibility builder.
+  - Updated `backend/app/services/agent_runtime.py`:
+    - Removed hardcoded MCP/Ollama settings; now uses `ENV`.
+    - Added debug callback toggle via env.
+  - Updated `backend/env.py` with agent runtime env keys and typed fields.
+- 2026-02-25: FastMCP startup compatibility fix for Python 3.14 run.
+  - Fixed crash: `AttributeError: 'CombinedAppsOpenAPIMCP' object has no attribute 'session_manager'`.
+  - Added `run_mcp_server_lifespan(...)` in `backend/app/core/mcp_runtime.py` to support legacy/new FastMCP lifecycle APIs.
+  - Updated `backend/main.py` lifespan hook to use runtime-safe lifecycle helper.
+  - Reordered FastMCP constructor variants to prefer minimal constructor first to reduce deprecation warnings from deprecated init kwargs.
+- 2026-02-25: Centralized backend logging module with env-driven level.
+  - Added shared logger module: `backend/app/core/logger.py`.
+  - Logger level now comes from `LOG_LEVEL` in backend env via `backend/env.py`.
+  - Migrated `backend/app/core/db.py` from inline logger setup to shared `get_logger(__name__)`.
+  - Pattern for other modules: `from backend.app.core.logger import get_logger` then `logger = get_logger(__name__)`.
+- 2026-02-25: FastMCP fallback observability improved.
+  - `backend/app/core/mcp_runtime.py` now logs a warning when `fastmcp` package is unavailable and runtime falls back to `mcp.server.fastmcp`.
+- 2026-02-25: Server delete behavior fixed with dependent cleanup and exposure suppression.
+  - Fixed `/servers/{server_name}?hard=true` internal error by deleting dependent records before hard deleting server.
+  - `backend/app/routers/servers.py` now cascades on delete:
+    - Soft delete: marks related MCP tools and API endpoints as deleted/disabled and unexposed.
+    - Hard delete: removes related endpoint versions, endpoints, tool versions, tools, access policies, and API-server links.
+  - Updated `backend/main.py` to pass required models into `create_servers_router(...)`.
+  - Updated MCP tool discovery to ignore deleted/disabled servers:
+    - `get_servers_from_db()`
+    - `_fetch_all_mcp_server_tools()`
+  - Result: deleted servers no longer expose tools through combined MCP and their related tools/endpoints no longer show in admin/dashboard lists.
+- 2026-02-25: Base URL delete cascade + active-only visibility hardening.
+  - Fixed hard delete FK failure on `raw_apis` by cascading dependent cleanup in `backend/app/routers/base_urls.py` before deleting app/base-url.
+  - Base URL soft delete now soft-deletes related tools/endpoints and unexposes endpoints.
+  - Base URL hard delete now removes related versions/tools/endpoints/policies/api-server links, then deletes base-url.
+  - Updated router wiring in `backend/main.py` to pass dependent models to base-url router.
+  - Visibility hardening:
+    - `backend/app/routers/base_urls.py` list now returns only active (not deleted + enabled) apps.
+    - `backend/app/routers/servers.py` list/status/tools now return only active servers and reject deleted/disabled server details.
+    - `backend/app/routers/tools.py` and `backend/app/routers/endpoints.py` hide stale rows whose owners are deleted/disabled.
+    - `backend/app/routers/dashboard.py` counts now ignore tools tied to deleted/disabled owners.
+- 2026-02-25: Access Control owner visibility fix.
+  - `backend/app/routers/access_policies.py` now filters policy owners to active resources only:
+    - active MCP servers (`is_deleted=false`, `is_enabled=true`)
+    - active apps/base-urls (`is_deleted=false`, `is_enabled=true`)
+  - This prevents disabled/soft-deleted/hard-deleted owner cards from appearing on Access Control page.
+  - Updated router wiring in `backend/main.py` to pass server/base-url models into access policy router.
+- 2026-02-25: Admin visibility policy updated (inactive owners visible only in admin lists).
+  - Added `include_inactive` query param (default `false`) to:
+    - `GET /base-urls`
+    - `GET /servers`
+  - Frontend admin page now calls:
+    - `/base-urls?include_inactive=true`
+    - `/servers?include_inactive=true`
+  - Effect:
+    - Admin can still see disabled/soft-deleted apps/servers with status.
+    - Tools/endpoints remain hidden globally when owner is disabled/soft-deleted.
+    - Hard delete still removes app/server and dependent tools/endpoints from DB and UI.
+- 2026-02-25: Phase A started for ADM/OPS domain contract (Keycloak runtime auth deferred).
+  - Schema/API contract updates:
+    - Added `domain_type` (`ADM`/`OPS`) to app/server registration schemas.
+    - Added DB columns on `mcp_servers` and `raw_apis`: `domain_type`, `auth_profile_ref`.
+    - Added `domain_auth_profiles` table for env-seeded domain auth profile metadata.
+  - Env contract updates:
+    - Added optional env keys: `ADM_KEYCLOAK_*`, `OPS_KEYCLOAK_*`.
+    - Loaded into `backend/env.py` for future auth phase.
+  - Startup sync/migration updates:
+    - New `sync_domain_auth_profiles()` seeds/updates domain auth profiles from env.
+    - Added column migration support for new domain columns in `ensure_phase2_schema_columns()`.
+    - Added `ensure_domain_defaults()` to backfill null/empty domain types to `ADM`.
+  - Router payload updates:
+    - `register-base-url` and `register-server` now persist/return `domain_type`.
+    - `list/update` app/server payloads include `domain_type`.
+    - Validation enforces `domain_type` in `ADM|OPS`.
+- 2026-02-25: Phase B started (frontend fetch-and-select onboarding UX).
+  - Backend discovery contract:
+    - Added `POST /discover-server-tools` to preview MCP tools without registering server.
+    - Added optional `selected_tools` / `selected_endpoints` to registration schemas (accepted payload for staged flow).
+  - Register pages upgraded:
+    - `frontend/mcp-dashboard/app/register-server/page.tsx` now supports:
+      - Domain type radio (`ADM`/`OPS`)
+      - Fetch MCP tools action
+      - Selection modal + per-tool config panel
+      - Register selected tools action (sends selected tool ids in payload)
+    - `frontend/mcp-dashboard/app/register-app/page.tsx` now supports:
+      - Domain type radio (`ADM`/`OPS`)
+      - Fetch APIs action via OpenAPI spec discovery
+      - Selection modal + per-endpoint config panel (method/params/request/response)
+      - Register selected endpoints action (sends selected endpoint ids in payload)
+  - Navigation labels updated:
+    - `Register Server` -> `Fetch MCP Tools`
+    - `Register App` -> `Fetch APIs`
+- 2026-02-25: Phase C started (selection enforcement in backend sync/runtime).
+  - Added persistent selection fields:
+    - `mcp_servers.selected_tools` (JSON list)
+    - `raw_apis.selected_endpoints` (JSON list)
+  - Registration routers now persist selection payloads and return them in responses.
+  - Sync enforcement added:
+    - `sync_mcp_tool_registry_from_openapi(...)` only upserts selected endpoints when selection is configured.
+    - `sync_mcp_tool_registry_from_mcp(...)` only upserts selected tools when selection is configured.
+    - Unselected tools for owners with explicit selection are soft-hidden (`is_deleted=true`, `is_enabled=false`).
+  - Runtime enforcement added:
+    - `/servers/{server_name}/tools` now filters live-discovered tools by `selected_tools` when set.
+  - Startup migration updates:
+    - Added schema migration columns for `selected_tools` / `selected_endpoints`.
+    - Added default backfill path in startup domain defaults.
+- 2026-02-25: Fixed FastAPI response validation error on `/register-server`.
+  - Cause: handler return type was `dict[str, str]` but response now includes non-string fields (`selected_tools_count`, `selected_tools`).
+  - Fix: changed `register_server` return annotation to `dict[str, Any]`.
+- 2026-02-25: Fixed Fetch APIs modal not listing endpoints despite valid backend response.
+  - Root causes:
+    - Frontend expected `/openapi-spec` payload shape `{ spec: ... }`, while backend returns raw OpenAPI document.
+    - Endpoint parser assumed lowercase HTTP method keys only.
+  - Fixes in `frontend/mcp-dashboard/app/register-app/page.tsx`:
+    - Spec extraction now supports both raw spec and `{ spec: ... }`.
+    - Method parsing now iterates operation keys case-insensitively and filters against known HTTP methods.
+- 2026-02-25: Added per-owner endpoint/tool management modals on fetch pages.
+  - `frontend/mcp-dashboard/app/register-app/page.tsx`:
+    - Clicking a registered application opens modal with all registered API endpoints for that owner.
+    - Shows enabled/disabled status and supports per-endpoint enable/disable toggle via `PATCH /endpoints/{id}`.
+  - `frontend/mcp-dashboard/app/register-server/page.tsx`:
+    - Clicking a registered MCP server opens modal with all registered MCP tools for that owner.
+    - Shows enabled/disabled status and supports per-tool enable/disable toggle via `PATCH /tools/{id}`.
+  - Both pages use shared `http` client so RBAC headers are sent.
+- 2026-02-25: Popup visibility + description editing enhancements on fetch pages.
+  - Fixed empty registered popups by forcing catalog sync (`/mcp/openapi/catalog?force_refresh=true`) before loading owner resources.
+  - Added description input at registration time:
+    - Fetch APIs modal: per-endpoint description override.
+    - Fetch MCP Tools modal: per-tool description override.
+  - Added description edit/save in registered owner popups:
+    - Registered APIs (openapi tools) modal: edit/save description via `PATCH /tools/{id}`.
+    - Registered MCP tools modal: edit/save description via `PATCH /tools/{id}`.
+  - Added per-item enable/disable in registered popups (via `PATCH /tools/{id}`).
+- 2026-02-25: Admin page metadata update fix for description edits.
+  - `frontend/mcp-dashboard/app/admin/page.tsx` now sends `version` along with `description` for:
+    - tool description save (`PATCH /tools/{id}`)
+    - endpoint description save (`PATCH /endpoints/{id}`)
+  - Fixes backend validation error: `version is required when updating tool metadata`.
+- 2026-02-25: Backend startup fix for SQLAlchemy reserved attribute name.
+  - Fixed `InvalidRequestError: Attribute name 'metadata' is reserved` in `DomainAuthProfileModel`.
+  - Renamed model attribute to `profile_metadata` while keeping DB column name as `metadata`.
+  - Updated references in `sync_domain_auth_profiles()` accordingly.
+- 2026-02-25: Fixed duplicate-version 500s on tool/endpoint metadata updates.
+  - Root cause: update handlers always inserted new version rows, violating unique constraints when saving existing version numbers.
+  - `backend/app/routers/tools.py`:
+    - `PATCH /tools/{tool_id}` now upserts version metadata by `(tool_id, version)`.
+    - Existing row is updated in place; new row is inserted only when version is new.
+  - `backend/app/routers/endpoints.py`:
+    - Applied the same upsert pattern for `(endpoint_id, version)` to prevent analogous failures on endpoint metadata updates.
+- 2026-02-25: Registered owner modals now use live resource discovery (not DB-only lists).
+  - `frontend/mcp-dashboard/app/register-server/page.tsx`:
+    - Registered server modal now fetches live MCP tools via `POST /discover-server-tools` using stored server URL.
+    - Merges live tools with DB tool metadata for status/description/version mapping.
+    - Enable/disable now updates server `selected_tools` via `PATCH /servers/{name}`, then refreshes catalog to enforce hiding/unhiding globally.
+    - Description save now resolves DB tool id by owner/name after sync and patches `PATCH /tools/{id}` reliably.
+    - Updated modal layout for clearer action ordering (`Enable/Disable`, `Save`).
+  - `frontend/mcp-dashboard/app/register-app/page.tsx`:
+    - Registered app modal now fetches live endpoints from `GET /openapi-spec` for app URL/path.
+    - Merges live endpoints with DB tool metadata for status/description/version mapping.
+    - Enable/disable now updates app `selected_endpoints` via `PATCH /base-urls/{name}`, then refreshes catalog to enforce hiding/unhiding globally.
+    - Description save now resolves DB tool id by owner + `METHOD path` key and patches `PATCH /tools/{id}`.
+    - Added per-endpoint expandable config section (parameters/request/response) inside the registered modal.

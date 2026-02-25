@@ -208,8 +208,8 @@ export default function AdminPanelPage() {
       setGlobalError(null);
       const [statsRes, appsRes, serversRes, toolsRes, endpointsRes, auditRes] = await Promise.all([
         http<{ cards: DashboardCards }>('/dashboard/stats'),
-        http<{ base_urls: AppItem[] }>('/base-urls'),
-        http<{ servers: ServerItem[] }>('/servers'),
+        http<{ base_urls: AppItem[] }>('/base-urls?include_inactive=true'),
+        http<{ servers: ServerItem[] }>('/servers?include_inactive=true'),
         http<{ tools: Tool[] }>('/tools'),
         http<{ endpoints: Endpoint[] }>('/endpoints'),
         http<{ logs: AuditLog[] }>('/audit-logs?limit=500'),
@@ -308,7 +308,10 @@ export default function AdminPanelPage() {
   const saveToolDescription = (tool: Tool) =>
     withAction(async () => {
       const description = (toolDescEdits[tool.id] ?? tool.description).trim();
-      await http(`/tools/${tool.id}`, { method: 'PATCH', body: JSON.stringify({ description }) });
+      await http(`/tools/${tool.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ description, version: tool.current_version || '1.0.0' }),
+      });
       setToolDescEdits((prev) => { const next = { ...prev }; delete next[tool.id]; return next; });
     });
 
@@ -339,7 +342,10 @@ export default function AdminPanelPage() {
   const saveEndpointDescription = (ep: Endpoint) =>
     withAction(async () => {
       const description = (endpointDescEdits[ep.id] ?? ep.description).trim();
-      await http(`/endpoints/${ep.id}`, { method: 'PATCH', body: JSON.stringify({ description }) });
+      await http(`/endpoints/${ep.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ description, version: ep.current_version || '1.0.0' }),
+      });
       setEndpointDescEdits((prev) => { const next = { ...prev }; delete next[ep.id]; return next; });
     });
 

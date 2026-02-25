@@ -36,6 +36,8 @@ class ToolUpdate(BaseModel):
 def create_tools_router(
     session_local_factory,
     mcp_tool_model,
+    server_model,
+    base_url_model,
     tool_version_model,
     write_audit_log_fn,
     audit_log_model,
@@ -50,9 +52,35 @@ def create_tools_router(
     )
     def list_tools() -> dict[str, Any]:
         with session_local_factory() as db:
+            active_server_ids = {
+                row.id
+                for row in db.scalars(
+                    select(server_model).where(
+                        server_model.is_deleted == False,  # noqa: E712
+                        server_model.is_enabled == True,  # noqa: E712
+                    )
+                ).all()
+            }
+            active_base_url_ids = {
+                row.id
+                for row in db.scalars(
+                    select(base_url_model).where(
+                        base_url_model.is_deleted == False,  # noqa: E712
+                        base_url_model.is_enabled == True,  # noqa: E712
+                    )
+                ).all()
+            }
             rows = db.scalars(
                 select(mcp_tool_model).where(mcp_tool_model.is_deleted == False)  # noqa: E712
             ).all()
+
+        visible_rows = []
+        for row in rows:
+            if row.source_type == "mcp" and row.server_id is not None and row.server_id not in active_server_ids:
+                continue
+            if row.source_type == "openapi" and row.raw_api_id is not None and row.raw_api_id not in active_base_url_ids:
+                continue
+            visible_rows.append(row)
 
         return {
             "tools": [
@@ -67,7 +95,7 @@ def create_tools_router(
                     "current_version": row.current_version,
                     "is_enabled": row.is_enabled,
                 }
-                for row in rows
+                for row in visible_rows
             ]
         }
 
@@ -185,15 +213,26 @@ def create_tools_router(
                         detail="version is required when updating tool metadata",
                     )
                 tool.current_version = payload.version
-                db.add(
-                    tool_version_model(
-                        tool_id=tool.id,
-                        version=payload.version,
-                        description=tool.description,
-                        input_schema=payload.input_schema,
-                        output_schema=payload.output_schema,
+                version_row = db.scalar(
+                    select(tool_version_model).where(
+                        tool_version_model.tool_id == tool.id,
+                        tool_version_model.version == payload.version,
                     )
                 )
+                if version_row:
+                    version_row.description = tool.description
+                    version_row.input_schema = payload.input_schema
+                    version_row.output_schema = payload.output_schema
+                else:
+                    db.add(
+                        tool_version_model(
+                            tool_id=tool.id,
+                            version=payload.version,
+                            description=tool.description,
+                            input_schema=payload.input_schema,
+                            output_schema=payload.output_schema,
+                        )
+                    )
 
             write_audit_log_fn(
                 db,

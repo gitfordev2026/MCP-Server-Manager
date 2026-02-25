@@ -1,7 +1,13 @@
 import ipaddress
+from enum import Enum
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class DomainType(str, Enum):
+    ADM = "ADM"
+    OPS = "OPS"
 
 
 class ServerRegistration(BaseModel):
@@ -10,6 +16,8 @@ class ServerRegistration(BaseModel):
     name: str
     url: str
     description: str | None = ""
+    domain_type: DomainType = DomainType.ADM
+    selected_tools: list[str] = []
 
     @field_validator("url")
     @classmethod
@@ -50,3 +58,5 @@ class BaseURLRegistration(BaseModel):
     description: str | None = ""
     openapi_path: str | None = ""
     include_unreachable_tools: bool = False
+    domain_type: DomainType = DomainType.ADM
+    selected_endpoints: list[str] = []
