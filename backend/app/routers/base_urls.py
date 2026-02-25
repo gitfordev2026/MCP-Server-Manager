@@ -254,12 +254,20 @@ def create_base_urls_router(
         url: str,
         openapi_path: str | None = None,
         retries: int = Query(default=0, ge=0, le=5),
+        domain_type: str = Query(default="ADM"),
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = current_user
 
         try:
-            return await fetch_openapi_spec_from_base_url_fn(url, openapi_path=openapi_path, retries=retries)
+            with session_local_factory() as db:
+                return await fetch_openapi_spec_from_base_url_fn(
+                    url, 
+                    openapi_path=openapi_path, 
+                    retries=retries, 
+                    domain_type=domain_type, 
+                    db=db
+                )
         except ValueError as exc:
             detail = str(exc)
             status_code = 400 if detail.startswith("URL must") else 502

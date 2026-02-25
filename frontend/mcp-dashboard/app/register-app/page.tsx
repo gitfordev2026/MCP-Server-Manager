@@ -168,9 +168,15 @@ export default function RegisterAppPage() {
       if (formData.openapi_path.trim()) {
         params.set('openapi_path', formData.openapi_path.trim());
       }
+      if (formData.domain_type) {
+        params.set('domain_type', formData.domain_type);
+      }
       const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403 || payload?.detail?.includes('Keycloak')) {
+          throw new Error(`Failed to authenticate with the ${formData.domain_type} Keycloak network to retrieve the OpenAPI spec. Check backend configurations.`);
+        }
         throw new Error(payload?.detail || 'Failed to fetch OpenAPI specification');
       }
 
@@ -238,16 +244,18 @@ export default function RegisterAppPage() {
       : new Set<string>();
     const allSelectedByDefault = configuredSelection.size === 0;
 
-    const dbPayload = await http<{ tools: Array<{
-      id: number;
-      owner_id: string;
-      source_type: string;
-      method?: string;
-      path?: string;
-      description: string;
-      current_version?: string;
-      is_enabled: boolean;
-    }> }>('/tools');
+    const dbPayload = await http<{
+      tools: Array<{
+        id: number;
+        owner_id: string;
+        source_type: string;
+        method?: string;
+        path?: string;
+        description: string;
+        current_version?: string;
+        is_enabled: boolean;
+      }>
+    }>('/tools');
     const dbByEndpointKey = new Map(
       (dbPayload.tools || [])
         .filter((tool) => tool.owner_id === `app:${appName}` && tool.source_type === 'openapi')
@@ -341,14 +349,16 @@ export default function RegisterAppPage() {
       }
 
       await syncCatalog();
-      const payload = await http<{ tools: Array<{
-        id: number;
-        owner_id: string;
-        source_type: string;
-        method?: string;
-        path?: string;
-        current_version?: string;
-      }> }>('/tools');
+      const payload = await http<{
+        tools: Array<{
+          id: number;
+          owner_id: string;
+          source_type: string;
+          method?: string;
+          path?: string;
+          current_version?: string;
+        }>
+      }>('/tools');
       const dbEndpoint = (payload.tools || []).find(
         (item) =>
           item.owner_id === `app:${selectedAppName}` &&
@@ -418,15 +428,17 @@ export default function RegisterAppPage() {
       setSelectedEndpoints(new Set());
       setActiveEndpointId(null);
       await syncCatalog();
-      const toolsPayload = await http<{ tools: Array<{
-        id: number;
-        owner_id: string;
-        source_type: string;
-        method?: string;
-        path?: string;
-        description: string;
-        current_version?: string;
-      }> }>('/tools');
+      const toolsPayload = await http<{
+        tools: Array<{
+          id: number;
+          owner_id: string;
+          source_type: string;
+          method?: string;
+          path?: string;
+          description: string;
+          current_version?: string;
+        }>
+      }>('/tools');
       const ownerId = `app:${formData.name.trim()}`;
       const selectedIds = new Set(Array.from(selectedEndpoints));
       const selectedRows = (toolsPayload.tools || []).filter((tool) => {

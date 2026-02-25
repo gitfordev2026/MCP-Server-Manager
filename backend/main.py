@@ -696,6 +696,7 @@ class OpenAPIToolDefinition:
     path: str
     input_schema: dict[str, Any]
     body_content_type: str | None
+    domain_type: str = "ADM"
     is_placeholder: bool = False
     placeholder_reason: str | None = None
 
@@ -826,7 +827,9 @@ def build_tool_input_schema(
     return top_level_schema, body_content_type
 
 
-def build_app_operation_tools(app_name: str, app_url: str, spec: dict[str, Any]) -> list[OpenAPIToolDefinition]:
+def build_app_operation_tools(
+    app_name: str, app_url: str, spec: dict[str, Any], domain_type: str = "ADM"
+) -> list[OpenAPIToolDefinition]:
     paths = spec.get("paths")
     if not isinstance(paths, dict):
         return []
@@ -888,6 +891,7 @@ def build_app_operation_tools(app_name: str, app_url: str, spec: dict[str, Any])
                     path=raw_path,
                     input_schema=input_schema,
                     body_content_type=body_content_type,
+                    domain_type=domain_type,
                 )
             )
 
@@ -911,6 +915,8 @@ async def fetch_openapi_spec_with_diagnostics(
     raw_url: str,
     openapi_path: str | None = "",
     retries: int = 0,
+    domain_type: str = "ADM",
+    db: Any = None,
 ) -> dict[str, Any]:
     candidates = build_openapi_candidates(raw_url, openapi_path)
     errors: list[str] = []
@@ -918,13 +924,21 @@ async def fetch_openapi_spec_with_diagnostics(
     rounds_attempted = 0
     started = perf_counter()
 
+    from backend.app.services.keycloak_auth import get_keycloak_token
+    
+    headers = {"Accept": "application/json"}
+    if db is not None:
+        token = await get_keycloak_token(domain_type, db)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
         for attempt in range(max(0, retries) + 1):
             rounds_attempted = attempt + 1
             for candidate in candidates:
                 requests_attempted += 1
                 try:
-                    response = await client.get(candidate, headers={"Accept": "application/json"})
+                    response = await client.get(candidate, headers=headers)
                 except httpx.RequestError as exc:
                     errors.append(f"{candidate}: {exc}")
                     continue
@@ -973,14 +987,18 @@ async def fetch_openapi_spec_from_base_url(
     raw_url: str,
     openapi_path: str | None = "",
     retries: int = 0,
+    domain_type: str = "ADM",
+    db: Any = None,
 ) -> dict[str, Any]:
-    outcome = await fetch_openapi_spec_with_diagnostics(raw_url, openapi_path, retries)
+    outcome = await fetch_openapi_spec_with_diagnostics(raw_url, openapi_path, retries, domain_type, db)
     if outcome["ok"] and isinstance(outcome["spec"], dict):
         return outcome["spec"]
     raise ValueError(str(outcome.get("error") or "Could not fetch a valid OpenAPI spec"))
 
 
-def make_placeholder_tool(app_name: str, app_url: str, reason: str) -> OpenAPIToolDefinition:
+def make_placeholder_tool(
+    app_name: str, app_url: str, reason: str, domain_type: str = "ADM"
+) -> OpenAPIToolDefinition:
     component = sanitize_tool_component(app_name, fallback="app")
     return OpenAPIToolDefinition(
         name=f"{component}__endpoint_unavailable",
@@ -1001,6 +1019,7 @@ def make_placeholder_tool(app_name: str, app_url: str, reason: str) -> OpenAPITo
             "additionalProperties": False,
         },
         body_content_type=None,
+        domain_type=domain_type,
         is_placeholder=True,
         placeholder_reason=reason,
     )
@@ -1048,16 +1067,20 @@ async def build_openapi_tool_catalog(
                     "url": row.url,
                     "openapi_path": row.openapi_path or "",
                     "include_unreachable_tools": bool(row.include_unreachable_tools),
+                    "domain_type": row.domain_type or "ADM",
                 }
                 for row in rows
             ]
 
         async def fetch_one(base_url: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-            outcome = await fetch_openapi_spec_with_diagnostics(
-                raw_url=base_url["url"],
-                openapi_path=base_url.get("openapi_path") or "",
-                retries=retries,
-            )
+            with SessionLocal() as fetch_db:
+                outcome = await fetch_openapi_spec_with_diagnostics(
+                    raw_url=base_url["url"],
+                    openapi_path=base_url.get("openapi_path") or "",
+                    retries=retries,
+                    domain_type=base_url["domain_type"],
+                    db=fetch_db,
+                )
             return base_url, outcome
 
         fetched = await asyncio.gather(*(fetch_one(item) for item in base_urls))
@@ -1082,7 +1105,9 @@ async def build_openapi_tool_catalog(
             if outcome["ok"] and isinstance(outcome.get("spec"), dict):
                 spec = outcome["spec"]
                 operation_count = count_openapi_operations(spec)
-                generated_tools = build_app_operation_tools(app_name, app_url, spec)
+                generated_tools = build_app_operation_tools(
+                    app_name, app_url, spec, base_url.get("domain_type", "ADM")
+                )
                 if operation_count == 0:
                     status = "zero_endpoints"
                     error_message = "No OpenAPI operations found in discovered spec."
@@ -1097,6 +1122,7 @@ async def build_openapi_tool_catalog(
                         app_name=app_name,
                         app_url=app_url,
                         reason=error_message or "No operations available",
+                        domain_type=base_url.get("domain_type", "ADM"),
                     )
                 )
 
@@ -1114,6 +1140,7 @@ async def build_openapi_tool_catalog(
                         path=tool.path,
                         input_schema=tool.input_schema,
                         body_content_type=tool.body_content_type,
+                        domain_type=tool.domain_type,
                         is_placeholder=tool.is_placeholder,
                         placeholder_reason=tool.placeholder_reason,
                     )
@@ -1216,6 +1243,12 @@ async def invoke_openapi_tool(tool: OpenAPIToolDefinition, arguments: dict[str, 
     request_headers = {str(k): str(v) for k, v in header_args.items()}
     request_cookies = {str(k): str(v) for k, v in cookie_args.items()}
     params = {str(k): v for k, v in query_args.items()}
+
+    from backend.app.services.keycloak_auth import get_keycloak_token
+    with SessionLocal() as db:
+        token = await get_keycloak_token(tool.domain_type, db)
+        if token:
+            request_headers["Authorization"] = f"Bearer {token}"
 
     request_kwargs: dict[str, Any] = {
         "params": params,
