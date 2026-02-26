@@ -110,4 +110,121 @@ def create_dashboard_router(
             "mcp_servers": server_statuses,
         }
 
+    @router.get(
+        "/dashboard/sync-health",
+        summary="Get Registry Sync Health",
+        description="Return raw API sync lifecycle state and stale tool counters from DB registry. Source: backend/app/routers/dashboard.py",
+    )
+    def get_sync_health() -> dict[str, Any]:
+        with session_local_factory() as db:
+            apps = db.scalars(select(base_url_model)).all()
+            servers = db.scalars(select(server_model)).all()
+            tools = db.scalars(select(mcp_tool_model)).all()
+
+        tool_rows_by_owner: dict[str, list[Any]] = {}
+        for tool in tools:
+            if getattr(tool, "source_type", "") != "openapi":
+                continue
+            owner_id = str(getattr(tool, "owner_id", "") or "")
+            if not owner_id:
+                continue
+            tool_rows_by_owner.setdefault(owner_id, []).append(tool)
+
+        app_rows: list[dict[str, Any]] = []
+        server_rows: list[dict[str, Any]] = []
+        stale_tools_total = 0
+        failed_sync_apps = 0
+        stale_mcp_tools_total = 0
+
+        for app in apps:
+            owner_id = f"app:{app.name}"
+            owner_tools = [
+                row
+                for row in tool_rows_by_owner.get(owner_id, [])
+                if not bool(getattr(row, "is_deleted", False))
+            ]
+            stale_tools = [
+                row
+                for row in owner_tools
+                if str(getattr(row, "registration_state", "") or "").lower() in {"stale", "unselected"}
+                or str(getattr(row, "exposure_state", "") or "").lower() in {"disabled", "deleted"}
+                or bool(str(getattr(row, "sync_error", "") or "").strip())
+            ]
+            stale_count = len(stale_tools)
+            stale_tools_total += stale_count
+            sync_status = str(getattr(app, "last_sync_status", "never") or "never")
+            if sync_status == "failed":
+                failed_sync_apps += 1
+
+            app_rows.append(
+                {
+                    "name": app.name,
+                    "owner_id": owner_id,
+                    "url": app.url,
+                    "is_enabled": bool(getattr(app, "is_enabled", True)),
+                    "is_deleted": bool(getattr(app, "is_deleted", False)),
+                    "sync_mode": str(getattr(app, "sync_mode", "manual") or "manual"),
+                    "registry_state": str(getattr(app, "registry_state", "active") or "active"),
+                    "last_sync_status": sync_status,
+                    "last_sync_started_on": getattr(app, "last_sync_started_on", None),
+                    "last_sync_completed_on": getattr(app, "last_sync_completed_on", None),
+                    "last_discovered_on": getattr(app, "last_discovered_on", None),
+                    "last_sync_error": str(getattr(app, "last_sync_error", "") or ""),
+                    "registered_tools_total": len(owner_tools),
+                    "stale_tools_total": stale_count,
+                }
+            )
+
+        server_tools_by_owner: dict[str, list[Any]] = {}
+        for tool in tools:
+            if getattr(tool, "source_type", "") != "mcp":
+                continue
+            owner_id = str(getattr(tool, "owner_id", "") or "")
+            if not owner_id:
+                continue
+            server_tools_by_owner.setdefault(owner_id, []).append(tool)
+
+        for server in servers:
+            owner_id = f"mcp:{server.name}"
+            owner_tools = [
+                row
+                for row in server_tools_by_owner.get(owner_id, [])
+                if not bool(getattr(row, "is_deleted", False))
+            ]
+            stale_tools = [
+                row
+                for row in owner_tools
+                if str(getattr(row, "registration_state", "") or "").lower() in {"stale", "unselected"}
+                or str(getattr(row, "exposure_state", "") or "").lower() in {"disabled", "deleted"}
+                or bool(str(getattr(row, "sync_error", "") or "").strip())
+            ]
+            stale_count = len(stale_tools)
+            stale_mcp_tools_total += stale_count
+            server_rows.append(
+                {
+                    "name": server.name,
+                    "owner_id": owner_id,
+                    "url": server.url,
+                    "is_enabled": bool(getattr(server, "is_enabled", True)),
+                    "is_deleted": bool(getattr(server, "is_deleted", False)),
+                    "registry_state": "deleted"
+                    if bool(getattr(server, "is_deleted", False))
+                    else ("active" if bool(getattr(server, "is_enabled", True)) else "disabled"),
+                    "registered_tools_total": len(owner_tools),
+                    "stale_tools_total": stale_count,
+                }
+            )
+
+        return {
+            "summary": {
+                "apps_total": len(app_rows),
+                "failed_sync_apps": failed_sync_apps,
+                "stale_tools_total": stale_tools_total,
+                "servers_total": len(server_rows),
+                "stale_mcp_tools_total": stale_mcp_tools_total,
+            },
+            "apps": app_rows,
+            "servers": server_rows,
+        }
+
     return router

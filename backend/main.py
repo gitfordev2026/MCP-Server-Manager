@@ -2,6 +2,9 @@ from pathlib import Path
 import sys
 import asyncio
 import re
+import json
+import hashlib
+import datetime
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -281,6 +284,15 @@ def ensure_phase2_schema_columns() -> None:
         MCPToolModel.__tablename__: [
             ("description", "TEXT"),
             ("current_version", "VARCHAR(64)"),
+            ("external_id", "VARCHAR(255)"),
+            ("display_name", "VARCHAR(255)"),
+            ("registration_state", "VARCHAR(24)"),
+            ("exposure_state", "VARCHAR(24)"),
+            ("last_discovered_on", "TIMESTAMP"),
+            ("last_synced_on", "TIMESTAMP"),
+            ("source_updated_on", "TIMESTAMP"),
+            ("discovery_hash", "VARCHAR(128)"),
+            ("sync_error", "TEXT"),
             ("is_enabled", "BOOLEAN"),
             ("is_deleted", "BOOLEAN"),
         ],
@@ -299,6 +311,13 @@ def ensure_phase2_schema_columns() -> None:
             ("domain_type", "VARCHAR(16)"),
             ("auth_profile_ref", "VARCHAR(64)"),
             ("selected_endpoints", "JSON"),
+            ("sync_mode", "VARCHAR(24)"),
+            ("registry_state", "VARCHAR(24)"),
+            ("last_sync_status", "VARCHAR(24)"),
+            ("last_sync_started_on", "TIMESTAMP"),
+            ("last_sync_completed_on", "TIMESTAMP"),
+            ("last_discovered_on", "TIMESTAMP"),
+            ("last_sync_error", "TEXT"),
         ],
         EndpointVersionModel.__tablename__: [
             ("endpoint_id", "INTEGER"),
@@ -330,6 +349,21 @@ def ensure_domain_defaults() -> None:
         )
         conn.exec_driver_sql(
             f"UPDATE {BaseURLModel.__tablename__} SET selected_endpoints = '[]' WHERE selected_endpoints IS NULL"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET sync_mode = 'manual' WHERE sync_mode IS NULL OR sync_mode = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET registry_state = 'active' WHERE registry_state IS NULL OR registry_state = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET last_sync_status = 'never' WHERE last_sync_status IS NULL OR last_sync_status = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {MCPToolModel.__tablename__} SET registration_state = 'selected' WHERE registration_state IS NULL OR registration_state = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {MCPToolModel.__tablename__} SET exposure_state = 'active' WHERE exposure_state IS NULL OR exposure_state = ''"
         )
 
 
@@ -432,6 +466,7 @@ def sync_api_server_links_by_host() -> None:
 def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"]) -> None:
     """Upsert OpenAPI-discovered tools into mcp_tools."""
     with SessionLocal() as db:
+        synced_at = datetime.datetime.utcnow()
         selected_names_by_owner: dict[str, set[str]] = {}
         for tool in tools.values():
             owner_id = f"app:{tool.app_name}"
@@ -461,6 +496,21 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 tool_id=tool.name,
                 base_url_id=raw_api.id if raw_api else None,
             )
+            discovery_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "source_type": "openapi",
+                        "owner_id": owner_id,
+                        "name": tool.name,
+                        "method": tool.method,
+                        "path": tool.path,
+                        "input_schema": tool.input_schema,
+                        "domain_type": tool.domain_type,
+                    },
+                    sort_keys=True,
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest()
             existing = db.scalar(
                 select(MCPToolModel).where(
                     MCPToolModel.source_type == "openapi",
@@ -471,6 +521,16 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
             if existing:
                 existing.method = tool.method
                 existing.path = tool.path
+                existing.description = tool.description or existing.description
+                existing.display_name = tool.title
+                existing.external_id = tool.name
+                existing.registration_state = "selected"
+                existing.exposure_state = "active"
+                existing.last_discovered_on = synced_at
+                existing.last_synced_on = synced_at
+                existing.source_updated_on = synced_at
+                existing.discovery_hash = discovery_hash
+                existing.sync_error = None
                 existing.raw_api_id = raw_api.id if raw_api else existing.raw_api_id
                 continue
 
@@ -481,6 +541,16 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                     name=tool.name,
                     method=tool.method,
                     path=tool.path,
+                    description=tool.description or "",
+                    external_id=tool.name,
+                    display_name=tool.title,
+                    registration_state="selected",
+                    exposure_state="active",
+                    last_discovered_on=synced_at,
+                    last_synced_on=synced_at,
+                    source_updated_on=synced_at,
+                    discovery_hash=discovery_hash,
+                    sync_error=None,
                     raw_api_id=raw_api.id if raw_api else None,
                 )
             )
@@ -503,9 +573,17 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 if row.name in selected_names:
                     row.is_deleted = False
                     row.is_enabled = True
+                    row.registration_state = "selected"
+                    row.exposure_state = "active"
+                    row.last_synced_on = synced_at
+                    row.sync_error = None
                 else:
                     row.is_deleted = True
                     row.is_enabled = False
+                    row.registration_state = "unselected"
+                    row.exposure_state = "disabled"
+                    row.last_synced_on = synced_at
+                    row.sync_error = "Not selected for owner exposure"
         db.commit()
 
 
@@ -514,8 +592,9 @@ def sync_mcp_tool_registry_from_mcp(
 ) -> None:
     """Upsert MCP-native tools into mcp_tools."""
     with SessionLocal() as db:
+        synced_at = datetime.datetime.utcnow()
         selected_names_by_owner: dict[str, set[str]] = {}
-        for _, (server_name, tool_name, _tool_obj) in discovered.items():
+        for _, (server_name, tool_name, tool_obj) in discovered.items():
             owner_id = f"mcp:{server_name}"
             server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
             selected_tools = (
@@ -525,6 +604,21 @@ def sync_mcp_tool_registry_from_mcp(
             )
             if selected_tools and tool_name not in selected_tools:
                 continue
+            tool_description = getattr(tool_obj, "description", "") or ""
+            input_schema = getattr(tool_obj, "inputSchema", {}) or {}
+            discovery_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "source_type": "mcp",
+                        "owner_id": owner_id,
+                        "name": tool_name,
+                        "description": tool_description,
+                        "input_schema": input_schema,
+                    },
+                    sort_keys=True,
+                    default=str,
+                ).encode("utf-8")
+            ).hexdigest()
 
             selected_names_by_owner.setdefault(owner_id, set()).add(tool_name)
             ensure_default_access_policy_for_owner(
@@ -547,6 +641,16 @@ def sync_mcp_tool_registry_from_mcp(
             )
             if existing:
                 existing.server_id = server.id if server else existing.server_id
+                existing.description = tool_description or existing.description
+                existing.display_name = tool_name
+                existing.external_id = tool_name
+                existing.registration_state = "selected"
+                existing.exposure_state = "active"
+                existing.last_discovered_on = synced_at
+                existing.last_synced_on = synced_at
+                existing.source_updated_on = synced_at
+                existing.discovery_hash = discovery_hash
+                existing.sync_error = None
                 continue
 
             db.add(
@@ -554,6 +658,16 @@ def sync_mcp_tool_registry_from_mcp(
                     source_type="mcp",
                     owner_id=owner_id,
                     name=tool_name,
+                    description=tool_description,
+                    external_id=tool_name,
+                    display_name=tool_name,
+                    registration_state="selected",
+                    exposure_state="active",
+                    last_discovered_on=synced_at,
+                    last_synced_on=synced_at,
+                    source_updated_on=synced_at,
+                    discovery_hash=discovery_hash,
+                    sync_error=None,
                     server_id=server.id if server else None,
                 )
             )
@@ -575,9 +689,17 @@ def sync_mcp_tool_registry_from_mcp(
                 if row.name in selected_names:
                     row.is_deleted = False
                     row.is_enabled = True
+                    row.registration_state = "selected"
+                    row.exposure_state = "active"
+                    row.last_synced_on = synced_at
+                    row.sync_error = None
                 else:
                     row.is_deleted = True
                     row.is_enabled = False
+                    row.registration_state = "unselected"
+                    row.exposure_state = "disabled"
+                    row.last_synced_on = synced_at
+                    row.sync_error = "Not selected for owner exposure"
         db.commit()
 
 
@@ -1061,6 +1183,12 @@ async def build_openapi_tool_catalog(
                     BaseURLModel.is_enabled == True,  # noqa: E712
                 )
             ).all()
+            sync_started_at = datetime.datetime.utcnow()
+            for row in rows:
+                row.last_sync_status = "running"
+                row.last_sync_started_on = sync_started_at
+                row.last_sync_error = None
+            db.commit()
             base_urls = [
                 {
                     "name": row.name,
@@ -1175,6 +1303,26 @@ async def build_openapi_tool_catalog(
                     "error": error_message,
                 }
             )
+
+        with SessionLocal() as db:
+            completed_at = datetime.datetime.utcnow()
+            by_name = {row.name: row for row in db.scalars(select(BaseURLModel)).all()}
+            for diag in app_diagnostics:
+                row = by_name.get(str(diag.get("name", "")))
+                if row is None:
+                    continue
+                status = str(diag.get("status", "unreachable"))
+                row.last_sync_completed_on = completed_at
+                row.last_discovered_on = completed_at
+                if status in {"healthy", "zero_endpoints"}:
+                    row.last_sync_status = "success"
+                    row.last_sync_error = None
+                    row.registry_state = "active"
+                else:
+                    row.last_sync_status = "failed"
+                    row.last_sync_error = str(diag.get("error") or "OpenAPI fetch failed")
+                    row.registry_state = "stale"
+            db.commit()
 
         openapi_tool_catalog = OpenAPIToolCatalog(
             generated_at=time(),
@@ -1555,6 +1703,9 @@ app.include_router(
     create_catalog_router(
         SessionLocal,
         AccessPolicyModel,
+        MCPToolModel,
+        BaseURLModel,
+        ServerModel,
         build_openapi_tool_catalog,
         _fetch_all_mcp_server_tools,
         OPENAPI_MCP_FETCH_RETRIES,

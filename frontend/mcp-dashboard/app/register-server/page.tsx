@@ -156,7 +156,9 @@ export default function RegisterServerPage() {
   };
 
   const syncCatalog = async () => {
-    await fetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=true`).catch(() => null);
+    await fetch(
+      `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=true&registry_only=false`
+    ).catch(() => null);
   };
 
   const buildRegisteredToolRows = async (serverName: string, serverUrl: string): Promise<ModalTool[]> => {

@@ -1,0 +1,99 @@
+ok perfect now as i see that my database and schemas is finely decided and managed now make a plan to optimize it and be goal specific and each table/schema must have a purpose and if required any changes like adding some columns then that must be happen
+
+here my idea for this application is when user will register either mini mcp server or application server then there must be table which only maintain record of registered tools/apis and this table will be single source of truth for other tables or functions like access control , admin panel etc no other  endpoint will query or access live data from mini mcp server or application server except the backend process which will proxy mcp tools or convert raw api endpoints to  mega / combined mcp server which is exposed to public 
+
+think deeply and plan it
+
+Good direction. Here is a focused plan to make DB the single source of truth and remove live-read coupling from UI/admin paths.
+
+Target Architecture
+
+registry is authoritative: all UI/admin/access-control read only DB.
+discovery/sync is a backend-only process that updates registry.
+runtime proxy serves combined MCP from registry + policy, and only calls external systems during tool invocation.
+Phase 1: Define Canonical Model (no behavior change yet)
+
+Keep raw_apis and mcp_servers as owner/system records (connection + status).
+Make mcp_tools the canonical “registered resource” table for both:
+source_type in ('openapi','mcp')
+include owner, identity, metadata, status.
+Keep api_endpoints only if you need endpoint-governance separate from tool-governance. Otherwise deprecate gradually.
+Document table purpose + allowed writers/readers in MEMORY.md + a new SCHEMA_CONTRACT.md.
+Phase 2: Add Missing Columns for True Registry Control
+
+mcp_tools add:
+external_id (stable upstream id/name if present)
+display_name
+exposure_state (draft|active|disabled|deleted)
+registration_state (selected|unselected|stale)
+last_discovered_at
+last_synced_at
+discovery_hash (schema/content fingerprint)
+sync_error (last error text)
+mcp_tools constraints/indexes:
+unique (source_type, owner_id, name) keep
+index (owner_id, is_deleted, is_enabled)
+index (exposure_state, is_enabled, is_deleted)
+mcp_servers / raw_apis add:
+sync_mode (manual|scheduled|webhook)
+last_sync_started_at, last_sync_completed_at, last_sync_status
+Add migration scripts (Alembic recommended).
+Phase 3: Split Responsibilities by Service
+
+DiscoveryService:
+reads external OpenAPI/MCP only.
+writes provisional discovery snapshots.
+RegistrySyncService:
+reconciles discovery snapshot -> mcp_tools canonical rows.
+never bypasses selection rules.
+ExposureService:
+computes exposable set from mcp_tools + access_policies.
+RuntimeInvokeService:
+resolves tool from mcp_tools, then proxies call.
+Phase 4: Query Policy (hard rule)
+
+UI/admin/access-control endpoints must query DB only.
+Disallow direct live fetch in page handlers and general routers.
+Allow live fetch only in:
+discovery endpoints
+background sync worker
+runtime invocation path
+Phase 5: API Contract Changes
+
+New endpoints:
+POST /sync/owners/{owner_id} (trigger sync)
+GET /registry/tools (authoritative list)
+GET /registry/tools/{id}/history
+Existing endpoints (/mcp/openapi/catalog, admin lists, access control) should read from registry views/materialized queries, not discovery directly.
+Add include_stale / include_disabled flags for admin views only.
+Phase 6: Background Processing
+
+Add worker loop or scheduler:
+periodic sync per owner
+retry/backoff
+dead-letter or error state on repeated failures
+Optional event table:
+sync_jobs, sync_job_runs for traceability.
+Phase 7: Data Quality + Safety
+
+Enforce enum/check constraints for state columns.
+Soft-delete semantics centralized (one policy).
+Audit every mutation of registry/exposure state.
+Add invariants:
+unselected cannot be exposed
+deleted cannot be enabled/exposed
+disabled owner implies non-exposed tools.
+Phase 8: Performance
+
+Add indexes for common filters (owner/state/exposure).
+Add materialized view (optional) for “public combined MCP catalog”.
+Cache only derived reads, never as source of truth.
+Recommended Table Purpose (Final)
+
+mcp_servers / raw_apis: owner connection config + health/sync state.
+mcp_tools: canonical registered resources (single source of truth).
+access_policies: authorization decisions per owner/tool.
+tool_versions: metadata history/versioning.
+audit_logs: change history.
+api_endpoints (optional): keep only if you need endpoint-level governance distinct from tool-level.
+If you want, next I can draft the exact migration DDL (Phase 2) and a router/service refactor checklist file-by-file for your current codebase.

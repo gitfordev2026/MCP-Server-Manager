@@ -20,6 +20,46 @@ type DashboardCards = {
   total_api_endpoints: number;
 };
 
+type SyncHealthSummary = {
+  apps_total: number;
+  failed_sync_apps: number;
+  stale_tools_total: number;
+  servers_total: number;
+  stale_mcp_tools_total: number;
+};
+
+type SyncHealthApp = {
+  name: string;
+  owner_id: string;
+  url: string;
+  is_enabled: boolean;
+  is_deleted: boolean;
+  sync_mode: string;
+  registry_state: string;
+  last_sync_status: string;
+  last_sync_started_on: string | null;
+  last_sync_completed_on: string | null;
+  last_discovered_on: string | null;
+  last_sync_error: string;
+  registered_tools_total: number;
+  stale_tools_total: number;
+};
+
+type SyncHealthResponse = {
+  summary: SyncHealthSummary;
+  apps: SyncHealthApp[];
+  servers: Array<{
+    name: string;
+    owner_id: string;
+    url: string;
+    is_enabled: boolean;
+    is_deleted: boolean;
+    registry_state: string;
+    registered_tools_total: number;
+    stale_tools_total: number;
+  }>;
+};
+
 type AppItem = {
   name: string;
   url: string;
@@ -146,6 +186,7 @@ export default function AdminPanelPage() {
   });
 
   const [stats, setStats] = useState<DashboardCards | null>(null);
+  const [syncHealth, setSyncHealth] = useState<SyncHealthResponse | null>(null);
   const [apps, setApps] = useState<AppItem[]>([]);
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
@@ -206,8 +247,9 @@ export default function AdminPanelPage() {
     try {
       setLoading(true);
       setGlobalError(null);
-      const [statsRes, appsRes, serversRes, toolsRes, endpointsRes, auditRes] = await Promise.all([
+      const [statsRes, syncHealthRes, appsRes, serversRes, toolsRes, endpointsRes, auditRes] = await Promise.all([
         http<{ cards: DashboardCards }>('/dashboard/stats'),
+        http<SyncHealthResponse>('/dashboard/sync-health'),
         http<{ base_urls: AppItem[] }>('/base-urls?include_inactive=true'),
         http<{ servers: ServerItem[] }>('/servers?include_inactive=true'),
         http<{ tools: Tool[] }>('/tools'),
@@ -215,6 +257,7 @@ export default function AdminPanelPage() {
         http<{ logs: AuditLog[] }>('/audit-logs?limit=500'),
       ]);
       setStats(statsRes.cards);
+      setSyncHealth(syncHealthRes);
       setApps(appsRes.base_urls || []);
       setServers(serversRes.servers || []);
       setTools(toolsRes.tools || []);
@@ -363,8 +406,17 @@ export default function AdminPanelPage() {
 
   const filteredTools = useMemo(() => {
     const q = toolSearch.toLowerCase();
-    return tools.filter((t) => !q || t.name.toLowerCase().includes(q) || t.owner_id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q));
+    return tools.filter(
+      (t) =>
+        t.source_type === 'mcp' &&
+        (!q || t.name.toLowerCase().includes(q) || t.owner_id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+    );
   }, [tools, toolSearch]);
+
+  const rawApiTools = useMemo(
+    () => tools.filter((t) => t.source_type === 'openapi'),
+    [tools]
+  );
 
   const filteredEndpoints = useMemo(() => {
     const q = endpointSearch.toLowerCase();
@@ -507,6 +559,99 @@ export default function AdminPanelPage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Registry sync health */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">Registry Sync Health</h2>
+              <div className="grid sm:grid-cols-5 gap-3 mb-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Apps Tracked</p>
+                  <p className="text-xl font-bold text-slate-900">{syncHealth?.summary.apps_total ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs text-slate-500">Mini Servers</p>
+                  <p className="text-xl font-bold text-slate-900">{syncHealth?.summary.servers_total ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs text-red-600">Failed Sync Apps</p>
+                  <p className="text-xl font-bold text-red-700">{syncHealth?.summary.failed_sync_apps ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs text-amber-700">Stale Tools</p>
+                  <p className="text-xl font-bold text-amber-700">{syncHealth?.summary.stale_tools_total ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs text-amber-700">Stale MCP Tools</p>
+                  <p className="text-xl font-bold text-amber-700">{syncHealth?.summary.stale_mcp_tools_total ?? 0}</p>
+                </div>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-auto pr-1">
+                {(syncHealth?.apps || []).length === 0 ? (
+                  <p className="text-sm text-slate-500">No app sync records found.</p>
+                ) : (
+                  (syncHealth?.apps || []).map((app) => (
+                    <div key={app.owner_id} className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{app.name}</p>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          app.last_sync_status === 'failed'
+                            ? 'bg-red-100 text-red-700'
+                            : app.last_sync_status === 'success'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {app.last_sync_status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{app.owner_id}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+                        <span>mode: {app.sync_mode}</span>
+                        <span>state: {app.registry_state}</span>
+                        <span>tools: {app.registered_tools_total}</span>
+                        <span className={app.stale_tools_total > 0 ? 'text-amber-700 font-medium' : ''}>
+                          stale: {app.stale_tools_total}
+                        </span>
+                      </div>
+                      {app.last_sync_error && (
+                        <p className="mt-2 text-xs text-red-600 break-all">{app.last_sync_error}</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-slate-800 mb-2">MCP Mini Server Registry Health</h3>
+                <div className="space-y-2 max-h-64 overflow-auto pr-1">
+                  {(syncHealth?.servers || []).length === 0 ? (
+                    <p className="text-sm text-slate-500">No mini servers tracked.</p>
+                  ) : (
+                    (syncHealth?.servers || []).map((server) => (
+                      <div key={server.owner_id} className="rounded-lg border border-slate-200 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{server.name}</p>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            server.registry_state === 'active'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : server.registry_state === 'disabled'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-red-100 text-red-700'
+                          }`}>
+                            {server.registry_state}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">{server.owner_id}</p>
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+                          <span>tools: {server.registered_tools_total}</span>
+                          <span className={server.stale_tools_total > 0 ? 'text-amber-700 font-medium' : ''}>
+                            stale: {server.stale_tools_total}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -851,6 +996,72 @@ export default function AdminPanelPage() {
                   </div>
                 );
               })}
+            </div>
+
+            <div className="pt-4 border-t border-slate-200">
+              <h3 className="text-base font-semibold text-slate-900 mb-3">Raw API Tools (from registry)</h3>
+              <div className="space-y-2">
+                {rawApiTools.length === 0 ? <EmptyState message="No raw API tools found" /> : rawApiTools.map((tool) => {
+                  const isEditingDesc = tool.id in toolDescEdits;
+                  const draftDesc = toolDescEdits[tool.id] ?? tool.description;
+                  return (
+                    <div key={tool.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-sm text-slate-900">{tool.name}</p>
+                            <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{tool.source_type}</span>
+                            <span className="text-xs text-slate-400 font-mono">v{tool.current_version}</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{tool.owner_id}</p>
+                          {tool.method && tool.path && (
+                            <p className="text-xs mt-1 flex items-center gap-1">
+                              <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[String(tool.method).toUpperCase()] ?? 'bg-slate-100 text-slate-600'}`}>{tool.method}</span>
+                              <span className="text-slate-500 font-mono">{tool.path}</span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-1 rounded-full ${tool.is_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {tool.is_enabled ? 'enabled' : 'disabled'}
+                          </span>
+                          {canManageTools && (
+                            <Button size="sm" variant="secondary" onClick={() => void toggleToolEnabled(tool)}>Toggle</Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        {isEditingDesc ? (
+                          <>
+                            <textarea
+                              rows={2}
+                              className="flex-1 border border-cyan-300 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              value={draftDesc}
+                              onChange={(e) => setToolDescEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
+                              placeholder="Enter description..."
+                              autoFocus
+                            />
+                            <div className="flex flex-col gap-1">
+                              <Button size="sm" onClick={() => void saveToolDescription(tool)}>Save</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setToolDescEdits((prev) => { const n = { ...prev }; delete n[tool.id]; return n; })}>Cancel</Button>
+                            </div>
+                          </>
+                        ) : (
+                          <div
+                            className={`flex-1 text-xs rounded-lg px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors group' : ''} ${tool.description ? 'text-slate-500' : 'text-slate-300 italic'}`}
+                            onClick={() => canManageTools && setToolDescEdits((prev) => ({ ...prev, [tool.id]: tool.description }))}
+                            title={canManageTools ? 'Click to edit description' : undefined}
+                          >
+                            {tool.description || (canManageTools ? 'Click to add description...' : 'No description')}
+                            {canManageTools && <span className="ml-1.5 opacity-0 group-hover:opacity-60 text-slate-400 text-xs">✎</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </section>
         )}

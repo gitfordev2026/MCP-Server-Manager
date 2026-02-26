@@ -270,6 +270,10 @@ def create_servers_router(
     )
     async def get_server_tools(
         server_name: str,
+        registry_only: bool = Query(
+            default=True,
+            description="When true, list tools from DB registry only (no live upstream fetch).",
+        ),
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = current_user
@@ -287,6 +291,38 @@ def create_servers_router(
 
             if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+
+            if registry_only:
+                with session_local_factory() as db:
+                    rows = db.scalars(
+                        select(mcp_tool_model).where(
+                            mcp_tool_model.source_type == "mcp",
+                            mcp_tool_model.owner_id == f"mcp:{server_name}",
+                            mcp_tool_model.is_deleted == False,  # noqa: E712
+                            mcp_tool_model.is_enabled == True,  # noqa: E712
+                        )
+                    ).all()
+                tools_list = []
+                for row in rows:
+                    if selected_tools and row.name not in selected_tools:
+                        continue
+                    mode = policy_map.get(row.name, default_mode)
+                    tools_list.append(
+                        {
+                            "name": row.name,
+                            "description": row.description or "No description",
+                            "inputSchema": {},
+                            "access_mode": mode,
+                        }
+                    )
+                tools_list.sort(key=lambda item: str(item.get("name", "")))
+                return {
+                    "server": server_name,
+                    "url": server.url,
+                    "tools": tools_list,
+                    "tool_count": len(tools_list),
+                    "source": "registry",
+                }
 
             config = {
                 "mcpServers": {
@@ -318,6 +354,7 @@ def create_servers_router(
                 "url": server.url,
                 "tools": tools_list,
                 "tool_count": len(tools_list),
+                "source": "live",
             }
 
         except HTTPException:

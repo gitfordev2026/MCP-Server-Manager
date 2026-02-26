@@ -219,7 +219,9 @@ export default function RegisterAppPage() {
   };
 
   const syncCatalog = async () => {
-    await fetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=true`).catch(() => null);
+    await fetch(
+      `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=true&registry_only=false`
+    ).catch(() => null);
   };
 
   const buildRegisteredEndpointRows = async (appName: string, appUrl: string, openapiPath?: string): Promise<ModalEndpoint[]> => {

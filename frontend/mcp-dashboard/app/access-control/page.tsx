@@ -36,7 +36,9 @@ export default function AccessPolicyPage() {
     let hadFailure = false;
 
     try {
-      const catalogRes = await fetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false`);
+      const catalogRes = await fetch(
+        `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&registry_only=true`
+      );
       if (catalogRes.ok) {
         const catalog = await catalogRes.json();
         const tools = Array.isArray(catalog?.tools) ? catalog.tools : [];
@@ -64,7 +66,7 @@ export default function AccessPolicyPage() {
             if (!serverName) return;
             try {
               const toolsRes = await fetch(
-                `${NEXT_PUBLIC_BE_API_URL}/servers/${encodeURIComponent(serverName)}/tools`
+                `${NEXT_PUBLIC_BE_API_URL}/servers/${encodeURIComponent(serverName)}/tools?registry_only=true`
               );
               if (!toolsRes.ok) {
                 hadFailure = true;

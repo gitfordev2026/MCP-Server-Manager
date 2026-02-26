@@ -373,3 +373,86 @@ Last updated: 2026-02-19
   - Effect:
     - Combined catalog + combined MCP tool list now show only registered selections (and then policy filtering applies).
     - If one tool is selected during registration, combined view should no longer show extra unselected tools.
+- 2026-02-26: Phase 1 schema foundation started for registry-first architecture.
+  - Added lifecycle/sync state fields to canonical tables:
+    - `raw_apis`:
+      - `sync_mode`, `registry_state`, `last_sync_status`,
+      - `last_sync_started_on`, `last_sync_completed_on`, `last_discovered_on`,
+      - `last_sync_error`
+    - `mcp_tools`:
+      - `external_id`, `display_name`,
+      - `registration_state`, `exposure_state`,
+      - `last_discovered_on`, `last_synced_on`, `source_updated_on`,
+      - `discovery_hash`, `sync_error`
+  - Updated startup auto-migration in `backend/main.py`:
+    - `ensure_phase2_schema_columns()` adds new columns if missing.
+    - `ensure_domain_defaults()` backfills safe defaults for new state columns.
+  - Added schema intent document:
+    - `SCHEMA_CONTRACT.md` defines canonical table purpose and read/write rules.
+- 2026-02-26: Phase 2 started (UI-facing MCP listing paths switched to registry-only DB reads).
+  - Backend catalog router refactor:
+    - `backend/app/routers/catalog.py` now supports `registry_only=true` (default) for `GET /mcp/openapi/catalog`.
+    - Registry mode builds tools from `mcp_tools` + active owner tables (`raw_apis`, `mcp_servers`) only.
+    - No live upstream fetch is used in registry mode.
+    - Existing live path remains available when `registry_only=false`.
+    - `public_only` filtering still applies on top of registry/live source.
+  - Backend server-tools endpoint refactor:
+    - `backend/app/routers/servers.py` `GET /servers/{server_name}/tools` now supports `registry_only=true` (default).
+    - Registry mode reads tools from `mcp_tools` for owner `mcp:{server}` and applies access policy mode mapping.
+    - Live probing path remains available with `registry_only=false`.
+  - Router wiring updated:
+    - `backend/main.py` now passes `MCPToolModel`, `BaseURLModel`, and `ServerModel` into `create_catalog_router(...)`.
+  - Frontend switched to explicit registry mode:
+    - `frontend/mcp-dashboard/app/mcp-endpoints/page.tsx`
+      - catalog call now uses `registry_only=true&public_only=true`
+      - per-server tools call now uses `registry_only=true`
+    - `frontend/mcp-dashboard/app/access-control/page.tsx`
+      - catalog call now uses `registry_only=true`
+      - per-server tools call now uses `registry_only=true`
+- 2026-02-26: Phase 2 follow-up fix for empty registry views after registration.
+  - Root cause:
+    - Register pages used `/mcp/openapi/catalog?force_refresh=true` as sync trigger.
+    - After Phase 2, catalog default changed to `registry_only=true`, so that call no longer performed live discovery/sync.
+  - Fix:
+    - `frontend/mcp-dashboard/app/register-server/page.tsx` sync trigger now calls:
+      - `/mcp/openapi/catalog?force_refresh=true&registry_only=false`
+    - `frontend/mcp-dashboard/app/register-app/page.tsx` sync trigger now calls:
+      - `/mcp/openapi/catalog?force_refresh=true&registry_only=false`
+- 2026-02-26: Phase 3 started (registry lifecycle fields now populated by sync processes).
+  - `backend/main.py` sync enrichments:
+    - `build_openapi_tool_catalog(...)` now updates `raw_apis` sync lifecycle fields:
+      - marks `last_sync_status=running` + `last_sync_started_on` at start
+      - writes `last_sync_status` (`success|failed`), `last_sync_completed_on`, `last_discovered_on`, `last_sync_error`, and `registry_state` (`active|stale`) after fetch cycle
+    - `sync_mcp_tool_registry_from_openapi(...)` now updates `mcp_tools` registry metadata:
+      - `external_id`, `display_name`, `registration_state`, `exposure_state`
+      - `last_discovered_on`, `last_synced_on`, `source_updated_on`
+      - `discovery_hash`, `sync_error`
+    - `sync_mcp_tool_registry_from_mcp(...)` now updates same registry metadata fields for MCP-native tools.
+  - Selection-state propagation:
+    - Unselected tools are marked with `registration_state=unselected`, `exposure_state=disabled`, and sync error context.
+- 2026-02-26: Added admin sync-health API and overview UI.
+  - Backend:
+    - New endpoint `GET /dashboard/sync-health` in `backend/app/routers/dashboard.py`.
+    - Returns:
+      - `summary`: `apps_total`, `failed_sync_apps`, `stale_tools_total`
+      - `apps[]`: raw API lifecycle fields (`sync_mode`, `registry_state`, `last_sync_*`, errors) + tool counters per owner.
+    - Stale tool counting uses DB registry fields from `mcp_tools`:
+      - `registration_state in (stale, unselected)` OR
+      - `exposure_state in (disabled, deleted)` OR
+      - non-empty `sync_error`.
+  - Frontend:
+    - `frontend/mcp-dashboard/app/admin/page.tsx` now fetches `/dashboard/sync-health` in `fetchAll()`.
+    - Added “Registry Sync Health” panel in Overview tab showing:
+      - aggregate summary cards
+      - per-app sync status, mode/state, registered/stale counts, and last sync error.
+- 2026-02-26: Admin/tool separation + mini-server sync visibility + dashboard stat alignment.
+  - Admin page (`frontend/mcp-dashboard/app/admin/page.tsx`):
+    - Tools tab now shows only MCP-native tools (`source_type === "mcp"`).
+    - Raw API tools (`source_type === "openapi"`) moved under API Endpoints tab in section "Raw API Tools (from registry)".
+    - Registry Sync Health overview expanded with mini-server tracking:
+      - summary adds `servers_total` and `stale_mcp_tools_total`
+      - new per-server list shows `registry_state`, registered tools, stale tools.
+  - Dashboard sync-health API (`backend/app/routers/dashboard.py`):
+    - `/dashboard/sync-health` now includes `servers[]` and mini-server stale counters derived from `mcp_tools` lifecycle fields.
+  - Dashboard page (`frontend/mcp-dashboard/app/dashboard/page.tsx`):
+    - top cards consume `/dashboard/stats` cards for both Applications and MCP Mini Servers (total/alive/down), plus tools and API endpoint totals.
