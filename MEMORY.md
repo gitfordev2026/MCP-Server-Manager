@@ -341,3 +341,35 @@ Last updated: 2026-02-19
     - Enable/disable now updates app `selected_endpoints` via `PATCH /base-urls/{name}`, then refreshes catalog to enforce hiding/unhiding globally.
     - Description save now resolves DB tool id by owner + `METHOD path` key and patches `PATCH /tools/{id}`.
     - Added per-endpoint expandable config section (parameters/request/response) inside the registered modal.
+- 2026-02-26: MCP Endpoints combined exposure now supports public/client-only filtering.
+  - Backend:
+    - `GET /mcp/openapi/catalog` now supports `public_only` query flag.
+    - When `public_only=true`, catalog output includes only tools with effective `access_mode = allow`.
+    - Filtering is applied to both `tools` and `mcp_server_tools` sections.
+  - Frontend:
+    - `frontend/mcp-dashboard/app/mcp-endpoints/page.tsx` now calls:
+      - `/mcp/openapi/catalog?force_refresh=false&public_only=true`
+    - Combined MCP card now reflects only client/public-allowed tools.
+    - Individual MCP server cards remain unchanged (still shown as before).
+- 2026-02-26: Default access policy mode changed from `deny` to `allow`.
+  - New owner default policy rows now initialize as `allow`:
+    - `backend/app/services/policy_utils.py` (`ensure_default_access_policy_for_owner`)
+  - New per-tool policy rows created during sync now initialize as `allow`:
+    - `backend/app/services/policy_utils.py` (`ensure_tool_access_policy_for_owner`)
+  - Missing-policy fallback now defaults to `allow` for combined MCP execution/exposure:
+    - `backend/main.py` (`_effective_access_mode`)
+  - Catalog policy fallback now reports `allow` when no explicit/default row exists:
+    - `backend/app/routers/catalog.py` (`_get_mode`)
+  - Server tools endpoint default mode fallback changed to `allow`:
+    - `backend/app/routers/servers.py` (`get_server_tools`)
+  - Access policy response scaffold now defaults UI payload to `allow`:
+    - `backend/app/routers/access_policies.py` (`list_access_policies`)
+- 2026-02-26: Combined MCP exposure now enforces registration selection before publishing tools.
+  - `backend/main.py`:
+    - `build_openapi_tool_catalog(...)` now carries `selected_endpoints` from app registrations and filters generated OpenAPI tools accordingly.
+    - Tool inclusion rule for apps with explicit selection:
+      - include if `METHOD path` key is selected, or tool name is selected (backward compatibility).
+    - `_fetch_all_mcp_server_tools(...)` now filters live MCP tool list using each server’s `selected_tools`.
+  - Effect:
+    - Combined catalog + combined MCP tool list now show only registered selections (and then policy filtering applies).
+    - If one tool is selected during registration, combined view should no longer show extra unselected tools.

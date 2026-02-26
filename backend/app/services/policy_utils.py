@@ -47,7 +47,7 @@ def ensure_default_access_policy_for_owner(
         AccessPolicyModel(
             owner_id=owner_id,
             tool_id=DEFAULT_TOOL_ID,
-            mode="deny",
+            mode="allow",
             server_id=resolved_server_id,
             base_url_id=resolved_base_url_id,
         )
@@ -85,7 +85,7 @@ def ensure_tool_access_policy_for_owner(
         AccessPolicyModel(
             owner_id=owner_id,
             tool_id=tool_id,
-            mode="deny",
+            mode="allow",
             server_id=resolved_server_id,
             base_url_id=resolved_base_url_id,
         )

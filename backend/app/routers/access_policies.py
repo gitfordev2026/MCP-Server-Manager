@@ -111,9 +111,9 @@ def create_access_policy_router(
             owner = result.setdefault(
                 policy.owner_id,
                 {
-                    "defaultMode": AccessMode.deny,
+                    "defaultMode": AccessMode.allow,
                     "endpointModes": {},
-                    "defaultPolicy": {"mode": AccessMode.deny, "allowed_users": [], "allowed_groups": []},
+                    "defaultPolicy": {"mode": AccessMode.allow, "allowed_users": [], "allowed_groups": []},
                     "endpointPolicies": {},
                 },
             )

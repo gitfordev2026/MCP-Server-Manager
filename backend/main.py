@@ -1068,6 +1068,7 @@ async def build_openapi_tool_catalog(
                     "openapi_path": row.openapi_path or "",
                     "include_unreachable_tools": bool(row.include_unreachable_tools),
                     "domain_type": row.domain_type or "ADM",
+                    "selected_endpoints": [str(item).strip() for item in (row.selected_endpoints or []) if str(item).strip()],
                 }
                 for row in rows
             ]
@@ -1128,6 +1129,11 @@ async def build_openapi_tool_catalog(
 
             app_tool_count = 0
             for tool in generated_tools:
+                selected_endpoints = [str(item).strip() for item in (base_url.get("selected_endpoints") or []) if str(item).strip()]
+                if selected_endpoints:
+                    endpoint_key = f"{tool.method.upper()} {tool.path}"
+                    if endpoint_key not in selected_endpoints and tool.name not in selected_endpoints:
+                        continue
                 if tool.name in tools:
                     renamed = choose_unique_tool_name(tool.name, existing_names)
                     tool = OpenAPIToolDefinition(
@@ -1306,29 +1312,38 @@ async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
                 ServerModel.is_enabled == True,  # noqa: E712
             )
         ).all()
-        servers = [(row.name, row.url) for row in rows]
+        servers = [
+            (
+                row.name,
+                row.url,
+                [str(item).strip() for item in (row.selected_tools or []) if str(item).strip()],
+            )
+            for row in rows
+        ]
 
     if not servers:
         return {}
 
     result: dict[str, tuple[str, str, Any]] = {}
 
-    async def _probe(name: str, url: str) -> list[tuple[str, str, Any]]:
+    async def _probe(name: str, url: str, selected_tools: list[str]) -> list[tuple[str, str, Any]]:
         try:
             config = {"mcpServers": {name: {"url": url}}}
             client = MCPClient(config)
             await client.create_all_sessions()
             session = client.get_session(name)
             tools = await _aio.wait_for(session.list_tools(), timeout=10.0)
+            selected_names = set(selected_tools or [])
             return [
                 (f"mcp__{name}__{t.name}", name, t.name, t)
                 for t in tools
+                if not selected_names or t.name in selected_names
             ]
         except Exception as exc:
             print(f"[combined-mcp] Could not list tools for server '{name}': {exc}")
             return []
 
-    tasks = [_probe(name, url) for name, url in servers]
+    tasks = [_probe(name, url, selected_tools) for name, url, selected_tools in servers]
     results = await _aio.gather(*tasks, return_exceptions=True)
 
     for batch in results:
@@ -1361,8 +1376,8 @@ def _effective_access_mode(policy_map: dict[str, dict[str, str]], owner_id: str,
         return owner_policies[tool_id]
     if DEFAULT_TOOL_ID in owner_policies:
         return owner_policies[DEFAULT_TOOL_ID]
-    # Strict fallback: if no policy row exists yet, deny exposure/execution.
-    return "deny"
+    # Default-open fallback for owners that do not yet have policy rows.
+    return "allow"
 
 
 class CombinedAppsOpenAPIMCP(FastMCP[Any]):

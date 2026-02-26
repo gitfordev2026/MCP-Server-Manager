@@ -116,7 +116,7 @@ export default function McpEndpointsPage() {
       setLoading(true);
       const [serversRes, catalogRes] = await Promise.allSettled([
         fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-        fetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false`),
+        fetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=true`),
       ]);
 
       if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
@@ -264,7 +264,7 @@ export default function McpEndpointsPage() {
                         </div>
                         <div>
                           <h2 className="text-xl font-bold text-slate-900">Combined MCP Server</h2>
-                          <p className="text-sm text-slate-500">All registered API apps exposed as MCP tools</p>
+                          <p className="text-sm text-slate-500">Only public/client-allowed tools are exposed</p>
                         </div>
                       </div>
 
@@ -324,7 +324,7 @@ export default function McpEndpointsPage() {
                     Tools by App ({catalogToolCount})
                   </h3>
                   {Object.keys(combinedToolsByApp).length === 0 ? (
-                    <p className="text-sm text-slate-500">No tools available. Register API apps to see tools here.</p>
+                    <p className="text-sm text-slate-500">No public tools available. Set access policy to Allow to expose tools.</p>
                   ) : (
                     <div className="space-y-5">
                       {Object.entries(combinedToolsByApp).map(([appName, tools]) => (

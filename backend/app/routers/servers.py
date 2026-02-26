@@ -283,7 +283,7 @@ def create_servers_router(
                 ).all()
 
                 policy_map = {p.tool_id: p.mode for p in policies}
-                default_mode = policy_map.get("__default__", "deny")
+                default_mode = policy_map.get("__default__", "allow")
 
             if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")

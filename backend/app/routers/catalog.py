@@ -22,6 +22,10 @@ def create_catalog_router(
     async def get_openapi_tool_catalog(
         force_refresh: bool = Query(default=True),
         retries: int = Query(default=openapi_mcp_fetch_retries, ge=0, le=5),
+        public_only: bool = Query(
+            default=False,
+            description="When true, include only tools with effective access_mode='allow' (public/client-allowed).",
+        ),
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = current_user
@@ -47,7 +51,7 @@ def create_catalog_router(
                 return owner_policies[tool_id]
             if "__default__" in owner_policies:
                 return owner_policies["__default__"]
-            return "deny"
+            return "allow"
 
         tools_list = [
             {
@@ -79,6 +83,10 @@ def create_catalog_router(
             }
             tools_list.append(entry)
             mcp_server_tool_list.append(entry)
+
+        if public_only:
+            tools_list = [tool for tool in tools_list if tool.get("access_mode") == "allow"]
+            mcp_server_tool_list = [tool for tool in mcp_server_tool_list if tool.get("access_mode") == "allow"]
 
         return {
             "mcp_endpoint": "/mcp/apps",
