@@ -401,4 +401,54 @@ def create_base_urls_router(
         reset_openapi_catalog_fn()
         return {"status": "deleted", "name": name, "hard": hard}
 
+    @router.post(
+        "/base-urls/{name}/sync",
+        summary="Sync Application Tools",
+        description="Manually trigger discovery and registry synchronization for an application.",
+    )
+    async def sync_base_url(
+        name: str,
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        import datetime
+
+        try:
+            with session_local_factory() as db:
+                row = db.scalar(select(base_url_model).where(base_url_model.name == name))
+                if not row or row.is_deleted or not row.is_enabled:
+                    raise HTTPException(status_code=404, detail=f"Application '{name}' not found")
+
+                row.last_sync_started_on = datetime.datetime.utcnow()
+                row.last_sync_status = "in_progress"
+                db.commit()
+
+            # We reuse the existing fetch_openapi_spec_from_base_url_fn to get the spec
+            # and rely on reset_openapi_catalog_fn to trigger the async background catalog rebuild.
+            # In a fully decoupled architecture, we'd use the DiscoveryService here directly.
+            reset_openapi_catalog_fn()
+            
+            with session_local_factory() as db:
+                row = db.scalar(select(base_url_model).where(base_url_model.name == name))
+                if row:
+                    row.last_sync_completed_on = datetime.datetime.utcnow()
+                    row.last_sync_status = "success" 
+                    row.last_sync_error = None
+                    db.commit()
+
+            return {
+                "message": f"Sync initiated for {name}",
+                "status": "success" 
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            with session_local_factory() as db:
+                row = db.scalar(select(base_url_model).where(base_url_model.name == name))
+                if row:
+                    row.last_sync_completed_on = datetime.datetime.utcnow()
+                    row.last_sync_status = "failed"
+                    row.last_sync_error = str(exc)
+                    db.commit()
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     return router

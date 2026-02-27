@@ -292,69 +292,35 @@ def create_servers_router(
             if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-            if registry_only:
-                with session_local_factory() as db:
-                    rows = db.scalars(
-                        select(mcp_tool_model).where(
-                            mcp_tool_model.source_type == "mcp",
-                            mcp_tool_model.owner_id == f"mcp:{server_name}",
-                            mcp_tool_model.is_deleted == False,  # noqa: E712
-                            mcp_tool_model.is_enabled == True,  # noqa: E712
-                        )
-                    ).all()
-                tools_list = []
-                for row in rows:
-                    if selected_tools and row.name not in selected_tools:
-                        continue
-                    mode = policy_map.get(row.name, default_mode)
-                    tools_list.append(
-                        {
-                            "name": row.name,
-                            "description": row.description or "No description",
-                            "inputSchema": {},
-                            "access_mode": mode,
-                        }
+            with session_local_factory() as db:
+                rows = db.scalars(
+                    select(mcp_tool_model).where(
+                        mcp_tool_model.source_type == "mcp",
+                        mcp_tool_model.owner_id == f"mcp:{server_name}",
+                        mcp_tool_model.is_deleted == False,  # noqa: E712
+                        mcp_tool_model.is_enabled == True,  # noqa: E712
                     )
-                tools_list.sort(key=lambda item: str(item.get("name", "")))
-                return {
-                    "server": server_name,
-                    "url": server.url,
-                    "tools": tools_list,
-                    "tool_count": len(tools_list),
-                    "source": "registry",
-                }
-
-            config = {
-                "mcpServers": {
-                    server_name: {"url": server.url},
-                }
-            }
-
-            client = mcp_client_cls(config)
-            await client.create_all_sessions()
-            session = client.get_session(server_name)
-            tools = await session.list_tools()
-
+                ).all()
             tools_list = []
-            for tool in tools:
-                if selected_tools and tool.name not in selected_tools:
+            for row in rows:
+                if selected_tools and row.name not in selected_tools:
                     continue
-                mode = policy_map.get(tool.name, default_mode)
+                mode = policy_map.get(row.name, default_mode)
                 tools_list.append(
                     {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "inputSchema": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+                        "name": row.name,
+                        "description": row.description or "No description",
+                        "inputSchema": {},
                         "access_mode": mode,
                     }
                 )
-
+            tools_list.sort(key=lambda item: str(item.get("name", "")))
             return {
                 "server": server_name,
                 "url": server.url,
                 "tools": tools_list,
                 "tool_count": len(tools_list),
-                "source": "live",
+                "source": "registry",
             }
 
         except HTTPException:
@@ -574,5 +540,90 @@ def create_servers_router(
                 db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to delete server '{server_name}': {exc}") from exc
         return {"status": "deleted", "name": server_name, "hard": hard}
+
+    @router.post(
+        "/servers/{server_name}/sync",
+        summary="Sync MCP Server Tools",
+        description="Manually trigger discovery and registry synchronization for an MCP server.",
+    )
+    async def sync_server(
+        server_name: str,
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        from backend.app.services.registry.discovery_service import DiscoveredServerSnapshot, DiscoveredToolParameters
+        from backend.app.services.registry.registry_sync_service import sync_tools_from_discovery
+        import datetime
+
+        try:
+            with session_local_factory() as db:
+                server = db.scalar(select(server_model).where(server_model.name == server_name))
+                if not server or server.is_deleted or not server.is_enabled:
+                    raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+
+                server.last_sync_started_on = datetime.datetime.utcnow()
+                server.last_sync_status = "in_progress"
+                db.commit()
+
+            probe_result = await probe_server_status(server.name, server.url, timeout_sec=15.0)
+            
+            snapshot_tools = []
+            if probe_result["status"] == "alive":
+                config = {"mcpServers": {server.name: {"url": server.url}}}
+                client = mcp_client_cls(config)
+                await client.create_all_sessions()
+                session = client.get_session(server.name)
+                tools = await session.list_tools()
+                
+                for t in tools:
+                    snapshot_tools.append(DiscoveredToolParameters(
+                        name=t.name,
+                        description=getattr(t, "description", "") or "",
+                        input_schema=getattr(t, "inputSchema", {}) or {},
+                        method="MCP",
+                        path=t.name
+                    ))
+            
+            snapshot = DiscoveredServerSnapshot(
+                name=server.name,
+                source_type="mcp",
+                url=server.url,
+                tools=snapshot_tools,
+                error=probe_result.get("error"),
+                is_alive=probe_result["status"] == "alive"
+            )
+
+            with session_local_factory() as db:
+                server = db.scalar(select(server_model).where(server_model.name == server_name))
+                owner_id = f"mcp:{server.name}"
+                
+                stats = sync_tools_from_discovery(
+                    db=db,
+                    mcp_tool_model=mcp_tool_model,
+                    owner_id=owner_id,
+                    snapshot=snapshot,
+                    selected_tool_names=server.selected_tools
+                )
+                
+                server.last_sync_completed_on = datetime.datetime.utcnow()
+                server.last_sync_status = "success" if snapshot.is_alive else "failed"
+                server.last_sync_error = snapshot.error
+                db.commit()
+
+            return {
+                "message": f"Sync completed for {server_name}",
+                "status": "success" if snapshot.is_alive else "failed",
+                "stats": stats
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            with session_local_factory() as db:
+                server = db.scalar(select(server_model).where(server_model.name == server_name))
+                if server:
+                    server.last_sync_completed_on = datetime.datetime.utcnow()
+                    server.last_sync_status = "failed"
+                    server.last_sync_error = str(exc)
+                    db.commit()
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return router
