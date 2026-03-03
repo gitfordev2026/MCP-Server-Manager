@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Load Env here so that environment variables are loaded *before* we import SDKs (e.g. mcp, fastmcp)
 # that might initialize telemetry telemetry based on environment variables on import
-from backend.env import ENV
+from app.env import ENV
 import asyncio
 import re
 import json
@@ -33,7 +33,6 @@ from sqlalchemy import (
     inspect,
 )
 
-<<<<<<< HEAD:backend/app/main.py
 # Allow running from the `backend/` directory (e.g. `uvicorn app.main:app`).
 # Ensure `backend/` is present in sys.path for absolute `app.*` imports.
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -45,11 +44,6 @@ from app.env import ENV
 from app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
 from app.core.rbac import build_require_permission, get_request_actor
 from app.core.mcp_runtime import (
-=======
-from backend.app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
-from backend.app.core.rbac import build_require_permission, get_request_actor
-from backend.app.core.mcp_runtime import (
->>>>>>> c899f6a6ffd3677e6a162e99b6076052b3d46119:backend/main.py
     MCP_RUNTIME_INFO,
     FastMCP,
     build_fastmcp_asgi_app,
@@ -1808,13 +1802,7 @@ app.include_router(
 )
 
 
-<<<<<<< HEAD:backend/app/main.py
-# if __name__ == "__main__":
-#     uvicorn.run("app.main:app", host="0.0.0.0", port=8091, reload=True)
 
-=======
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8090, reload=True, ws="wsproto")
->>>>>>> c899f6a6ffd3677e6a162e99b6076052b3d46119:backend/main.py
-
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8091, reload=True)
 

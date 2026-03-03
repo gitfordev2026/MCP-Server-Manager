@@ -42,15 +42,14 @@ def create_catalog_router(
             await build_openapi_tool_catalog_fn(force_refresh=True, retries_override=retries)
             await fetch_all_mcp_server_tools_fn()
 
-        tools_list, mcp_server_tool_list = resolve_exposable_tools(
-            db=session_local_factory(),
-            mcp_tool_model=mcp_tool_model,
-            access_policy_model=access_policy_model,
-            registry_only=registry_only,
-            public_only=public_only
-        )
-        
         with session_local_factory() as db:
+            tools_list, mcp_server_tool_list = resolve_exposable_tools(
+                db=db,
+                mcp_tool_model=mcp_tool_model,
+                access_policy_model=access_policy_model,
+                registry_only=registry_only,
+                public_only=public_only
+            )
             active_apps = db.scalars(
                 select(base_url_model).where(
                     base_url_model.is_deleted == False,  # noqa: E712
