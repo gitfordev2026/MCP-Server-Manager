@@ -1,0 +1,159 @@
+
+> mcp-dashboard@0.1.0 build
+> next build
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of D:\Practice\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * D:\Practice\MCP Server Manager\mcp-use-agent (3)\mcp-use-agent\frontend\mcp-dashboard\package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+
+> Build error occurred
+Error: Turbopack build failed with 6 errors:
+./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/providers.tsx:3:1
+Module not found: Can't resolve '@tanstack/react-query'
+[0m [90m 1 |[39m [32m'use client'[39m[33m;[39m
+ [90m 2 |[39m
+[31m[1m>[22m[39m[90m 3 |[39m [36mimport[39m { [33mQueryClient[39m[33m,[39m [33mQueryClientProvider[39m } [36mfrom[39m [32m'@tanstack/react-query'[39m[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 4 |[39m [36mimport[39m { [33mReactNode[39m[33m,[39m useState } [36mfrom[39m [32m'react'[39m[33m;[39m
+ [90m 5 |[39m [36mimport[39m { [33mToaster[39m } [36mfrom[39m [32m'sonner'[39m[33m;[39m
+ [90m 6 |[39m[0m
+
+
+
+Import trace:
+  Server Component:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/providers.tsx
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/hooks/useAccessPolicies.ts:1:1
+Module not found: Can't resolve '@tanstack/react-query'
+[0m[31m[1m>[22m[39m[90m 1 |[39m [36mimport[39m { useMutation[33m,[39m useQuery[33m,[39m useQueryClient } [36mfrom[39m [32m'@tanstack/react-query'[39m[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 2 |[39m [36mimport[39m [33m*[39m [36mas[39m api [36mfrom[39m [32m'@/services/accessPolicies.api'[39m[33m;[39m
+ [90m 3 |[39m [36mimport[39m { [33mAccessMode[39m[33m,[39m [33mOwnerPolicy[39m } [36mfrom[39m [32m'@/types/accessPolicies'[39m[33m;[39m
+ [90m 4 |[39m [36mimport[39m { toast } [36mfrom[39m [32m'@/lib/toast'[39m[33m;[39m[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/hooks/useAccessPolicies.ts [Client Component Browser]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Client Component Browser]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/hooks/useAccessPolicies.ts [Client Component SSR]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Client Component SSR]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx:6:1
+Module not found: Can't resolve 'sonner'
+[0m [90m 4 |[39m [36mimport[39m [33mNavigation[39m [36mfrom[39m [32m'@/components/Navigation'[39m[33m;[39m
+ [90m 5 |[39m [36mimport[39m [33mButton[39m [36mfrom[39m [32m'@/components/ui/Button'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 6 |[39m [36mimport[39m { toast } [36mfrom[39m [32m'sonner'[39m[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 7 |[39m
+ [90m 8 |[39m [36mimport[39m { [33mAccessMode[39m[33m,[39m [33mOwnerPolicy[39m[33m,[39m [33mPolicies[39m } [36mfrom[39m [32m'@/types/accessPolicies'[39m[33m;[39m
+ [90m 9 |[39m [36mimport[39m { usePolicies } [36mfrom[39m [32m'@/hooks/useAccessPolicies'[39m[33m;[39m[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Client Component Browser]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Client Component SSR]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/layout.tsx:5:1
+Module not found: Can't resolve 'sonner'
+[0m [90m 3 |[39m [36mimport[39m [32m"./globals.css"[39m[33m;[39m
+ [90m 4 |[39m [36mimport[39m { [33mProviders[39m } [36mfrom[39m [32m"./providers"[39m[33m;[39m
+[31m[1m>[22m[39m[90m 5 |[39m [36mimport[39m { [33mToaster[39m } [36mfrom[39m [32m'sonner'[39m[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 6 |[39m
+ [90m 7 |[39m [36mconst[39m geistSans [33m=[39m [33mGeist[39m({
+ [90m 8 |[39m   variable[33m:[39m [32m"--font-geist-sans"[39m[33m,[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/providers.tsx:5:1
+Module not found: Can't resolve 'sonner'
+[0m [90m 3 |[39m [36mimport[39m { [33mQueryClient[39m[33m,[39m [33mQueryClientProvider[39m } [36mfrom[39m [32m'@tanstack/react-query'[39m[33m;[39m
+ [90m 4 |[39m [36mimport[39m { [33mReactNode[39m[33m,[39m useState } [36mfrom[39m [32m'react'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 5 |[39m [36mimport[39m { [33mToaster[39m } [36mfrom[39m [32m'sonner'[39m[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 6 |[39m
+ [90m 7 |[39m type [33mProps[39m [33m=[39m {
+ [90m 8 |[39m   children[33m:[39m [33mReactNode[39m[33m;[39m[0m
+
+
+
+Import trace:
+  Server Component:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/providers.tsx
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/layout.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/lib/toast.ts:1:1
+Module not found: Can't resolve 'sonner'
+[0m[31m[1m>[22m[39m[90m 1 |[39m [36mimport[39m { toast [36mas[39m sonnerToast } [36mfrom[39m [32m'sonner'[39m[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
+ [90m 2 |[39m
+ [90m 3 |[39m [36mexport[39m [36mconst[39m toast [33m=[39m {
+ [90m 4 |[39m   success[33m:[39m (msg[33m:[39m string) [33m=>[39m sonnerToast[33m.[39msuccess(msg)[33m,[39m[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/lib/toast.ts [Client Component Browser]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/hooks/useAccessPolicies.ts [Client Component Browser]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Client Component Browser]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/lib/toast.ts [Client Component SSR]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/hooks/useAccessPolicies.ts [Client Component SSR]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Client Component SSR]
+    ./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+    at <unknown> (./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/providers.tsx:3:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/hooks/useAccessPolicies.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/access-control/page.tsx:6:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/layout.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/app/providers.tsx:5:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)
+    at <unknown> (./MCP Server Manager/mcp-use-agent (3)/mcp-use-agent/frontend/mcp-dashboard/lib/toast.ts:1:1)
+    at <unknown> (https://nextjs.org/docs/messages/module-not-found)

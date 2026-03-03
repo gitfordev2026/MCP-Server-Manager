@@ -1,0 +1,30 @@
+
+> mcp-dashboard@0.1.0 build
+> next build
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of D:\Practice\package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * D:\Practice\MCP Server Manager\mcp-use-agent (3)\mcp-use-agent\frontend\mcp-dashboard\package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.5s
+  Running TypeScript ...
+Failed to compile.
+
+./jest.setup.ts:4:1
+Type error: Cannot find name 'beforeAll'.
+
+[0m [90m 2 |[39m [36mimport[39m { server } [36mfrom[39m [32m'@/mocks/server'[39m[33m;[39m
+ [90m 3 |[39m
+[31m[1m>[22m[39m[90m 4 |[39m beforeAll(() [33m=>[39m server[33m.[39mlisten())[33m;[39m
+ [90m   |[39m [31m[1m^[22m[39m
+ [90m 5 |[39m afterEach(() [33m=>[39m server[33m.[39mresetHandlers())[33m;[39m
+ [90m 6 |[39m afterAll(() [33m=>[39m server[33m.[39mclose())[33m;[39m
+ [90m 7 |[39m[0m
+Next.js build worker exited with code: 1 and signal: null

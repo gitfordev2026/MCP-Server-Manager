@@ -1,0 +1,5 @@
+./be_env
+be_env
+./frontend/node_modules
+./node_modules
+node_modules
