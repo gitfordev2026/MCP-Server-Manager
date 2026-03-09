@@ -40,37 +40,40 @@ _notes: dict[str, dict] = {
     "n2": {"id": "n2", "title": "Ideas",          "body": "Build a cool MCP app.", "author": "u2"},
 }
 
+
 # ─────────────────────────────────────────────────────────────
-#  1. FastMCP server  (positional name only — no description kwarg)
+#  1. FastMCP server
 # ─────────────────────────────────────────────────────────────
-mcp = FastMCP("MockDevServer")
+mcp = FastMCP("MCP Mock Dev Server")
 
 
 # ═════════════ TOOLS ═════════════════════════════════════════
+# FIX: Use @mcp.tool() with parentheses — FastMCP 2.x requires the decorator
+# to be called; bare @mcp.tool silently skips registration.
 
-@mcp.tool
+@mcp.tool()
 def add(a: float, b: float) -> float:
     """Add two numbers and return the sum."""
     return a + b
 
-@mcp.tool
+@mcp.tool()
 def get_current_time() -> str:
     """Return the current UTC timestamp as an ISO-8601 string."""
     return datetime.datetime.utcnow().isoformat() + "Z"
 
-@mcp.tool
+@mcp.tool()
 def random_number(low: int = 1, high: int = 100) -> int:
     """Generate a random integer between low and high (inclusive)."""
     if low > high:
         raise ValueError("`low` must be <= `high`")
     return random.randint(low, high)
 
-@mcp.tool
+@mcp.tool()
 def reverse_string(text: str) -> str:
     """Reverse the given string."""
     return text[::-1]
 
-@mcp.tool
+@mcp.tool()
 def word_count(text: str) -> dict:
     """Count words and characters in the supplied text."""
     words = text.split()
@@ -80,12 +83,12 @@ def word_count(text: str) -> dict:
         "char_no_spaces": len(text.replace(" ", "")),
     }
 
-@mcp.tool
+@mcp.tool()
 def get_user(user_id: str) -> dict:
     """Look up a user by ID (try: u1, u2, u3)."""
     return _users.get(user_id) or {"error": f"User '{user_id}' not found"}
 
-@mcp.tool
+@mcp.tool()
 def create_note(title: str, body: str, author_id: str) -> dict:
     """Create a new note. author_id must be an existing user ID."""
     if author_id not in _users:
@@ -95,7 +98,7 @@ def create_note(title: str, body: str, author_id: str) -> dict:
     _notes[nid] = note
     return note
 
-@mcp.tool
+@mcp.tool()
 def transform_case(text: str, mode: str = "upper") -> str:
     """Transform text case. mode: upper | lower | title."""
     modes = {"upper": str.upper, "lower": str.lower, "title": str.title}
@@ -104,10 +107,10 @@ def transform_case(text: str, mode: str = "upper") -> str:
         raise ValueError(f"Unknown mode '{mode}'. Choose: upper | lower | title")
     return fn(text)
 
-@mcp.tool
+@mcp.tool()
 def calculate(a: float, b: float, operation: str = "add") -> dict:
     """Simple calculator. operation: add | subtract | multiply | divide."""
-    if operation == "add":       result = a + b
+    if operation == "add":        result = a + b
     elif operation == "subtract": result = a - b
     elif operation == "multiply": result = a * b
     elif operation == "divide":
@@ -120,6 +123,7 @@ def calculate(a: float, b: float, operation: str = "add") -> dict:
 
 
 # ═════════════ RESOURCES ═════════════════════════════════════
+# FIX: Use @mcp.resource() with parentheses for the same reason as tools.
 
 @mcp.resource("data://users/all")
 def resource_all_users() -> list:
@@ -157,8 +161,9 @@ def resource_roles() -> dict:
 
 
 # ═════════════ PROMPTS ═══════════════════════════════════════
+# FIX: Use @mcp.prompt() with parentheses.
 
-@mcp.prompt
+@mcp.prompt()
 def greeting_prompt(user_name: str, tone: str = "formal") -> str:
     """Generate a greeting for a named user in formal or casual tone."""
     style = "warmly and professionally" if tone == "formal" else "casually and cheerfully"
@@ -167,7 +172,7 @@ def greeting_prompt(user_name: str, tone: str = "formal") -> str:
         "Keep it to 2-3 sentences."
     )
 
-@mcp.prompt
+@mcp.prompt()
 def summarise_prompt(text: str, max_words: int = 50) -> str:
     """Ask the model to summarise a block of text within a word limit."""
     return (
@@ -175,7 +180,7 @@ def summarise_prompt(text: str, max_words: int = 50) -> str:
         f"Be concise and preserve key points.\n\n---\n{text}\n---"
     )
 
-@mcp.prompt
+@mcp.prompt()
 def bullets_to_prose_prompt(bullets: str) -> str:
     """Convert bullet points into a polished paragraph."""
     return (
@@ -184,7 +189,7 @@ def bullets_to_prose_prompt(bullets: str) -> str:
         f"Bullets:\n{bullets}"
     )
 
-@mcp.prompt
+@mcp.prompt()
 def code_review_prompt(code: str, language: str = "Python") -> str:
     """Code-review prompt for a given snippet and language."""
     return (
@@ -195,19 +200,20 @@ def code_review_prompt(code: str, language: str = "Python") -> str:
 
 
 # ─────────────────────────────────────────────────────────────
-#  2. Build MCP ASGI app (path="/mcp")
+#  2. Build MCP ASGI app
+#     path="/mcp" keeps MCP isolated so it won't swallow REST routes.
 # ─────────────────────────────────────────────────────────────
-# We specify path="/mcp" so FastMCP creates routes at /mcp natively.
-# This avoids FastAPI's aggressive 307 trailing slash redirects when mounting.
 mcp_app = mcp.http_app(path="/mcp")
 
 
 # ─────────────────────────────────────────────────────────────
-#  3. Combined lifespan (REQUIRED for session manager to start)
+#  3. Combined lifespan
+#  FIX: Pass `mcp_app` (not `app`) to lifespan_context — the session manager
+#  lives on the MCP ASGI app, not the outer FastAPI instance.
 # ─────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with mcp_app.router.lifespan_context(app):
+    async with mcp_app.router.lifespan_context(mcp_app):   # <-- was (app)
         yield
 
 
@@ -228,12 +234,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount MCP ASGI app at root
-# Since mcp_app is configured with path="/mcp", it will only intercept
-# exactly /mcp and /mcp/messages, avoiding standard FastAPI router 307 redirects
-# for trailing slashes when interacting with external MCP clients.
-app.mount("/", mcp_app)
-
 
 # ──── Pydantic models ────────────────────────────────────────
 class CreateUserRequest(BaseModel):
@@ -253,33 +253,73 @@ class EchoRequest(BaseModel):
 
 # ═════════════ REST — Health ══════════════════════════════════
 
-@app.get("/", tags=["Health"])
+@app.get("/api", tags=["Health"], summary="Server root — all endpoints & capabilities")
 def root():
-    return {"status": "ok", "message": "Mock MCP + FastAPI server is running"}
+    return {
+        "server":    "MockDevServer",
+        "version":   "1.0.0",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "endpoints": {
+            "mcp": {
+                "streamable_http": "http://localhost:8000/mcp/",
+                "description":     "MCP Streamable HTTP transport (connect your MCP client here)",
+            },
+            "docs": {
+                "swagger_ui":  "http://localhost:8000/docs",
+                "redoc":       "http://localhost:8000/redoc",
+                "openapi_json":"http://localhost:8000/openapi.json",
+            },
+            "rest": {
+                "health":    "GET  /api/health",
+                "info":      "GET  /api/info",
+                "users":     ["GET /api/users", "GET /api/users/{id}", "POST /api/users", "DELETE /api/users/{id}"],
+                "notes":     ["GET /api/notes", "GET /api/notes/{id}", "POST /api/notes", "DELETE /api/notes/{id}"],
+                "utilities": ["GET /api/time", "GET /api/random", "POST /api/echo", "POST /api/calculate"],
+            },
+        },
+        "mcp_capabilities": {
+            "tools": [
+                "add", "get_current_time", "random_number", "reverse_string",
+                "word_count", "get_user", "create_note", "transform_case", "calculate",
+            ],
+            "resources": [
+                "data://users/all",
+                "data://notes/all",
+                "data://server/info",
+                "data://config/roles",
+            ],
+            "prompts": [
+                "greeting_prompt",
+                "summarise_prompt",
+                "bullets_to_prose_prompt",
+                "code_review_prompt",
+            ],
+        },
+    }
 
-@app.get("/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 def health():
     return {"status": "healthy", "timestamp": datetime.datetime.utcnow().isoformat() + "Z"}
 
-@app.get("/info", tags=["Health"])
+@app.get("/api/info", tags=["Health"])
 def info():
     return {"server": "MockDevServer", "version": "1.0.0", "mcp_url": "/mcp/", "docs": "/docs"}
 
 
 # ═════════════ REST — Users ═══════════════════════════════════
 
-@app.get("/users", tags=["Users"])
+@app.get("/api/users", tags=["Users"])
 def list_users():
     return {"users": list(_users.values()), "total": len(_users)}
 
-@app.get("/users/{user_id}", tags=["Users"])
+@app.get("/api/users/{user_id}", tags=["Users"])
 def get_user_rest(user_id: str):
     user = _users.get(user_id)
     if not user:
         raise HTTPException(404, f"User '{user_id}' not found")
     return user
 
-@app.post("/users", status_code=201, tags=["Users"])
+@app.post("/api/users", status_code=201, tags=["Users"])
 def create_user(req: CreateUserRequest):
     if req.role not in {"admin", "editor", "viewer"}:
         raise HTTPException(400, "Invalid role. Choose: admin | editor | viewer")
@@ -288,7 +328,7 @@ def create_user(req: CreateUserRequest):
     _users[uid] = user
     return user
 
-@app.delete("/users/{user_id}", tags=["Users"])
+@app.delete("/api/users/{user_id}", tags=["Users"])
 def delete_user(user_id: str):
     if user_id not in _users:
         raise HTTPException(404, f"User '{user_id}' not found")
@@ -297,18 +337,18 @@ def delete_user(user_id: str):
 
 # ═════════════ REST — Notes ═══════════════════════════════════
 
-@app.get("/notes", tags=["Notes"])
+@app.get("/api/notes", tags=["Notes"])
 def list_notes():
     return {"notes": list(_notes.values()), "total": len(_notes)}
 
-@app.get("/notes/{note_id}", tags=["Notes"])
+@app.get("/api/notes/{note_id}", tags=["Notes"])
 def get_note(note_id: str):
     note = _notes.get(note_id)
     if not note:
         raise HTTPException(404, f"Note '{note_id}' not found")
     return note
 
-@app.post("/notes", status_code=201, tags=["Notes"])
+@app.post("/api/notes", status_code=201, tags=["Notes"])
 def create_note_rest(req: CreateNoteRequest):
     if req.author_id not in _users:
         raise HTTPException(400, f"Author '{req.author_id}' not found")
@@ -317,7 +357,7 @@ def create_note_rest(req: CreateNoteRequest):
     _notes[nid] = note
     return note
 
-@app.delete("/notes/{note_id}", tags=["Notes"])
+@app.delete("/api/notes/{note_id}", tags=["Notes"])
 def delete_note(note_id: str):
     if note_id not in _notes:
         raise HTTPException(404, f"Note '{note_id}' not found")
@@ -326,19 +366,19 @@ def delete_note(note_id: str):
 
 # ═════════════ REST — Utilities ═══════════════════════════════
 
-@app.post("/echo", tags=["Utilities"])
+@app.post("/api/echo", tags=["Utilities"])
 def echo(req: EchoRequest):
     if not 1 <= req.repeat <= 10:
         raise HTTPException(400, "`repeat` must be between 1 and 10")
     return {"messages": [req.message] * req.repeat}
 
-@app.get("/random", tags=["Utilities"])
+@app.get("/api/random", tags=["Utilities"])
 def random_endpoint(low: int = 1, high: int = 100):
     if low > high:
         raise HTTPException(400, "`low` must be <= `high`")
     return {"value": random.randint(low, high), "range": [low, high]}
 
-@app.get("/time", tags=["Utilities"])
+@app.get("/api/time", tags=["Utilities"])
 def current_time():
     now = datetime.datetime.utcnow()
     return {
@@ -348,7 +388,7 @@ def current_time():
         "timestamp": int(now.timestamp()),
     }
 
-@app.post("/calculate", tags=["Utilities"])
+@app.post("/api/calculate", tags=["Utilities"])
 def calculate_rest(a: float, b: float, op: str = "add"):
     if op == "divide" and b == 0:
         raise HTTPException(400, "Division by zero")
@@ -362,5 +402,18 @@ def calculate_rest(a: float, b: float, op: str = "add"):
         raise HTTPException(400, f"Unknown op '{op}'. Use: add | subtract | multiply | divide")
     return {"a": a, "b": b, "op": op, "result": ops[op]}
 
+
+# ─────────────────────────────────────────────────────────────
+#  5. Mount MCP LAST — after all REST routes are registered.
+#  FIX: Mount at "/" only after FastAPI has registered its own routes.
+#  Because FastAPI checks its own router first before falling through to
+#  mounted sub-applications, REST routes at /api/* are safe. The MCP app
+#  internally only handles /mcp and /mcp/*, so nothing else is swallowed.
+# ─────────────────────────────────────────────────────────────
+app.mount("/", mcp_app)
+
+
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True, ws="wsproto")
+    # FIX: Removed ws="wsproto" — streamable HTTP transport doesn't use
+    # WebSockets and wsproto may not be installed, causing a startup crash.
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

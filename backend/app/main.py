@@ -1,23 +1,11 @@
 from pathlib import Path
 import sys
-
-# Allow running `python main.py` from the `backend/` directory.
-# In that mode, Python does not automatically include the repository root
-# in sys.path, so absolute imports like `backend.app.*` would fail.
-CURRENT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CURRENT_DIR.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# Load Env here so that environment variables are loaded *before* we import SDKs (e.g. mcp, fastmcp)
-# that might initialize telemetry telemetry based on environment variables on import
-from app.env import ENV
 import asyncio
 import re
 import json
 import hashlib
 import datetime
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 from time import perf_counter, time
@@ -47,6 +35,7 @@ from app.core.mcp_runtime import (
     MCP_RUNTIME_INFO,
     FastMCP,
     build_fastmcp_asgi_app,
+    run_mcp_asgi_lifespan,
     run_mcp_server_lifespan,
 )
 from app.core.db import DB_BACKEND, SessionLocal, engine
@@ -95,11 +84,13 @@ from app.services.policy_utils import (
 async def lifespan(_: FastAPI):
     init_db()
     mcp_server = globals().get("combined_apps_mcp")
-    if mcp_server is None:
-        yield
-        return
+    mcp_asgi_app = globals().get("combined_mcp_asgi_app")
 
-    async with run_mcp_server_lifespan(mcp_server):
+    async with AsyncExitStack() as stack:
+        if mcp_asgi_app is not None:
+            await stack.enter_async_context(run_mcp_asgi_lifespan(mcp_asgi_app))
+        if mcp_server is not None:
+            await stack.enter_async_context(run_mcp_server_lifespan(mcp_server))
         yield
 
 

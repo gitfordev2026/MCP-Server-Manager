@@ -67,6 +67,33 @@ def build_fastmcp_asgi_app(server: Any, *, path: str = "/") -> Any:
 
 
 @asynccontextmanager
+async def run_mcp_asgi_lifespan(asgi_app: Any):
+    """Enter lifespan of a mounted FastMCP ASGI app when available.
+
+    FastMCP streamable HTTP manager requires its app lifespan to run,
+    otherwise requests fail with "Task group is not initialized".
+    """
+    if asgi_app is None:
+        yield
+        return
+
+    router = getattr(asgi_app, "router", None)
+    lifespan_context = getattr(router, "lifespan_context", None)
+    if callable(lifespan_context):
+        async with lifespan_context(asgi_app):
+            yield
+        return
+
+    lifespan = getattr(asgi_app, "lifespan", None)
+    if callable(lifespan):
+        async with lifespan(asgi_app):
+            yield
+        return
+
+    yield
+
+
+@asynccontextmanager
 async def run_mcp_server_lifespan(server: Any):
     """Runtime-safe MCP server lifespan handling.
 
@@ -85,4 +112,3 @@ async def run_mcp_server_lifespan(server: Any):
 
     # No explicit server lifecycle API available/required.
     yield
-

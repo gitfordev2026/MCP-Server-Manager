@@ -110,3 +110,15 @@ Last updated: 2026-02-27
     - `README.md` backend run command updated to `uvicorn app.main:app --reload --port 8090`.
   - Validation:
     - AST syntax check passed for all backend `.py` files (`syntax-ok 40`).
+- 2026-03-06: Fixed FastMCP inspector connection failure (`Task group is not initialized`) on combined MCP endpoint.
+  - Root cause: mounted FastMCP ASGI app (`/mcp/apps`) lifespan was not entered by parent FastAPI lifespan, so StreamableHTTP task group never initialized.
+  - Changes:
+    - `backend/app/core/mcp_runtime.py`:
+      - added `run_mcp_asgi_lifespan(asgi_app)` helper to enter mounted ASGI app lifespan via `router.lifespan_context` or `lifespan` when available.
+    - `backend/app/main.py`:
+      - lifespan now uses `AsyncExitStack` and enters both:
+        - `run_mcp_asgi_lifespan(combined_mcp_asgi_app)`
+        - `run_mcp_server_lifespan(combined_apps_mcp)`
+      - cleaned duplicate pre-import env/sys.path block to avoid inconsistent startup state.
+  - Validation:
+    - In-process test request to `/mcp/apps/` now returns protocol-level 406 (`Accept: text/event-stream` required), proving session manager started correctly instead of crashing with runtime error.
