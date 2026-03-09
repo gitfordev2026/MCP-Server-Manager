@@ -12,7 +12,7 @@ def create_dashboard_router(
     base_url_model,
     server_model,
     mcp_tool_model,
-    mcp_client_cls,
+    probe_server_status_fn,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -37,29 +37,7 @@ def create_dashboard_router(
             }
 
     async def probe_server_status(name: str, url: str, timeout_sec: float = 8.0) -> dict[str, Any]:
-        started = perf_counter()
-        try:
-            config = {"mcpServers": {name: {"url": url}}}
-            client = mcp_client_cls(config)
-            await asyncio.wait_for(client.create_all_sessions(), timeout=timeout_sec)
-            session = client.get_session(name)
-            tools = await asyncio.wait_for(session.list_tools(), timeout=timeout_sec)
-            return {
-                "name": name,
-                "url": url,
-                "status": "alive",
-                "tool_count": len(tools),
-                "latency_ms": int((perf_counter() - started) * 1000),
-            }
-        except Exception as exc:
-            return {
-                "name": name,
-                "url": url,
-                "status": "down",
-                "tool_count": 0,
-                "latency_ms": int((perf_counter() - started) * 1000),
-                "error": str(exc),
-            }
+        return await probe_server_status_fn(name, url, timeout_sec)
 
     @router.get(
         "/dashboard/stats",

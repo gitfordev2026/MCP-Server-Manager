@@ -1,5 +1,4 @@
 import asyncio
-from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,7 +16,8 @@ def create_servers_router(
     tool_version_model,
     endpoint_version_model,
     server_registration_model,
-    mcp_client_cls,
+    probe_server_status_fn,
+    list_server_tools_fn,
     ensure_default_access_policy_for_owner_fn,
     sync_api_server_links_by_host_fn,
     write_audit_log_fn,
@@ -105,34 +105,7 @@ def create_servers_router(
         return {"tools": len(tool_ids), "endpoints": len(endpoint_ids)}
 
     async def probe_server_status(server_name: str, server_url: str, timeout_sec: float = 8.0) -> dict[str, Any]:
-        started = perf_counter()
-        server_config = {"mcpServers": {server_name: {"url": server_url}}}
-        probe_client = mcp_client_cls(server_config)
-
-        try:
-            await asyncio.wait_for(probe_client.create_all_sessions(), timeout=timeout_sec)
-            session = probe_client.get_session(server_name)
-            tools = await asyncio.wait_for(session.list_tools(), timeout=timeout_sec)
-
-            latency_ms = int((perf_counter() - started) * 1000)
-            return {
-                "name": server_name,
-                "url": server_url,
-                "status": "alive",
-                "latency_ms": latency_ms,
-                "tool_count": len(tools),
-                "error": None,
-            }
-        except Exception as exc:
-            latency_ms = int((perf_counter() - started) * 1000)
-            return {
-                "name": server_name,
-                "url": server_url,
-                "status": "down",
-                "latency_ms": latency_ms,
-                "tool_count": 0,
-                "error": str(exc),
-            }
+        return await probe_server_status_fn(server_name, server_url, timeout_sec)
 
     @router.post(
         "/discover-server-tools",
@@ -152,11 +125,7 @@ def create_servers_router(
                 detail=f"Server endpoint is not reachable or not MCP-compatible: {error_detail}",
             )
 
-        config = {"mcpServers": {payload.name: {"url": normalized_url}}}
-        client = mcp_client_cls(config)
-        await client.create_all_sessions()
-        session = client.get_session(payload.name)
-        tools = await session.list_tools()
+        tools = await list_server_tools_fn(payload.name, normalized_url, timeout_sec=8.0)
 
         return {
             "name": payload.name,
@@ -578,11 +547,7 @@ def create_servers_router(
             
             snapshot_tools = []
             if probe_result["status"] == "alive":
-                config = {"mcpServers": {server.name: {"url": server.url}}}
-                client = mcp_client_cls(config)
-                await client.create_all_sessions()
-                session = client.get_session(server.name)
-                tools = await session.list_tools()
+                tools = await list_server_tools_fn(server.name, server.url, timeout_sec=15.0)
                 
                 for t in tools:
                     snapshot_tools.append(DiscoveredToolParameters(
@@ -637,4 +602,3 @@ def create_servers_router(
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return router
-

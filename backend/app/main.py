@@ -14,8 +14,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from mcp.types import Tool as MCPTool
-from mcp_use import MCPClient
+from fastmcp.tools.tool import Tool as FastMCPTool, ToolResult
 from sqlalchemy import (
     select,
     inspect,
@@ -74,6 +73,11 @@ from app.routers.tools import create_tools_router
 from app.schemas.registration import BaseURLRegistration, ServerRegistration
 from app.services.agent_runtime import build_default_agent
 from app.services.audit import write_audit_log
+from app.services.mcp_client_runtime import (
+    list_server_tools as list_server_tools_runtime,
+    call_server_tool as call_server_tool_runtime,
+    probe_server_status as probe_server_status_runtime,
+)
 from app.services.policy_utils import (
     ensure_default_access_policy_for_owner,
     ensure_tool_access_policy_for_owner,
@@ -103,6 +107,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods including POST, GET, OPTIONS
     allow_headers=["*"],  # Allow all headers
+    expose_headers=["Mcp-Session-Id", "mcp-session-id", "MCP-Session-Id"],
 )
 
 
@@ -1478,11 +1483,7 @@ async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
 
     async def _probe(name: str, url: str, selected_tools: list[str]) -> list[tuple[str, str, Any]]:
         try:
-            config = {"mcpServers": {name: {"url": url}}}
-            client = MCPClient(config)
-            await client.create_all_sessions()
-            session = client.get_session(name)
-            tools = await _aio.wait_for(session.list_tools(), timeout=10.0)
+            tools = await list_server_tools_runtime(name, url, timeout_sec=10.0)
             selected_names = set(selected_tools or [])
             return [
                 (f"mcp__{name}__{t.name}", name, t.name, t)
@@ -1531,49 +1532,91 @@ def _effective_access_mode(policy_map: dict[str, dict[str, str]], owner_id: str,
 
 
 class CombinedAppsOpenAPIMCP(FastMCP[Any]):
-    async def list_tools(self) -> list[MCPTool]:
+    async def list_tools(self) -> list[Any]:
         import asyncio as _aio
+        from app.services.registry.exposure_service import resolve_exposable_tools
 
-        # Fetch both sources concurrently
-        catalog_task = build_openapi_tool_catalog()
-        mcp_task = _fetch_all_mcp_server_tools()
-        catalog, mcp_tools = await _aio.gather(catalog_task, mcp_task)
-
-        owner_ids = {f"app:{tool.app_name}" for tool in catalog.tools.values()}
-        owner_ids.update({f"mcp:{server_name}" for server_name, _, _ in mcp_tools.values()})
-        policy_map = _load_policy_mode_map(owner_ids)
-
-        tools: list[MCPTool] = []
-        for tool in catalog.tools.values():
-            owner_id = f"app:{tool.app_name}"
-            if _effective_access_mode(policy_map, owner_id, tool.name) == "deny":
-                continue
-            tools.append(
-                MCPTool(
-                    name=tool.name,
-                    title=tool.title,
-                    description=tool.description,
-                    inputSchema=tool.input_schema,
-                )
+        # Registry is single source of truth for what can be exposed publicly.
+        with SessionLocal() as db:
+            exposable_rows, _ = resolve_exposable_tools(
+                db=db,
+                mcp_tool_model=MCPToolModel,
+                access_policy_model=AccessPolicyModel,
+                registry_only=True,
+                public_only=True,
             )
 
-        for prefixed_name, (server_name, orig_name, tool_obj) in mcp_tools.items():
-            owner_id = f"mcp:{server_name}"
-            if _effective_access_mode(policy_map, owner_id, orig_name) == "deny":
+        exposed_by_name: dict[str, dict[str, Any]] = {str(item["name"]): item for item in exposable_rows}
+        if not exposed_by_name:
+            return []
+
+        # Best-effort live enrichment for schema/details.
+        try:
+            catalog_task = build_openapi_tool_catalog()
+            mcp_task = _fetch_all_mcp_server_tools()
+            catalog, mcp_tools = await _aio.gather(catalog_task, mcp_task)
+        except Exception:
+            catalog = OpenAPIToolCatalog(generated_at=0.0, tools={}, sync_errors=[], apps=[])
+            mcp_tools = {}
+
+        tools: list[Any] = []
+        seen_names: set[str] = set()
+
+        for tool in catalog.tools.values():
+            if tool.name not in exposed_by_name:
+                continue
+            row = exposed_by_name[tool.name]
+            tools.append(
+                FastMCPTool(
+                    name=tool.name,
+                    title=str(row.get("title") or tool.title or tool.name),
+                    description=str(row.get("description") or tool.description or ""),
+                    parameters=tool.input_schema or {},
+                    version=str(row.get("version") or "1.0.0"),
+                )
+            )
+            seen_names.add(tool.name)
+
+        for prefixed_name, (_server_name, _orig_name, tool_obj) in mcp_tools.items():
+            if prefixed_name not in exposed_by_name:
+                continue
+            row = exposed_by_name[prefixed_name]
+            tools.append(
+                FastMCPTool(
+                    name=prefixed_name,
+                    title=str(row.get("title") or getattr(tool_obj, "name", prefixed_name)),
+                    description=str(row.get("description") or getattr(tool_obj, "description", "") or "No description"),
+                    parameters=getattr(tool_obj, "inputSchema", {}) or {},
+                    version=str(row.get("version") or "1.0.0"),
+                )
+            )
+            seen_names.add(prefixed_name)
+
+        # Fallback: expose registry rows even when live discovery is unavailable.
+        for name, row in exposed_by_name.items():
+            if name in seen_names:
                 continue
             tools.append(
-                MCPTool(
-                    name=prefixed_name,
-                    title=getattr(tool_obj, "name", prefixed_name),
-                    description=f"[MCP: {server_name}] {getattr(tool_obj, 'description', '') or 'No description'}",
-                    inputSchema=getattr(tool_obj, "inputSchema", {}) or {},
+                FastMCPTool(
+                    name=name,
+                    title=str(row.get("title") or name),
+                    description=str(row.get("description") or ""),
+                    parameters={},
+                    version=str(row.get("version") or "1.0.0"),
                 )
             )
 
         return tools
 
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        version: str | None = None,
+        **_kwargs: Any,
+    ) -> ToolResult:
+        _ = version
         # Helper to check access policy
         def _check_access(owner_id: str, tool_id: str) -> None:
             mode = _effective_access_mode(
@@ -1598,19 +1641,14 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             if not server:
                 raise ValueError(f"MCP server '{server_name}' not found in database.")
 
-            config = {"mcpServers": {server_name: {"url": server.url}}}
-            client = MCPClient(config)
-            await client.create_all_sessions()
-            session = client.get_session(server_name)
-            result = await session.call_tool(orig_tool_name, arguments or {})
-            # Convert CallToolResult to a plain dict for JSON response
-            return {
-                "content": [
-                    {"type": getattr(c, "type", "text"), "text": getattr(c, "text", str(c))}
-                    for c in (result.content if hasattr(result, "content") else [])
-                ],
-                "isError": getattr(result, "isError", False),
-            }
+            native_result = await call_server_tool_runtime(
+                server_name,
+                server.url,
+                orig_tool_name,
+                arguments or {},
+                timeout_sec=30.0,
+            )
+            return ToolResult(structured_content=native_result)
 
         # ---- OpenAPI app tool ----
         catalog = await build_openapi_tool_catalog()
@@ -1625,7 +1663,8 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
 
         _check_access(f"app:{tool.app_name}", tool.name)
 
-        return await invoke_openapi_tool(tool, arguments or {})
+        openapi_result = await invoke_openapi_tool(tool, arguments or {})
+        return ToolResult(structured_content=openapi_result)
 
 def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
     base_kwargs = {
@@ -1654,8 +1693,12 @@ def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
 
 combined_apps_mcp = _create_combined_apps_mcp()
 combined_mcp_asgi_app = build_fastmcp_asgi_app(combined_apps_mcp, path="/")
+
+# Support both canonical and trailing-slash inspector URLs.
 app.mount("/mcp/apps", combined_mcp_asgi_app)
+app.mount("/mcp/apps/", combined_mcp_asgi_app)
 MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
+MCP_RUNTIME_INFO["mounted_paths"] = ["/mcp/apps", "/mcp/apps/"]
 agent = build_default_agent()
 require_permission = build_require_permission(
     SessionLocal,
@@ -1726,7 +1769,8 @@ app.include_router(
         ToolVersionModel,
         EndpointVersionModel,
         ServerRegistration,
-        MCPClient,
+        probe_server_status_runtime,
+        list_server_tools_runtime,
         ensure_default_access_policy_for_owner,
         sync_api_server_links_by_host,
         write_audit_log,
@@ -1754,7 +1798,7 @@ app.include_router(
         BaseURLModel,
         ServerModel,
         MCPToolModel,
-        MCPClient,
+        probe_server_status_runtime,
     ),
     tags=["Dashboard"],
 )
@@ -1796,4 +1840,3 @@ app.include_router(
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8091, reload=True)
-

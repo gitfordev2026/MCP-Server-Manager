@@ -44,6 +44,8 @@ function formatJson(value: unknown): string {
 }
 
 export default function RegisterServerPage() {
+  const DISCOVERY_PAGE_SIZE = 10;
+  const REGISTERED_PAGE_SIZE = 10;
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,14 +67,31 @@ export default function RegisterServerPage() {
   const [registeredTools, setRegisteredTools] = useState<ModalTool[]>([]);
   const [registeredToolsLoading, setRegisteredToolsLoading] = useState(false);
   const [registeredToolsError, setRegisteredToolsError] = useState<string | null>(null);
-  const [togglingToolName, setTogglingToolName] = useState<string | null>(null);
   const [draftToolDescriptions, setDraftToolDescriptions] = useState<Record<string, string>>({});
   const [savingToolDescriptionName, setSavingToolDescriptionName] = useState<string | null>(null);
   const [selectedToolDescriptions, setSelectedToolDescriptions] = useState<Record<string, string>>({});
+  const [discoveryPage, setDiscoveryPage] = useState(1);
+  const [registeredSyncing, setRegisteredSyncing] = useState(false);
+  const [registeredPage, setRegisteredPage] = useState(1);
+  const [registeredSelectedTools, setRegisteredSelectedTools] = useState<Set<string>>(new Set());
 
   const activeTool = useMemo(
     () => discoveredTools.find((tool) => tool.name === activeToolName) ?? null,
     [activeToolName, discoveredTools]
+  );
+  const discoveryTotalPages = Math.max(1, Math.ceil(discoveredTools.length / DISCOVERY_PAGE_SIZE));
+  const discoveryPageItems = useMemo(() => {
+    const start = (discoveryPage - 1) * DISCOVERY_PAGE_SIZE;
+    return discoveredTools.slice(start, start + DISCOVERY_PAGE_SIZE);
+  }, [discoveredTools, discoveryPage]);
+  const registeredTotalPages = Math.max(1, Math.ceil(registeredTools.length / REGISTERED_PAGE_SIZE));
+  const registeredPageItems = useMemo(() => {
+    const start = (registeredPage - 1) * REGISTERED_PAGE_SIZE;
+    return registeredTools.slice(start, start + REGISTERED_PAGE_SIZE);
+  }, [registeredTools, registeredPage]);
+  const activeRegisteredTool = useMemo(
+    () => registeredTools.find((tool) => tool.name === activeToolName) ?? null,
+    [registeredTools, activeToolName]
   );
 
   const fetchServers = async () => {
@@ -131,6 +150,7 @@ export default function RegisterServerPage() {
       });
       setSelectedToolDescriptions(descriptionMap);
       setActiveToolName(tools[0]?.name ?? null);
+      setDiscoveryPage(1);
       setIsModalOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to discover MCP tools');
@@ -161,7 +181,11 @@ export default function RegisterServerPage() {
     ).catch(() => null);
   };
 
-  const buildRegisteredToolRows = async (serverName: string, serverUrl: string): Promise<ModalTool[]> => {
+  const buildRegisteredToolRows = async (
+    serverName: string,
+    serverUrl: string,
+    configuredSelectionOverride?: Set<string>
+  ): Promise<ModalTool[]> => {
     const discoverResponse = await fetch(`${NEXT_PUBLIC_BE_API_URL}/discover-server-tools`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -174,9 +198,9 @@ export default function RegisterServerPage() {
 
     const liveTools: DiscoveredTool[] = Array.isArray(discoverPayload?.tools) ? discoverPayload.tools : [];
     const server = servers.find((item) => item.name === serverName);
-    const configuredSelection = Array.isArray(server?.selected_tools)
+    const configuredSelection = configuredSelectionOverride ?? (Array.isArray(server?.selected_tools)
       ? new Set((server?.selected_tools || []).map((item) => String(item).trim()).filter(Boolean))
-      : new Set<string>();
+      : new Set<string>());
     const allSelectedByDefault = configuredSelection.size === 0;
 
     const dbPayload = await http<{ tools: Array<{
@@ -210,18 +234,25 @@ export default function RegisterServerPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   };
 
-  const loadRegisteredTools = async (serverName: string) => {
+  const loadRegisteredTools = async (
+    serverName: string,
+    serverUrlOverride?: string,
+    configuredSelectionOverride?: Set<string>
+  ) => {
     setSelectedServerName(serverName);
     setRegisteredToolsLoading(true);
     setRegisteredToolsError(null);
     try {
       const server = servers.find((item) => item.name === serverName);
-      if (!server?.url) {
+      const resolvedUrl = serverUrlOverride || server?.url;
+      if (!resolvedUrl) {
         throw new Error('Server URL is missing');
       }
-      const rows = await buildRegisteredToolRows(serverName, server.url);
+      const rows = await buildRegisteredToolRows(serverName, resolvedUrl, configuredSelectionOverride);
       setRegisteredTools(rows);
       setActiveToolName(rows[0]?.name ?? null);
+      setRegisteredPage(1);
+      setRegisteredSelectedTools(new Set(rows.filter((tool) => tool.is_enabled).map((tool) => tool.name)));
       const drafts: Record<string, string> = {};
       rows.forEach((tool) => {
         drafts[tool.name] = tool.description || '';
@@ -235,32 +266,34 @@ export default function RegisterServerPage() {
     }
   };
 
-  const toggleRegisteredTool = async (tool: ModalTool) => {
+  const applyRegisteredToolSelection = async () => {
     if (!selectedServerName) return;
-    setTogglingToolName(tool.name);
+    setRegisteredSyncing(true);
     setRegisteredToolsError(null);
     try {
       const server = servers.find((item) => item.name === selectedServerName);
-      if (!server) throw new Error('Server not found');
+      if (!server?.url) throw new Error('Server not found');
 
-      const currentSelected = new Set(registeredTools.filter((row) => row.is_enabled).map((row) => row.name));
-      if (tool.is_enabled) {
-        currentSelected.delete(tool.name);
-      } else {
-        currentSelected.add(tool.name);
-      }
+      const selected = new Set(registeredSelectedTools);
+      setRegisteredTools((prev) =>
+        prev.map((row) => ({ ...row, is_enabled: selected.has(row.name) }))
+      );
 
       await http(`/servers/${encodeURIComponent(selectedServerName)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ selected_tools: Array.from(currentSelected) }),
+        body: JSON.stringify({ selected_tools: Array.from(selected) }),
       });
       await syncCatalog();
       await fetchServers();
-      await loadRegisteredTools(server.name);
+      await loadRegisteredTools(selectedServerName, server.url, selected);
     } catch (err) {
-      setRegisteredToolsError(err instanceof Error ? err.message : 'Failed to update tool state');
+      setRegisteredToolsError(err instanceof Error ? err.message : 'Failed to apply tool selection');
+      const server = servers.find((item) => item.name === selectedServerName);
+      if (server?.url) {
+        await loadRegisteredTools(selectedServerName, server.url);
+      }
     } finally {
-      setTogglingToolName(null);
+      setRegisteredSyncing(false);
     }
   };
 
@@ -437,7 +470,7 @@ export default function RegisterServerPage() {
                   key={server.name}
                   type="button"
                   onClick={() => void loadRegisteredTools(server.name)}
-                  className="w-full text-left p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-colors"
+                  className="w-full text-left p-4 rounded-xl border border-cyan-200 bg-gradient-to-r from-cyan-50 to-blue-50 hover:border-cyan-400 transition-colors shadow-sm"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -472,8 +505,21 @@ export default function RegisterServerPage() {
             <div className="grid md:grid-cols-2 gap-0">
               <div className="p-4 border-r border-slate-200 max-h-[70vh] overflow-auto">
                 {discoveredTools.length === 0 && <p className="text-sm text-slate-600">No tools discovered.</p>}
+                {discoveredTools.length > 0 && (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set(discoveredTools.map((tool) => tool.name)))}>
+                        Select All
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set())}>
+                        Unselect All
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-600">Page {discoveryPage} / {discoveryTotalPages}</p>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  {discoveredTools.map((tool) => (
+                  {discoveryPageItems.map((tool) => (
                     <button
                       key={tool.name}
                       type="button"
@@ -506,7 +552,47 @@ export default function RegisterServerPage() {
                       />
                     </button>
                   ))}
+                  {registeredTools.length > REGISTERED_PAGE_SIZE && (
+                    <div className="mt-3 flex items-center justify-between">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredPage((prev) => Math.max(1, prev - 1))}
+                        disabled={registeredPage === 1}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredPage((prev) => Math.min(registeredTotalPages, prev + 1))}
+                        disabled={registeredPage === registeredTotalPages}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  )}
                 </div>
+                {discoveredTools.length > DISCOVERY_PAGE_SIZE && (
+                  <div className="mt-3 flex items-center justify-between">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setDiscoveryPage((prev) => Math.max(1, prev - 1))}
+                      disabled={discoveryPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setDiscoveryPage((prev) => Math.min(discoveryTotalPages, prev + 1))}
+                      disabled={discoveryPage === discoveryTotalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 max-h-[70vh] overflow-auto">
@@ -536,75 +622,163 @@ export default function RegisterServerPage() {
 
       {selectedServerName && (
         <div className="fixed inset-0 z-[120] bg-black/50 p-4 md:p-8 overflow-auto">
-          <div className="max-w-5xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
+          <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Live MCP Tools</h3>
-                <p className="text-xs text-slate-600 mt-1">
-                  Server: {selectedServerName} (live discovery)
-                </p>
+                <h3 className="text-lg font-semibold text-slate-900">Registered MCP Tools</h3>
+                <p className="text-xs text-slate-600 mt-1">Server: {selectedServerName} (database-backed controls)</p>
               </div>
               <Button variant="secondary" onClick={() => setSelectedServerName(null)}>Close</Button>
             </div>
+
             <div className="p-4">
+              {registeredSyncing && (
+                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                  <span className="h-4 w-4 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" />
+                  Syncing latest state...
+                </div>
+              )}
               {registeredToolsError && (
                 <div className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm">
                   {registeredToolsError}
                 </div>
               )}
+
               {registeredToolsLoading ? (
-                <p className="text-sm text-slate-600">Loading tools...</p>
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <span className="h-4 w-4 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" />
+                  Loading tools...
+                </div>
               ) : registeredTools.length === 0 ? (
                 <p className="text-sm text-slate-600">No tools discovered for this server.</p>
               ) : (
-                <div className="space-y-2">
-                  {registeredTools.map((tool) => (
-                    <div key={tool.name} className="p-3 rounded-lg border border-slate-200 bg-slate-50">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-900">{tool.name}</p>
-                          <p className="text-xs text-slate-600 mt-1">
-                            {tool.is_enabled ? 'Enabled' : 'Disabled'} for registry and exposure
-                          </p>
-                          <textarea
-                            value={draftToolDescriptions[tool.name] ?? ''}
-                            onChange={(e) =>
-                              setDraftToolDescriptions((prev) => ({ ...prev, [tool.name]: e.target.value }))
-                            }
-                            className="mt-2 w-full min-w-[260px] px-2 py-1 text-xs rounded border border-slate-300"
-                            rows={2}
-                            placeholder="Tool description"
-                          />
-                        </div>
-                        <div className="flex gap-2 lg:flex-col lg:min-w-[140px]">
+                <>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredSelectedTools(new Set(registeredTools.map((row) => row.name)))}
+                        className="bg-emerald-50 border-emerald-300 text-emerald-700"
+                      >
+                        Select All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredSelectedTools(new Set())}
+                        className="bg-rose-50 border-rose-300 text-rose-700"
+                      >
+                        Unselect All
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-600">Page {registeredPage} / {registeredTotalPages}</p>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-0 border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="p-4 border-r border-slate-200 max-h-[60vh] overflow-auto bg-slate-50/60">
+                      <div className="space-y-2">
+                        {registeredPageItems.map((tool) => (
+                          <button
+                            key={tool.name}
+                            type="button"
+                            onClick={() => setActiveToolName(tool.name)}
+                            className={`w-full text-left p-3 rounded-lg border ${activeToolName === tool.name ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-medium text-slate-900">{tool.name}</p>
+                              <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={registeredSelectedTools.has(tool.name)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    setRegisteredSelectedTools((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(tool.name)) next.delete(tool.name);
+                                      else next.add(tool.name);
+                                      return next;
+                                    });
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                Enabled
+                              </label>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1 line-clamp-2">{tool.description || 'No description'}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      {registeredTools.length > REGISTERED_PAGE_SIZE && (
+                        <div className="mt-3 flex items-center justify-between">
                           <Button
                             size="sm"
-                            variant={tool.is_enabled ? 'secondary' : 'primary'}
-                            onClick={() => void toggleRegisteredTool(tool)}
-                            disabled={togglingToolName === tool.name}
-                            className="w-full"
+                            variant="secondary"
+                            onClick={() => setRegisteredPage((prev) => Math.max(1, prev - 1))}
+                            disabled={registeredPage === 1}
                           >
-                            {togglingToolName === tool.name
-                              ? 'Updating...'
-                              : tool.is_enabled
-                                ? 'Disable'
-                                : 'Enable'}
+                            Previous
                           </Button>
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => void saveRegisteredToolDescription(tool)}
-                            disabled={savingToolDescriptionName === tool.name}
-                            className="w-full"
+                            onClick={() => setRegisteredPage((prev) => Math.min(registeredTotalPages, prev + 1))}
+                            disabled={registeredPage === registeredTotalPages}
                           >
-                            {savingToolDescriptionName === tool.name ? 'Saving...' : 'Save'}
+                            Next
                           </Button>
                         </div>
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
+
+                    <div className="p-4 max-h-[60vh] overflow-auto bg-white">
+                      {!activeRegisteredTool ? (
+                        <p className="text-sm text-slate-600">Select a tool to view configuration.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          <h4 className="text-base font-semibold text-slate-900">{activeRegisteredTool.name}</h4>
+                          <p className="text-xs text-slate-600">
+                            Current state: {registeredSelectedTools.has(activeRegisteredTool.name) ? 'Enabled' : 'Disabled'}
+                          </p>
+                          <textarea
+                            value={draftToolDescriptions[activeRegisteredTool.name] ?? ''}
+                            onChange={(e) =>
+                              setDraftToolDescriptions((prev) => ({ ...prev, [activeRegisteredTool.name]: e.target.value }))
+                            }
+                            className="w-full min-w-[260px] px-2 py-1 text-xs rounded border border-slate-300"
+                            rows={2}
+                            placeholder="Tool description"
+                          />
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void saveRegisteredToolDescription(activeRegisteredTool)}
+                            disabled={savingToolDescriptionName === activeRegisteredTool.name || registeredSyncing}
+                          >
+                            {savingToolDescriptionName === activeRegisteredTool.name ? 'Saving...' : 'Save Description'}
+                          </Button>
+                          <div>
+                            <p className="text-xs font-semibold text-slate-700 mb-1">Input Schema</p>
+                            <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredTool.inputSchema)}</pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
+              <p className="text-sm text-slate-700">Enabled: {registeredSelectedTools.size} / {registeredTools.length}</p>
+              <Button
+                onClick={() => void applyRegisteredToolSelection()}
+                disabled={registeredSyncing || registeredToolsLoading}
+                className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
+              >
+                {registeredSyncing ? 'Applying...' : 'Apply Selection'}
+              </Button>
             </div>
           </div>
         </div>
