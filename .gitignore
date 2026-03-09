@@ -1,0 +1,85 @@
+/be_env
+./be_env
+be_env
+
+
+# Virtual Environments
+backend_env/
+.mock-mcp-env/
+mock-mcp-server/.mock-mcp-env/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+__pycache__
+
+# Wheels
+*.whl
+backend/wheels/
+
+# Archives
+*.7z
+*.zip
+*.rar
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+
+
+# Virtual Environments
+backend_env/
+.mock-mcp-env/
+mock-mcp-server/.mock-mcp-env/
+venv/
+env/
+ENV/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Wheels & Dependencies
+*.whl
+backend/wheels/
+*.pyc
+
+# Archives
+*.7z
+*.zip
+*.rar
+*.tar.gz
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+#node modules
+node_modules
+./node_modules
+./frontend/node_modules
+.next
+./frontend/.next
