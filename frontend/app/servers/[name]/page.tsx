@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import Card from '@/components/ui/Card';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
@@ -43,7 +44,7 @@ export default function ServerToolsPage() {
           return;
         }
 
-        const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/servers/${serverName}/tools`);
+        const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers/${serverName}/tools`);
         
         if (!response.ok) {
           if (response.status === 404) {

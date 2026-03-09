@@ -1,27 +1,113 @@
 'use client';
 
-import Link from 'next/link';
-import Navigation from '@/components/Navigation';
+import { useEffect, useState } from 'react';
 import Card from '@/components/ui/Card';
+import {
+  fetchAuthConfig,
+  redirectToLogin,
+  clearTokens,
+  buildLogoutUrl,
+  getStoredToken,
+  type AuthConfig,
+} from '@/lib/auth';
+import { publicEnv } from '@/lib/env';
 
 export default function LoginPage() {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">
-      <Navigation pageTitle="Login" />
-      <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-md mx-auto">
-        <Card className="bg-white/70 backdrop-blur-xl border border-slate-200/60 p-8 text-center">
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Login Placeholder</h1>
+  const [error, setError] = useState<string | null>(null);
+  const [authDisabled, setAuthDisabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const config: AuthConfig = await fetchAuthConfig(
+          publicEnv.NEXT_PUBLIC_BE_API_URL
+        );
+
+        if (!config.auth_enabled) {
+          if (!cancelled) setAuthDisabled(true);
+          return;
+        }
+
+        // If user already has a valid token, send to dashboard.
+        if (getStoredToken()) {
+          window.location.href = '/dashboard';
+          return;
+        }
+
+        // Redirect to Keycloak login.
+        if (!cancelled) {
+          await redirectToLogin(config);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to start login');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
+      clearTokens();
+      window.location.href = buildLogoutUrl(config);
+    } catch {
+      clearTokens();
+      window.location.href = '/login';
+    }
+  };
+
+  if (authDisabled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white via-slate-50 to-slate-100">
+        <Card className="bg-white/70 backdrop-blur-xl border border-slate-200/60 p-8 text-center max-w-md">
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">
+            Authentication Disabled
+          </h1>
           <p className="text-slate-600 mb-6">
-            Login UI is not implemented yet. Use registration flow or return to dashboard.
+            Authentication is not enabled on this instance. You can access the
+            dashboard directly.
           </p>
-          <Link
-            href="/"
+          <a
+            href="/dashboard"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             Go to Dashboard
-          </Link>
+          </a>
         </Card>
-      </main>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white via-slate-50 to-slate-100">
+        <Card className="bg-white/70 backdrop-blur-xl border border-slate-200/60 p-8 text-center max-w-md">
+          <h1 className="text-xl font-bold text-red-600 mb-2">Login Error</h1>
+          <p className="text-slate-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Retry
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4" />
+        <p className="text-slate-600">Redirecting to login...</p>
+      </div>
     </div>
   );
 }

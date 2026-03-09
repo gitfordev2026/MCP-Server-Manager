@@ -6,6 +6,7 @@ import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
@@ -56,7 +57,7 @@ export default function ChatPage() {
 
     try {
       // Send to backend API
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(input)}`, {
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(input)}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });

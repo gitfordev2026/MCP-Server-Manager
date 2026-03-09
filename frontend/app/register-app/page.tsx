@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
-import { http } from '@/services/http';
+import { http, authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
@@ -125,7 +125,7 @@ export default function RegisterAppPage() {
 
   const fetchApps = async () => {
     try {
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls?include_inactive=true`);
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls?include_inactive=true`);
       const payload = await response.json();
       setApps(Array.isArray(payload?.base_urls) ? payload.base_urls : []);
     } catch {
@@ -171,7 +171,7 @@ export default function RegisterAppPage() {
       if (formData.domain_type) {
         params.set('domain_type', formData.domain_type);
       }
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`);
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         if (response.status === 401 || response.status === 403 || payload?.detail?.includes('Keycloak')) {
@@ -229,7 +229,7 @@ export default function RegisterAppPage() {
     if (openapiPath && openapiPath.trim()) {
       params.set('openapi_path', openapiPath.trim());
     }
-    const specResponse = await fetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`);
+    const specResponse = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`);
     const specPayload = await specResponse.json().catch(() => ({}));
     if (!specResponse.ok) {
       throw new Error(specPayload?.detail || 'Failed to fetch live APIs');
@@ -398,7 +398,7 @@ export default function RegisterAppPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/register-base-url`, {
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/register-base-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

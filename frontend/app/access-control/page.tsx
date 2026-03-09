@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button';
 import { usePolicies } from '@/hooks/useAccessPolicies';
 import { OwnerPolicy, OwnerType } from '@/types/accessPolicies';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
@@ -56,7 +57,7 @@ export default function AccessPolicyPage() {
     }
 
     try {
-      const serversRes = await fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`);
+      const serversRes = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`);
       if (serversRes.ok) {
         const serversPayload = await serversRes.json();
         const servers = Array.isArray(serversPayload?.servers) ? serversPayload.servers : [];

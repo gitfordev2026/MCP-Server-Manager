@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
@@ -71,8 +72,8 @@ export default function PlaygroundPage() {
             setLoading(true);
             // Fetch both servers and the public catalog of tools
             const [serversRes, catalogRes] = await Promise.allSettled([
-                fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-                fetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=true`),
+                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
+                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=true`),
             ]);
 
             let loadedServers: ServerItem[] = [];
@@ -178,7 +179,7 @@ export default function PlaygroundPage() {
                 payload.selected_tools = Array.from(selectedToolNames);
             }
 
-            const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/agent/playground/query`, {
+            const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/playground/query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),

@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
@@ -80,7 +81,7 @@ function ApiExplorerContent() {
         if (customPath) {
           query.set('openapi_path', customPath);
         }
-        const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${query.toString()}`);
+        const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${query.toString()}`);
         const payload = await response.json();
 
         if (!response.ok) {

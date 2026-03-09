@@ -24,8 +24,9 @@ from time import perf_counter, time
 from urllib.parse import quote, urlparse, urlunparse
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 from mcp.types import Tool as MCPTool
 from mcp_use import MCPClient
 from sqlalchemy import (
@@ -42,6 +43,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.env import ENV
 from app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
+from app.core.jwt_validator import TokenValidationError, validate_token
 from app.core.rbac import build_require_permission, get_request_actor
 from app.core.mcp_runtime import (
     MCP_RUNTIME_INFO,
@@ -91,6 +93,23 @@ from app.services.policy_utils import (
     resolve_owner_fk_ids,
 )
 
+PUBLIC_PATHS = {"/health", "/mcp/runtime", "/auth/config", "/docs", "/openapi.json"}
+
+
+def global_auth_dependency(request: Request) -> None:
+    """Enforce JWT auth on all routes except public paths.
+
+    Attached as a top-level FastAPI dependency so every router is
+    automatically protected when ``AUTH_ENABLED=true``.
+    """
+    if not AUTH_ENABLED:
+        return
+    if request.url.path in PUBLIC_PATHS:
+        return
+    # get_request_actor raises HTTP 401 when token is missing/invalid.
+    get_request_actor(request)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -103,7 +122,7 @@ async def lifespan(_: FastAPI):
         yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, dependencies=[Depends(global_auth_dependency)])
 
 # Add CORS middleware
 app.add_middleware(
@@ -1663,7 +1682,50 @@ def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
 
 combined_apps_mcp = _create_combined_apps_mcp()
 combined_mcp_asgi_app = build_fastmcp_asgi_app(combined_apps_mcp, path="/")
-app.mount("/mcp/apps", combined_mcp_asgi_app)
+
+
+class JWTAuthASGIMiddleware:
+    """ASGI middleware that validates JWT tokens for mounted sub-applications.
+
+    ``app.mount()`` bypasses FastAPI's dependency system, so this middleware
+    performs the same Bearer-token check that ``global_auth_dependency`` does
+    for regular routes.
+    """
+
+    def __init__(self, wrapped_app):
+        self.app = wrapped_app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and AUTH_ENABLED:
+            headers = dict(scope.get("headers", []))
+            auth_value = headers.get(b"authorization", b"").decode("latin-1")
+            token = auth_value[7:].strip() if auth_value.lower().startswith("bearer ") else ""
+            if not token:
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": "Missing authentication token"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+                await response(scope, receive, send)
+                return
+            try:
+                validate_token(token)
+            except TokenValidationError as exc:
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": str(exc)},
+                    headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                )
+                await response(scope, receive, send)
+                return
+
+        await self.app(scope, receive, send)
+
+
+if AUTH_ENABLED:
+    app.mount("/mcp/apps", JWTAuthASGIMiddleware(combined_mcp_asgi_app))
+else:
+    app.mount("/mcp/apps", combined_mcp_asgi_app)
 MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
 agent = build_default_agent()
 require_permission = build_require_permission(

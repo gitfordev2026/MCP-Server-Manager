@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { Toaster } from 'sonner';
 import { publicEnv } from '@/lib/env';
+import AuthGuard from '@/components/AuthGuard';
 
 void publicEnv;
 
@@ -33,8 +34,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>
-          {children}
-          < Toaster richColors position="top-right" />
+          <AuthGuard>
+            {children}
+          </AuthGuard>
+          <Toaster richColors position="top-right" />
         </Providers>
       </body>
     </html>

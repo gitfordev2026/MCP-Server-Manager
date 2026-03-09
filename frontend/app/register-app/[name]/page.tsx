@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 
 
@@ -31,7 +32,7 @@ export default function AppDetailsPage() {
 
   const fetchApps = async () => {
     try {
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`);
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`);
       const data = await response.json();
       setAllApps(data.base_urls || []);
     } catch (err) {

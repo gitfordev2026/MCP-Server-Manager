@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 
 from app.core.auth import AUTH_ENABLED
+from app.core.jwt_validator import TokenValidationError, validate_token
 
 ROLE_PERMISSION_FALLBACK: dict[str, set[str]] = {
     "super_admin": {"*"},
@@ -36,12 +37,60 @@ def _parse_roles(raw_value: str | None) -> list[str]:
     return [item.strip().lower() for item in raw_value.split(",") if item.strip()]
 
 
+def _extract_bearer_token(request: Request) -> str | None:
+    """Extract the raw JWT from an ``Authorization: Bearer <token>`` header."""
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return None
+
+
 def get_request_actor(request: Request) -> dict[str, Any]:
-    username = (request.headers.get("x-user") or "system").strip() or "system"
-    roles = _parse_roles(request.headers.get("x-roles"))
-    if not roles:
-        roles = ["read_only"] if AUTH_ENABLED else ["super_admin"]
-    return {"username": username, "roles": roles}
+    # Return cached actor if already validated in this request cycle
+    # (avoids double-validation when both the global dependency and
+    # router-level require_permission call get_request_actor).
+    cached = getattr(request.state, "_validated_actor", None)
+    if cached is not None:
+        return cached
+
+    if not AUTH_ENABLED:
+        # Dev mode — trust headers as before.
+        username = (request.headers.get("x-user") or "system").strip() or "system"
+        roles = _parse_roles(request.headers.get("x-roles"))
+        if not roles:
+            roles = ["super_admin"]
+        return {"username": username, "roles": roles}
+
+    # --- AUTH_ENABLED=true: require a valid JWT ---
+    token = _extract_bearer_token(request)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        claims = validate_token(token)
+    except TokenValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
+    roles = claims.roles if claims.roles else ["read_only"]
+
+    actor = {
+        "username": claims.username,
+        "roles": roles,
+        "email": claims.email,
+        "subject": claims.subject,
+    }
+
+    # Cache on request so subsequent calls in the same cycle are free.
+    request.state._validated_actor = actor
+    return actor
 
 
 def build_require_permission(
@@ -97,5 +146,3 @@ def build_require_permission(
         return _check
 
     return require_permission
-
-

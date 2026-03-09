@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 const POLICY_STORAGE_KEY = 'mcp_access_control_policies_v1';
@@ -115,7 +116,7 @@ export default function McpEndpointsPage() {
     try {
       setLoading(true);
       const [serversRes, catalogRes] = await Promise.allSettled([
-        fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
+        authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
         fetch(
           `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&registry_only=true&public_only=true`
         ),

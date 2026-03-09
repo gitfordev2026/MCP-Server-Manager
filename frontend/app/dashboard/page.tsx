@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
@@ -40,9 +41,9 @@ export default function DashboardPage() {
     const fetchData = async () => {
       try {
         const [serversRes, appsRes, statsRes] = await Promise.all([
-          fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-          fetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
-          fetch(`${NEXT_PUBLIC_BE_API_URL}/dashboard/stats`),
+          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
+          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
+          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/dashboard/stats`),
         ]);
 
         if (!serversRes.ok || !appsRes.ok || !statsRes.ok) throw new Error('Failed to fetch data');

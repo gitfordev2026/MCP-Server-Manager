@@ -1,0 +1,3 @@
+[console_scripts]
+update-fastapi-standalone-docs=fastapi_standalone_docs.scripts:update_docs
+

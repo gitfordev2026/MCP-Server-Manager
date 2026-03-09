@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
@@ -133,7 +134,7 @@ export default function Home() {
     const timeoutId = window.setTimeout(() => controller.abort(), 8000);
 
     try {
-      const response = await fetch(openApiProxyUrl, { signal: controller.signal });
+      const response = await authenticatedFetch(openApiProxyUrl, { signal: controller.signal });
       const payload = await response.json();
       if (!response.ok) {
         const detail =
@@ -313,8 +314,8 @@ export default function Home() {
           setLoading(true);
         }
         const [serversRes, appsRes] = await Promise.allSettled([
-          fetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-          fetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
+          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
+          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
         ]);
 
         let nextServers: Server[] = [];
@@ -359,7 +360,7 @@ export default function Home() {
           setLoading(false);
         }
 
-        const statusTask = fetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`).then(async (res) => {
+        const statusTask = authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`).then(async (res) => {
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}`);
           }

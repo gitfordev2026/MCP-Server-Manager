@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
-import { http } from '@/services/http';
+import { http, authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
@@ -77,7 +77,7 @@ export default function RegisterServerPage() {
 
   const fetchServers = async () => {
     try {
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/servers?include_inactive=true`);
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers?include_inactive=true`);
       const payload = await response.json();
       setServers(Array.isArray(payload?.servers) ? payload.servers : []);
     } catch {
@@ -111,7 +111,7 @@ export default function RegisterServerPage() {
 
     setDiscovering(true);
     try {
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/discover-server-tools`, {
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/discover-server-tools`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: formData.name.trim(), url: formData.url.trim() }),
@@ -162,7 +162,7 @@ export default function RegisterServerPage() {
   };
 
   const buildRegisteredToolRows = async (serverName: string, serverUrl: string): Promise<ModalTool[]> => {
-    const discoverResponse = await fetch(`${NEXT_PUBLIC_BE_API_URL}/discover-server-tools`, {
+    const discoverResponse = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/discover-server-tools`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: serverName, url: serverUrl }),
@@ -320,7 +320,7 @@ export default function RegisterServerPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${NEXT_PUBLIC_BE_API_URL}/register-server`, {
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/register-server`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
