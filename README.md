@@ -45,7 +45,7 @@ pip install -r requirements.txt
 
 # Run the server
 python main.py
-# Server runs at http://localhost:8090
+# Server runs at http://localhost:8091
 ```
 
 ### 2. Frontend Setup
@@ -56,7 +56,7 @@ npm install
 
 # Run the development server
 npm run dev
-# Dashboard runs at http://localhost:3000
+# Dashboard runs at http://localhost:3010
 ```
 
 ## 🏗️ Architecture
