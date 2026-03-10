@@ -3,3 +3,13 @@ be_env
 ./frontend/node_modules
 ./node_modules
 node_modules
+
+./be_env
+be_env
+./frontend/node_modules
+./node_modules
+node_modules
+*.pyc*
+*__pycache__*
+./b_env
+b_env
