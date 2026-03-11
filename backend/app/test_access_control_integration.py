@@ -4,11 +4,16 @@ import asyncio
 import json
 
 BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8090")
+BEARER_TOKEN = os.getenv("BACKEND_BEARER_TOKEN", "").strip()
 OWNER_ID = "mcp:test-server"
 TOOL_ID = "test-tool"
 
 async def test_access_control():
-    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+    headers = {}
+    if BEARER_TOKEN:
+        headers["Authorization"] = f"Bearer {BEARER_TOKEN}"
+
+    async with httpx.AsyncClient(base_url=BASE_URL, headers=headers) as client:
         print("1. Listing policies...")
         try:
             resp = await client.get("/access-policies")

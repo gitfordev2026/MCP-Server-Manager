@@ -36,7 +36,8 @@ def resolve_exposable_tools(
         select(mcp_tool_model).where(
             mcp_tool_model.is_deleted == False,
             mcp_tool_model.is_enabled == True,
-            mcp_tool_model.registration_state == "selected"
+            mcp_tool_model.registration_state.in_(["selected", "active"]),
+            mcp_tool_model.exposure_state.notin_(["disabled", "deleted"]),
         )
     ).all()
 
@@ -52,6 +53,8 @@ def resolve_exposable_tools(
             tools_list.append({
                 "name": row.name,
                 "title": row.display_name or row.name,
+                "description": row.description or "",
+                "version": row.current_version or "1.0.0",
                 "app": owner_name or owner_id,
                 "method": (row.method or "").upper(),
                 "path": row.path or "",
@@ -65,6 +68,8 @@ def resolve_exposable_tools(
             entry = {
                 "name": prefixed,
                 "title": row.display_name or row.name,
+                "description": row.description or "",
+                "version": row.current_version or "1.0.0",
                 "app": owner_name or owner_id,
                 "method": "MCP",
                 "path": row.name,

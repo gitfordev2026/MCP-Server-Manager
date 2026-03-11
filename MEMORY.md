@@ -117,3 +117,9 @@ Last updated: 2026-03-11
     - `README.md` backend run command updated to `uvicorn app.main:app --reload --port 8090`.
   - Validation:
     - AST syntax check passed for all backend `.py` files (`syntax-ok 40`).
+ - 2026-03-11: Ported combined MCP endpoint stability fixes from prior repo.
+   - Added FastMCP ASGI lifespan handling (`run_mcp_asgi_lifespan`) to avoid “Task group is not initialized”.
+   - Combined MCP now uses registry-first exposure with FastMCP `Tool` + `ToolResult` compatibility.
+   - Added MCP client runtime (`mcp_client_runtime.py`) using official streamable HTTP client for server probe/list/call.
+   - Server & dashboard routers now use injected MCP runtime helpers instead of `mcp_use.MCPClient`.
+   - CORS exposes MCP session headers and mounts `/mcp/apps` and `/mcp/apps/` (auth preserved via JWT ASGI middleware).

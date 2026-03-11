@@ -2,7 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useCallback, useState } from 'react';
 import Button from '@/components/ui/Button';
+import { publicEnv } from '@/lib/env';
+import {
+  buildLogoutUrl,
+  clearTokens,
+  fetchAuthConfig,
+  type AuthConfig,
+} from '@/lib/auth';
 
 interface NavigationProps {
   pageTitle?: string;
@@ -11,6 +19,7 @@ interface NavigationProps {
 
 export default function Navigation({ pageTitle, isDark = false }: NavigationProps) {
   const pathname = usePathname();
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const getPageName = () => {
     if (pageTitle) return pageTitle;
@@ -42,6 +51,24 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
         return 'MCP Server Manager';
     }
   };
+
+  const handleLogout = useCallback(async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
+      clearTokens();
+      if (config.auth_enabled && config.logout_endpoint) {
+        window.location.href = buildLogoutUrl(config);
+        return;
+      }
+    } catch {
+      clearTokens();
+    } finally {
+      setLoggingOut(false);
+    }
+    window.location.href = '/login';
+  }, [loggingOut]);
 
   return (
     <>
@@ -88,6 +115,14 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               <Link href="/chat"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Chat</Button></Link>
 
               <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Admin</Button></Link>
+              <Button
+                variant="ghost"
+                className="flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50"
+                onClick={handleLogout}
+                disabled={loggingOut}
+              >
+                {loggingOut ? 'Logging out...' : 'Logout'}
+              </Button>
             </div>
           </div>
 

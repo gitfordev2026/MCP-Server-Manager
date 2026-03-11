@@ -117,7 +117,7 @@ export default function McpEndpointsPage() {
       setLoading(true);
       const [serversRes, catalogRes] = await Promise.allSettled([
         authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-        fetch(
+        authenticatedFetch(
           `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&registry_only=true&public_only=true`
         ),
       ]);
@@ -160,7 +160,7 @@ export default function McpEndpointsPage() {
         const serverName = cardId.replace('mcp:', '');
         setServerToolsLoading((prev) => ({ ...prev, [cardId]: true }));
         try {
-          const res = await fetch(
+          const res = await authenticatedFetch(
             `${NEXT_PUBLIC_BE_API_URL}/servers/${encodeURIComponent(serverName)}/tools?registry_only=true`
           );
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -523,4 +523,3 @@ export default function McpEndpointsPage() {
     </div>
   );
 }
-

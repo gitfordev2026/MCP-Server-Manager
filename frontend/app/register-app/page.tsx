@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -90,6 +90,8 @@ function buildEndpointsFromOpenApi(spec: Record<string, unknown>): DiscoveredEnd
 }
 
 export default function RegisterAppPage() {
+  const DISCOVERY_PAGE_SIZE = 10;
+  const REGISTERED_PAGE_SIZE = 10;
   const [apps, setApps] = useState<AppItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,14 +115,31 @@ export default function RegisterAppPage() {
   const [registeredEndpoints, setRegisteredEndpoints] = useState<ModalEndpoint[]>([]);
   const [registeredEndpointsLoading, setRegisteredEndpointsLoading] = useState(false);
   const [registeredEndpointsError, setRegisteredEndpointsError] = useState<string | null>(null);
-  const [togglingEndpointId, setTogglingEndpointId] = useState<string | null>(null);
   const [draftEndpointDescriptions, setDraftEndpointDescriptions] = useState<Record<string, string>>({});
   const [savingEndpointDescriptionId, setSavingEndpointDescriptionId] = useState<string | null>(null);
   const [selectedEndpointDescriptions, setSelectedEndpointDescriptions] = useState<Record<string, string>>({});
+  const [discoveryPage, setDiscoveryPage] = useState(1);
+  const [registeredSyncing, setRegisteredSyncing] = useState(false);
+  const [registeredPage, setRegisteredPage] = useState(1);
+  const [registeredSelectedEndpoints, setRegisteredSelectedEndpoints] = useState<Set<string>>(new Set());
 
   const activeEndpoint = useMemo(
     () => discoveredEndpoints.find((endpoint) => endpoint.id === activeEndpointId) ?? null,
     [activeEndpointId, discoveredEndpoints]
+  );
+  const discoveryTotalPages = Math.max(1, Math.ceil(discoveredEndpoints.length / DISCOVERY_PAGE_SIZE));
+  const discoveryPageItems = useMemo(() => {
+    const start = (discoveryPage - 1) * DISCOVERY_PAGE_SIZE;
+    return discoveredEndpoints.slice(start, start + DISCOVERY_PAGE_SIZE);
+  }, [discoveredEndpoints, discoveryPage]);
+  const registeredTotalPages = Math.max(1, Math.ceil(registeredEndpoints.length / REGISTERED_PAGE_SIZE));
+  const registeredPageItems = useMemo(() => {
+    const start = (registeredPage - 1) * REGISTERED_PAGE_SIZE;
+    return registeredEndpoints.slice(start, start + REGISTERED_PAGE_SIZE);
+  }, [registeredEndpoints, registeredPage]);
+  const activeRegisteredEndpoint = useMemo(
+    () => registeredEndpoints.find((endpoint) => endpoint.id === activeEndpointId) ?? null,
+    [registeredEndpoints, activeEndpointId]
   );
 
   const fetchApps = async () => {
@@ -194,6 +213,7 @@ export default function RegisterAppPage() {
       const initial = new Set<string>(endpoints.map((endpoint) => endpoint.id));
       setSelectedEndpoints(initial);
       setActiveEndpointId(endpoints[0]?.id ?? null);
+      setDiscoveryPage(1);
       setIsModalOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch APIs');
@@ -219,12 +239,17 @@ export default function RegisterAppPage() {
   };
 
   const syncCatalog = async () => {
-    await fetch(
+    await authenticatedFetch(
       `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=true&registry_only=false`
     ).catch(() => null);
   };
 
-  const buildRegisteredEndpointRows = async (appName: string, appUrl: string, openapiPath?: string): Promise<ModalEndpoint[]> => {
+  const buildRegisteredEndpointRows = async (
+    appName: string,
+    appUrl: string,
+    openapiPath?: string,
+    configuredSelectionOverride?: Set<string>
+  ): Promise<ModalEndpoint[]> => {
     const params = new URLSearchParams({ url: appUrl });
     if (openapiPath && openapiPath.trim()) {
       params.set('openapi_path', openapiPath.trim());
@@ -241,9 +266,9 @@ export default function RegisterAppPage() {
     const liveEndpoints = buildEndpointsFromOpenApi(spec);
 
     const app = apps.find((item) => item.name === appName);
-    const configuredSelection = Array.isArray(app?.selected_endpoints)
+    const configuredSelection = configuredSelectionOverride ?? (Array.isArray(app?.selected_endpoints)
       ? new Set((app?.selected_endpoints || []).map((item) => String(item).trim()).filter(Boolean))
-      : new Set<string>();
+      : new Set<string>());
     const allSelectedByDefault = configuredSelection.size === 0;
 
     const dbPayload = await http<{
@@ -285,18 +310,27 @@ export default function RegisterAppPage() {
       .sort((a, b) => `${a.method} ${a.path}`.localeCompare(`${b.method} ${b.path}`));
   };
 
-  const loadRegisteredEndpoints = async (appName: string) => {
+  const loadRegisteredEndpoints = async (
+    appName: string,
+    appUrlOverride?: string,
+    openapiPathOverride?: string,
+    configuredSelectionOverride?: Set<string>
+  ) => {
     setSelectedAppName(appName);
     setRegisteredEndpointsLoading(true);
     setRegisteredEndpointsError(null);
     try {
       const app = apps.find((item) => item.name === appName);
-      if (!app?.url) {
+      const resolvedUrl = appUrlOverride || app?.url;
+      if (!resolvedUrl) {
         throw new Error('Application URL is missing');
       }
-      const rows = await buildRegisteredEndpointRows(appName, app.url, app.openapi_path);
+      const resolvedOpenapiPath = openapiPathOverride ?? app?.openapi_path;
+      const rows = await buildRegisteredEndpointRows(appName, resolvedUrl, resolvedOpenapiPath, configuredSelectionOverride);
       setRegisteredEndpoints(rows);
       setActiveEndpointId(rows[0]?.id ?? null);
+      setRegisteredPage(1);
+      setRegisteredSelectedEndpoints(new Set(rows.filter((endpoint) => endpoint.is_enabled).map((endpoint) => endpoint.id)));
       const drafts: Record<string, string> = {};
       rows.forEach((endpoint) => {
         drafts[endpoint.id] = endpoint.description || '';
@@ -310,32 +344,34 @@ export default function RegisterAppPage() {
     }
   };
 
-  const toggleRegisteredEndpoint = async (endpoint: ModalEndpoint) => {
+  const applyRegisteredEndpointSelection = async () => {
     if (!selectedAppName) return;
-    setTogglingEndpointId(endpoint.id);
+    setRegisteredSyncing(true);
     setRegisteredEndpointsError(null);
     try {
       const app = apps.find((item) => item.name === selectedAppName);
-      if (!app) throw new Error('Application not found');
+      if (!app?.url) throw new Error('Application not found');
 
-      const currentSelected = new Set(registeredEndpoints.filter((row) => row.is_enabled).map((row) => row.id));
-      if (endpoint.is_enabled) {
-        currentSelected.delete(endpoint.id);
-      } else {
-        currentSelected.add(endpoint.id);
-      }
+      const selected = new Set(registeredSelectedEndpoints);
+      setRegisteredEndpoints((prev) =>
+        prev.map((row) => ({ ...row, is_enabled: selected.has(row.id) }))
+      );
 
       await http(`/base-urls/${encodeURIComponent(selectedAppName)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ selected_endpoints: Array.from(currentSelected) }),
+        body: JSON.stringify({ selected_endpoints: Array.from(selected) }),
       });
       await syncCatalog();
       await fetchApps();
-      await loadRegisteredEndpoints(app.name);
+      await loadRegisteredEndpoints(selectedAppName, app.url, app.openapi_path, selected);
     } catch (err) {
-      setRegisteredEndpointsError(err instanceof Error ? err.message : 'Failed to update endpoint state');
+      setRegisteredEndpointsError(err instanceof Error ? err.message : 'Failed to apply endpoint selection');
+      const app = apps.find((item) => item.name === selectedAppName);
+      if (app?.url) {
+        await loadRegisteredEndpoints(selectedAppName, app.url, app.openapi_path);
+      }
     } finally {
-      setTogglingEndpointId(null);
+      setRegisteredSyncing(false);
     }
   };
 
@@ -542,7 +578,7 @@ export default function RegisterAppPage() {
                 <div
                   key={app.name}
                   onClick={() => void loadRegisteredEndpoints(app.name)}
-                  className="p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-colors cursor-pointer"
+                  className="p-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 hover:border-blue-400 transition-colors cursor-pointer shadow-sm"
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
@@ -595,8 +631,21 @@ export default function RegisterAppPage() {
             <div className="grid md:grid-cols-2 gap-0">
               <div className="p-4 border-r border-slate-200 max-h-[70vh] overflow-auto">
                 {discoveredEndpoints.length === 0 && <p className="text-sm text-slate-600">No endpoints discovered.</p>}
+                {discoveredEndpoints.length > 0 && (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => setSelectedEndpoints(new Set(discoveredEndpoints.map((endpoint) => endpoint.id)))}>
+                        Select All
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setSelectedEndpoints(new Set())}>
+                        Unselect All
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-600">Page {discoveryPage} / {discoveryTotalPages}</p>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  {discoveredEndpoints.map((endpoint) => (
+                  {discoveryPageItems.map((endpoint) => (
                     <button
                       key={endpoint.id}
                       type="button"
@@ -630,6 +679,26 @@ export default function RegisterAppPage() {
                     </button>
                   ))}
                 </div>
+                {discoveredEndpoints.length > DISCOVERY_PAGE_SIZE && (
+                  <div className="mt-3 flex items-center justify-between">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setDiscoveryPage((prev) => Math.max(1, prev - 1))}
+                      disabled={discoveryPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setDiscoveryPage((prev) => Math.min(discoveryTotalPages, prev + 1))}
+                      disabled={discoveryPage === discoveryTotalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="p-4 max-h-[70vh] overflow-auto">
@@ -670,83 +739,167 @@ export default function RegisterAppPage() {
 
       {selectedAppName && (
         <div className="fixed inset-0 z-[120] bg-black/50 p-4 md:p-8 overflow-auto">
-          <div className="max-w-5xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
+          <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Live API Endpoints</h3>
-                <p className="text-xs text-slate-600 mt-1">
-                  Application: {selectedAppName} (live discovery)
-                </p>
+                <h3 className="text-lg font-semibold text-slate-900">Registered API Endpoints</h3>
+                <p className="text-xs text-slate-600 mt-1">Application: {selectedAppName} (database-backed controls)</p>
               </div>
               <Button variant="secondary" onClick={() => setSelectedAppName(null)}>Close</Button>
             </div>
+
             <div className="p-4">
+              {registeredSyncing && (
+                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                  <span className="h-4 w-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
+                  Syncing latest state...
+                </div>
+              )}
               {registeredEndpointsError && (
                 <div className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm">
                   {registeredEndpointsError}
                 </div>
               )}
+
               {registeredEndpointsLoading ? (
-                <p className="text-sm text-slate-600">Loading endpoints...</p>
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <span className="h-4 w-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
+                  Loading endpoints...
+                </div>
               ) : registeredEndpoints.length === 0 ? (
                 <p className="text-sm text-slate-600">No endpoints discovered for this application.</p>
               ) : (
-                <div className="space-y-2">
-                  {registeredEndpoints.map((endpoint) => (
-                    <div key={endpoint.id} className="p-3 rounded-lg border border-slate-200 bg-slate-50">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-900">{endpoint.method} {endpoint.path}</p>
-                          <p className="text-xs text-slate-600 mt-1">
-                            {endpoint.is_enabled ? 'Enabled' : 'Disabled'} for registry and exposure
-                          </p>
-                          <textarea
-                            value={draftEndpointDescriptions[endpoint.id] ?? ''}
-                            onChange={(e) =>
-                              setDraftEndpointDescriptions((prev) => ({ ...prev, [endpoint.id]: e.target.value }))
-                            }
-                            className="mt-2 w-full min-w-[260px] px-2 py-1 text-xs rounded border border-slate-300"
-                            rows={2}
-                            placeholder="Endpoint description"
-                          />
-                          <details className="mt-2">
-                            <summary className="text-xs text-slate-700 cursor-pointer">View request/response config</summary>
-                            <div className="mt-2 grid gap-2">
-                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(endpoint.parameters)}</pre>
-                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(endpoint.requestBody)}</pre>
-                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(endpoint.responses)}</pre>
+                <>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredSelectedEndpoints(new Set(registeredEndpoints.map((row) => row.id)))}
+                        className="bg-blue-50 border-blue-300 text-blue-700"
+                      >
+                        Select All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredSelectedEndpoints(new Set())}
+                        className="bg-rose-50 border-rose-300 text-rose-700"
+                      >
+                        Unselect All
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-600">Page {registeredPage} / {registeredTotalPages}</p>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-0 border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="p-4 border-r border-slate-200 max-h-[60vh] overflow-auto bg-slate-50/60">
+                      <div className="space-y-2">
+                        {registeredPageItems.map((endpoint) => (
+                          <button
+                            key={endpoint.id}
+                            type="button"
+                            onClick={() => setActiveEndpointId(endpoint.id)}
+                            className={`w-full text-left p-3 rounded-lg border ${activeEndpointId === endpoint.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-medium text-slate-900">{endpoint.method} {endpoint.path}</p>
+                              <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={registeredSelectedEndpoints.has(endpoint.id)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    setRegisteredSelectedEndpoints((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(endpoint.id)) next.delete(endpoint.id);
+                                      else next.add(endpoint.id);
+                                      return next;
+                                    });
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                Enabled
+                              </label>
                             </div>
-                          </details>
-                        </div>
-                        <div className="flex gap-2 lg:flex-col lg:min-w-[140px]">
+                            <p className="text-xs text-slate-600 mt-1 line-clamp-2">{endpoint.description || 'No description'}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      {registeredEndpoints.length > REGISTERED_PAGE_SIZE && (
+                        <div className="mt-3 flex items-center justify-between">
                           <Button
                             size="sm"
-                            variant={endpoint.is_enabled ? 'secondary' : 'primary'}
-                            onClick={() => void toggleRegisteredEndpoint(endpoint)}
-                            disabled={togglingEndpointId === endpoint.id}
-                            className="w-full"
+                            variant="secondary"
+                            onClick={() => setRegisteredPage((prev) => Math.max(1, prev - 1))}
+                            disabled={registeredPage === 1}
                           >
-                            {togglingEndpointId === endpoint.id
-                              ? 'Updating...'
-                              : endpoint.is_enabled
-                                ? 'Disable'
-                                : 'Enable'}
+                            Previous
                           </Button>
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => void saveRegisteredEndpointDescription(endpoint)}
-                            disabled={savingEndpointDescriptionId === endpoint.id}
-                            className="w-full"
+                            onClick={() => setRegisteredPage((prev) => Math.min(registeredTotalPages, prev + 1))}
+                            disabled={registeredPage === registeredTotalPages}
                           >
-                            {savingEndpointDescriptionId === endpoint.id ? 'Saving...' : 'Save'}
+                            Next
                           </Button>
                         </div>
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
+
+                    <div className="p-4 max-h-[60vh] overflow-auto bg-white">
+                      {!activeRegisteredEndpoint ? (
+                        <p className="text-sm text-slate-600">Select an endpoint to view configuration.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          <h4 className="text-base font-semibold text-slate-900">{activeRegisteredEndpoint.method} {activeRegisteredEndpoint.path}</h4>
+                          <p className="text-xs text-slate-600">
+                            Current state: {registeredSelectedEndpoints.has(activeRegisteredEndpoint.id) ? 'Enabled' : 'Disabled'}
+                          </p>
+                          <textarea
+                            value={draftEndpointDescriptions[activeRegisteredEndpoint.id] ?? ''}
+                            onChange={(e) =>
+                              setDraftEndpointDescriptions((prev) => ({ ...prev, [activeRegisteredEndpoint.id]: e.target.value }))
+                            }
+                            className="w-full min-w-[260px] px-2 py-1 text-xs rounded border border-slate-300"
+                            rows={2}
+                            placeholder="Endpoint description"
+                          />
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void saveRegisteredEndpointDescription(activeRegisteredEndpoint)}
+                            disabled={savingEndpointDescriptionId === activeRegisteredEndpoint.id || registeredSyncing}
+                          >
+                            {savingEndpointDescriptionId === activeRegisteredEndpoint.id ? 'Saving...' : 'Save Description'}
+                          </Button>
+                          <details>
+                            <summary className="text-xs text-slate-700 cursor-pointer">View request/response config</summary>
+                            <div className="mt-2 grid gap-2">
+                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredEndpoint.parameters)}</pre>
+                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredEndpoint.requestBody)}</pre>
+                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredEndpoint.responses)}</pre>
+                            </div>
+                          </details>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
+              <p className="text-sm text-slate-700">Enabled: {registeredSelectedEndpoints.size} / {registeredEndpoints.length}</p>
+              <Button
+                onClick={() => void applyRegisteredEndpointSelection()}
+                disabled={registeredSyncing || registeredEndpointsLoading}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+              >
+                {registeredSyncing ? 'Applying...' : 'Apply Selection'}
+              </Button>
             </div>
           </div>
         </div>

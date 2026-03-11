@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -148,7 +148,7 @@ function ApiExplorerContent() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-amber-600 to-emerald-600 bg-clip-text text-transparent mb-2">
-            📚 {name} API Explorer
+            ðŸ“š {name} API Explorer
           </h1>
           <p className="text-slate-600">{url}</p>
           <p className="text-slate-500 text-xs mt-1 font-mono">
@@ -264,7 +264,7 @@ function ApiExplorerContent() {
                             className={`inline-block transition-transform ${selectedMethod === `${idx}-${methodIdx}` ? 'rotate-180' : ''
                               }`}
                           >
-                            ▼
+                            â–¼
                           </span>
                         </button>
                       </td>
@@ -297,7 +297,7 @@ function ApiExplorerContent() {
                             {method.parameters && method.parameters.length > 0 && (
                               <div>
                                 <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                                  <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-sm">📋</span>
+                                  <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-sm">ðŸ“‹</span>
                                   Parameters ({method.parameters.length})
                                 </h4>
                                 <div className="space-y-2">
@@ -314,7 +314,7 @@ function ApiExplorerContent() {
                                           </span>
                                           {param.required && (
                                             <span className="text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-semibold">
-                                              ⚠ Required
+                                              âš  Required
                                             </span>
                                           )}
                                         </div>
@@ -332,7 +332,7 @@ function ApiExplorerContent() {
                             {method.responses && Object.keys(method.responses).length > 0 && (
                               <div>
                                 <h4 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-sm">✓</span>
+                                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-sm">âœ“</span>
                                   Responses ({Object.keys(method.responses).length})
                                 </h4>
                                 <div className="space-y-2">
@@ -407,4 +407,5 @@ export default function ApiExplorerPage() {
     </Suspense>
   );
 }
+
 
