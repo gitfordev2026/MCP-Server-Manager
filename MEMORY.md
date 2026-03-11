@@ -1,17 +1,17 @@
 # MCP Use Agent - Working Memory
 
-Last updated: 2026-02-27
+Last updated: 2026-03-11
 
 ## 1) What this app is
 - Existing app (not greenfield) with:
-  - Backend: FastAPI + SQLAlchemy (single `backend/main.py` composition root)
-  - Frontend: Next.js + React + TypeScript (`frontend/mcp-dashboard`)
+  - Backend: FastAPI + SQLAlchemy (entrypoint `backend/app/main.py`)
+  - Frontend: Next.js App Router + React 19 + TS (`frontend/`)
   - DB: PostgreSQL primary, SQLite fallback (`backend/app/core/db.py`)
-- Purpose: register apps/MCP servers, discover tools/endpoints, manage access policies, expose MCP combined server.
+- Purpose: register apps/MCP servers, discover tools/endpoints, manage access policies, expose a combined MCP server.
 
 ## 2) Current backend structure
 - Main entry:
-  - `backend/main.py`
+  - `backend/app/main.py` (composition root)
 - Core:
   - `backend/app/core/db.py`
   - `backend/app/core/auth.py`
@@ -24,6 +24,7 @@ Last updated: 2026-02-27
   - `policy_utils.py`
   - `audit.py`
   - `agent_runtime.py`
+  - `keycloak_auth.py` (client-credentials token fetch for OpenAPI calls)
   - `registry/` (new):
     - `discovery_service.py`
     - `registry_sync_service.py`
@@ -32,34 +33,40 @@ Last updated: 2026-02-27
   - `backend/app/models/db_models.py`
 
 ## 3) Current frontend structure
-- Main app: `frontend/mcp-dashboard/app/*`
-- Shared nav: `frontend/mcp-dashboard/components/Navigation.tsx`
-- Shared http client: `frontend/mcp-dashboard/services/http.ts`
-- Env store: `frontend/mcp-dashboard/lib/env.ts`
+- Main app: `frontend/app/*` (Next 16 App Router)
+- Shared nav: `frontend/components/Navigation.tsx`
+- Shared http client: `frontend/services/http.ts`
+- Env store: `frontend/lib/env.ts` (requires `NEXT_PUBLIC_BE_API_URL`, `NEXT_PUBLIC_GOOGLE_API_KEY`, `NEXT_PUBLIC_ANALYTICS_ID`)
+- Auth: `frontend/lib/auth.ts` implements Keycloak OIDC PKCE, tokens stored in localStorage; `AuthGuard` wraps the app.
+- React Query providers in `frontend/app/providers.tsx`.
 
-## 4) Environment loading (done)
+## 4) Environment loading
 - Backend centralized env:
-  - `backend/env.py` loads + validates env file and exports typed `ENV`.
+  - `backend/app/env.py` loads + validates env file and exports typed `ENV`.
 - Frontend centralized env:
-  - `frontend/mcp-dashboard/lib/env.ts` (`publicEnv`).
+  - `frontend/lib/env.ts` (`publicEnv`).
 
-## 5) Access policy model behavior (done)
-- Default policy moved to **allow** (changed 2026-02-26).
-- Auto materialization of tool policies:
-  - New discovered tools/endpoints get explicit allow policy rows.
-- Combined MCP behavior:
-  - Denied tools filtered from `list_tools`.
-  - `call_tool` deny fallback if no policy.
+## 5) Access policy model behavior
+- Default policy is **allow**.
+- Policies stored in `exposed_mcp_tools` with `owner_id` + `tool_id` (default `__default__`).
+- Auto materialization of tool policies on discovery/registry sync.
+- Combined MCP behavior (`/mcp/apps`):
+  - `list_tools` filters denied tools.
+  - `call_tool` enforces policy and returns 403 when denied.
 
 ## 6) Database / Registry Architecture
-- Single source of truth is now the SQLite/DB Registry.
-- Models moved away from live fetching on view requests and rely purely on DB state.
-- Live fetching only happens during explicitly triggered `/sync` endpoints or via background sweeps.
-- Decoupled `catalog.py` reads purely from DB using `exposure_service.py`.
+- Single source of truth is the DB registry (Postgres or SQLite fallback).
+- Routers read from registry tables; live fetch only on explicit `/sync` or catalog refresh.
+- `catalog.py` returns registry-only view and uses `exposure_service.py` to compute exposable tools.
+- MCP server sync: `/servers/{name}/sync` uses `registry_sync_service.sync_tools_from_discovery`.
+- OpenAPI sync: `/base-urls/{name}/sync` triggers catalog refresh; `build_openapi_tool_catalog` updates registry.
 
 ## 7) Important implementation details and history
 - Soft delete is default for app/server/tool/endpoint where applicable.
 - Hard delete intended for super admin usage.
+- `backend/app/main.py` mounts combined FastMCP server at `/mcp/apps` and provides `JWTAuthASGIMiddleware` when auth enabled.
+- OpenAPI tool invocation supports `path/query/headers/cookies/body/timeout_sec` and uses Keycloak token injection per domain.
+- Agent runtime: MCPAgent + ChatOllama configured via `ENV` in `backend/app/services/agent_runtime.py`.
 - 2026-02-27: Decoupled routers from live-fetches.
   - Extracted logic to `backend/app/services/registry/`
     - `discovery_service.py`
