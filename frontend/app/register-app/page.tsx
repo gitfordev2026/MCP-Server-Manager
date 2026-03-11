@@ -51,6 +51,8 @@ interface ModalEndpoint {
 }
 
 const HTTP_METHODS: HttpMethod[] = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'];
+const METHOD_FILTERS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'ALL'] as const;
+type MethodFilter = (typeof METHOD_FILTERS)[number];
 
 function formatJson(value: unknown): string {
   try {
@@ -109,6 +111,7 @@ export default function RegisterAppPage() {
   const [discoveredEndpoints, setDiscoveredEndpoints] = useState<DiscoveredEndpoint[]>([]);
   const [selectedEndpoints, setSelectedEndpoints] = useState<Set<string>>(new Set());
   const [activeEndpointId, setActiveEndpointId] = useState<string | null>(null);
+  const [methodFilter, setMethodFilter] = useState<MethodFilter>('GET');
   const [selectedAppName, setSelectedAppName] = useState<string | null>(null);
   const [registeredEndpoints, setRegisteredEndpoints] = useState<ModalEndpoint[]>([]);
   const [registeredEndpointsLoading, setRegisteredEndpointsLoading] = useState(false);
@@ -117,11 +120,17 @@ export default function RegisterAppPage() {
   const [draftEndpointDescriptions, setDraftEndpointDescriptions] = useState<Record<string, string>>({});
   const [savingEndpointDescriptionId, setSavingEndpointDescriptionId] = useState<string | null>(null);
   const [selectedEndpointDescriptions, setSelectedEndpointDescriptions] = useState<Record<string, string>>({});
+  const [generatingEndpointDescriptionId, setGeneratingEndpointDescriptionId] = useState<string | null>(null);
+  const [generatingRegisteredDescriptionId, setGeneratingRegisteredDescriptionId] = useState<string | null>(null);
 
   const activeEndpoint = useMemo(
     () => discoveredEndpoints.find((endpoint) => endpoint.id === activeEndpointId) ?? null,
     [activeEndpointId, discoveredEndpoints]
   );
+  const filteredEndpoints = useMemo(() => {
+    if (methodFilter === 'ALL') return discoveredEndpoints;
+    return discoveredEndpoints.filter((endpoint) => endpoint.method === methodFilter);
+  }, [discoveredEndpoints, methodFilter]);
 
   const fetchApps = async () => {
     try {
@@ -191,9 +200,11 @@ export default function RegisterAppPage() {
         descriptionMap[endpoint.id] = endpoint.summary || endpoint.description || '';
       });
       setSelectedEndpointDescriptions(descriptionMap);
-      const initial = new Set<string>(endpoints.map((endpoint) => endpoint.id));
+      const initialMatches = endpoints.filter((endpoint) => endpoint.method === 'GET').map((endpoint) => endpoint.id);
+      const initial = new Set<string>(initialMatches.length ? initialMatches : endpoints.map((endpoint) => endpoint.id));
       setSelectedEndpoints(initial);
-      setActiveEndpointId(endpoints[0]?.id ?? null);
+      const initialActive = initialMatches.length ? initialMatches[0] : endpoints[0]?.id;
+      setActiveEndpointId(initialActive ?? null);
       setIsModalOpen(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch APIs');
@@ -216,6 +227,68 @@ export default function RegisterAppPage() {
 
   const setSelectedEndpointDescription = (endpointId: string, description: string) => {
     setSelectedEndpointDescriptions((prev) => ({ ...prev, [endpointId]: description }));
+  };
+
+  const generateEndpointDescription = async (endpoint: DiscoveredEndpoint) => {
+    if (!formData.name.trim()) {
+      setError('Set an application name before generating descriptions.');
+      return;
+    }
+    setGeneratingEndpointDescriptionId(endpoint.id);
+    setError(null);
+    try {
+      const prompt = [
+        `You are helping document an API.`,
+        `App name: ${formData.name.trim()}`,
+        `App description: ${formData.description.trim() || 'N/A'}`,
+        `Endpoint: ${endpoint.method} ${endpoint.path}`,
+        `Summary: ${endpoint.summary || 'N/A'}`,
+        `Description: ${endpoint.description || 'N/A'}`,
+        `Return a concise 1-2 sentence description only.`,
+      ].join('\n');
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        { method: 'GET' }
+      );
+      const payload = await response.json().catch(() => ({}));
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setSelectedEndpointDescription(endpoint.id, text);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate description');
+    } finally {
+      setGeneratingEndpointDescriptionId(null);
+    }
+  };
+
+  const generateRegisteredEndpointDescription = async (endpoint: ModalEndpoint) => {
+    if (!selectedAppName) return;
+    const app = apps.find((item) => item.name === selectedAppName);
+    setGeneratingRegisteredDescriptionId(endpoint.id);
+    setRegisteredEndpointsError(null);
+    try {
+      const prompt = [
+        `You are helping document an API.`,
+        `App name: ${selectedAppName}`,
+        `App description: ${(app?.description || '').trim() || 'N/A'}`,
+        `Endpoint: ${endpoint.method} ${endpoint.path}`,
+        `Return a concise 1-2 sentence description only.`,
+      ].join('\n');
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        { method: 'GET' }
+      );
+      const payload = await response.json().catch(() => ({}));
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setDraftEndpointDescriptions((prev) => ({ ...prev, [endpoint.id]: text }));
+      }
+    } catch (err) {
+      setRegisteredEndpointsError(err instanceof Error ? err.message : 'Failed to generate description');
+    } finally {
+      setGeneratingRegisteredDescriptionId(null);
+    }
   };
 
   const syncCatalog = async () => {
@@ -390,6 +463,10 @@ export default function RegisterAppPage() {
   const registerSelected = async () => {
     if (selectedEndpoints.size === 0) {
       setError('Select at least one API endpoint before registration.');
+      return;
+    }
+    if (!formData.description.trim()) {
+      setError('Description is required.');
       return;
     }
 
@@ -595,8 +672,22 @@ export default function RegisterAppPage() {
             <div className="grid md:grid-cols-2 gap-0">
               <div className="p-4 border-r border-slate-200 max-h-[70vh] overflow-auto">
                 {discoveredEndpoints.length === 0 && <p className="text-sm text-slate-600">No endpoints discovered.</p>}
+                {discoveredEndpoints.length > 0 && (
+                  <div className="mb-3 flex items-center gap-2">
+                    <label className="text-xs font-semibold text-slate-700">Method Filter</label>
+                    <select
+                      value={methodFilter}
+                      onChange={(e) => setMethodFilter(e.target.value as MethodFilter)}
+                      className="text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white"
+                    >
+                      {METHOD_FILTERS.map((method) => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  {discoveredEndpoints.map((endpoint) => (
+                  {filteredEndpoints.map((endpoint) => (
                     <button
                       key={endpoint.id}
                       type="button"
@@ -627,6 +718,19 @@ export default function RegisterAppPage() {
                         rows={2}
                         placeholder="Description override for registration"
                       />
+                      <div className="mt-2 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void generateEndpointDescription(endpoint);
+                          }}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                          disabled={generatingEndpointDescriptionId === endpoint.id}
+                        >
+                          {generatingEndpointDescriptionId === endpoint.id ? 'Generating...' : 'Generate with LLM'}
+                        </button>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -709,6 +813,16 @@ export default function RegisterAppPage() {
                             rows={2}
                             placeholder="Endpoint description"
                           />
+                          <div className="mt-2 flex items-center justify-end">
+                            <button
+                              type="button"
+                              onClick={() => void generateRegisteredEndpointDescription(endpoint)}
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                              disabled={generatingRegisteredDescriptionId === endpoint.id}
+                            >
+                              {generatingRegisteredDescriptionId === endpoint.id ? 'Generating...' : 'Generate with LLM'}
+                            </button>
+                          </div>
                           <details className="mt-2">
                             <summary className="text-xs text-slate-700 cursor-pointer">View request/response config</summary>
                             <div className="mt-2 grid gap-2">

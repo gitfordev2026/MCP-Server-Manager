@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from app.services.cache import cache_delete
 
 
 class ToolCreate(BaseModel):
@@ -161,6 +162,8 @@ def create_tools_router(
                 },
             )
             db.commit()
+            cache_delete("catalog:registry:public=False")
+            cache_delete("catalog:registry:public=True")
             return {"status": "created", "id": tool.id}
 
     @router.patch(
@@ -252,6 +255,8 @@ def create_tools_router(
                 },
             )
             db.commit()
+            cache_delete("catalog:registry:public=False")
+            cache_delete("catalog:registry:public=True")
             return {"status": "updated", "id": tool.id}
 
     @router.delete(
@@ -293,6 +298,8 @@ def create_tools_router(
                 after_state=None if hard else {"is_deleted": True, "is_enabled": False},
             )
             db.commit()
+            cache_delete("catalog:registry:public=False")
+            cache_delete("catalog:registry:public=True")
             return {"status": "deleted", "hard": hard}
 
     return router

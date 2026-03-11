@@ -16,6 +16,11 @@ interface ServerItem {
   url: string;
 }
 
+interface AppItem {
+  name: string;
+  url: string;
+  selected_endpoints?: string[];
+}
 interface CatalogTool {
   name: string;
   title: string;
@@ -24,6 +29,7 @@ interface CatalogTool {
   path: string;
   is_placeholder?: boolean;
   access_mode?: AccessMode;
+  resource?: boolean;
 }
 
 interface CatalogSummary {
@@ -78,6 +84,7 @@ function permissionLabel(mode: AccessMode): string {
 export default function McpEndpointsPage() {
   /* --- state --- */
   const [servers, setServers] = useState<ServerItem[]>([]);
+  const [apps, setApps] = useState<AppItem[]>([]);
   const [catalogTools, setCatalogTools] = useState<CatalogTool[]>([]);
   const [catalogSummary, setCatalogSummary] = useState<CatalogSummary | null>(null);
   const [catalogToolCount, setCatalogToolCount] = useState(0);
@@ -87,6 +94,12 @@ export default function McpEndpointsPage() {
   const [serverToolsLoading, setServerToolsLoading] = useState<Record<string, boolean>>({});
   const [serverToolsError, setServerToolsError] = useState<Record<string, string>>({});
 
+  const [selectionOpen, setSelectionOpen] = useState(false);
+  const [selectionOwner, setSelectionOwner] = useState<{ type: 'app' | 'mcp'; name: string } | null>(null);
+  const [selectionTools, setSelectionTools] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectionSelected, setSelectionSelected] = useState<Set<string>>(new Set());
+  const [selectionLoading, setSelectionLoading] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
 
   const [loading, setLoading] = useState(true);
@@ -100,6 +113,15 @@ export default function McpEndpointsPage() {
   const combinedToolsByApp = useMemo(() => {
     const map: Record<string, CatalogTool[]> = {};
     for (const tool of catalogTools) {
+      if (!map[tool.app]) map[tool.app] = [];
+      map[tool.app].push(tool);
+    }
+    return map;
+  }, [catalogTools]);
+  const resourcesByApp = useMemo(() => {
+    const map: Record<string, CatalogTool[]> = {};
+    for (const tool of catalogTools) {
+      if (!tool.resource) continue;
       if (!map[tool.app]) map[tool.app] = [];
       map[tool.app].push(tool);
     }
@@ -126,6 +148,9 @@ export default function McpEndpointsPage() {
         const payload = await serversRes.value.json();
         setServers(Array.isArray(payload?.servers) ? payload.servers : []);
       }
+      const appsRes = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls?include_inactive=true`);
+      const appsPayload = await appsRes.json().catch(() => ({}));
+      setApps(Array.isArray(appsPayload?.base_urls) ? appsPayload.base_urls : []);
 
       if (catalogRes.status === 'fulfilled' && catalogRes.value.ok) {
         const payload = await catalogRes.value.json();
@@ -141,6 +166,80 @@ export default function McpEndpointsPage() {
       setLoading(false);
     }
   }, []);
+
+  const openSelectionModal = async (owner: { type: 'app' | 'mcp'; name: string }) => {
+    setSelectionOwner(owner);
+    setSelectionOpen(true);
+    setSelectionLoading(true);
+    setSelectionError(null);
+    try {
+      const toolsRes = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/tools`);
+      const toolsPayload = await toolsRes.json().catch(() => ({}));
+      const tools = Array.isArray(toolsPayload?.tools) ? toolsPayload.tools : [];
+      if (owner.type === 'app') {
+        const app = apps.find((item) => item.name === owner.name);
+        const selected = new Set((app?.selected_endpoints || []).map((item) => String(item).trim()).filter(Boolean));
+        const filtered = tools
+          .filter((tool: any) => tool.owner_id === `app:${owner.name}` && tool.source_type === 'openapi')
+          .map((tool: any) => {
+            const key = `${String(tool.method || '').toUpperCase()} ${tool.path || ''}`.trim();
+            return { id: key, label: `${String(tool.method || '').toUpperCase()} ${tool.path || ''}` };
+          });
+        setSelectionTools(filtered);
+        setSelectionSelected(selected.size ? selected : new Set(filtered.map((t) => t.id)));
+      } else {
+        const server = servers.find((item) => item.name === owner.name) as any;
+        const selected = new Set((server?.selected_tools || []).map((item: string) => String(item).trim()).filter(Boolean));
+        const filtered = tools
+          .filter((tool: any) => tool.owner_id === `mcp:${owner.name}` && tool.source_type === 'mcp')
+          .map((tool: any) => ({ id: tool.name, label: tool.name }));
+        setSelectionTools(filtered);
+        setSelectionSelected(selected.size ? selected : new Set(filtered.map((t) => t.id)));
+      }
+    } catch (err) {
+      setSelectionError(err instanceof Error ? err.message : 'Failed to load tools');
+    } finally {
+      setSelectionLoading(false);
+    }
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectionSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const saveSelection = async () => {
+    if (!selectionOwner) return;
+    try {
+      if (selectionOwner.type === 'app') {
+        await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls/${encodeURIComponent(selectionOwner.name)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selected_endpoints: Array.from(selectionSelected) }),
+        });
+      } else {
+        await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers/${encodeURIComponent(selectionOwner.name)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selected_tools: Array.from(selectionSelected) }),
+        });
+      }
+      setSelectionOpen(false);
+      setSelectionOwner(null);
+      setSelectionTools([]);
+      setSelectionSelected(new Set());
+      await fetchData();
+    } catch (err) {
+      setSelectionError(err instanceof Error ? err.message : 'Failed to save selection');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -241,6 +340,48 @@ export default function McpEndpointsPage() {
           </div>
         ) : (
           <>
+            <div className="mb-6 rounded-2xl border border-slate-200 bg-white/80 p-5 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Combined MCP Selection</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Choose which tools are exposed in the combined MCP server. If you leave the list empty, all tools are exposed.
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 p-4 bg-white">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">Applications</p>
+                  <div className="flex flex-wrap gap-2">
+                    {apps.map((app) => (
+                      <button
+                        key={app.name}
+                        onClick={() => void openSelectionModal({ type: 'app', name: app.name })}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 hover:bg-blue-50"
+                      >
+                        {app.name}
+                      </button>
+                    ))}
+                    {apps.length === 0 && (
+                      <span className="text-xs text-slate-500">No apps registered</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4 bg-white">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">MCP Servers</p>
+                  <div className="flex flex-wrap gap-2">
+                    {servers.map((server) => (
+                      <button
+                        key={server.name}
+                        onClick={() => void openSelectionModal({ type: 'mcp', name: server.name })}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        {server.name}
+                      </button>
+                    ))}
+                    {servers.length === 0 && (
+                      <span className="text-xs text-slate-500">No servers registered</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
             {/* ====== COMBINED MCP SERVER (Hero Card) ====== */}
             <div className="mb-8">
               <button
@@ -326,6 +467,41 @@ export default function McpEndpointsPage() {
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
                     Tools by App ({catalogToolCount})
                   </h3>
+                  {Object.keys(resourcesByApp).length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Resources (GET)</h4>
+                      <div className="space-y-3">
+                        {Object.entries(resourcesByApp).map(([appName, tools]) => (
+                          <div key={appName}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                              <h5 className="text-xs font-bold text-slate-700">{appName}</h5>
+                              <span className="text-[10px] text-slate-400">{tools.length} resources</span>
+                            </div>
+                            <div className="grid gap-2 ml-4">
+                              {tools.map((tool) => (
+                                <div
+                                  key={tool.name}
+                                  className="flex items-center justify-between p-3 rounded-lg border border-emerald-200 bg-emerald-50/40"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold text-slate-800 truncate">{tool.title || tool.name}</p>
+                                    <p className="text-[10px] text-slate-500 truncate">
+                                      <span className="font-mono font-bold text-emerald-700">{tool.method.toUpperCase()}</span>{' '}
+                                      {tool.path}
+                                    </p>
+                                  </div>
+                                  <span className="ml-3 text-[10px] font-semibold px-2 py-1 rounded-full border border-emerald-200 bg-emerald-100 text-emerald-700">
+                                    Resource
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {Object.keys(combinedToolsByApp).length === 0 ? (
                     <p className="text-sm text-slate-500">No public tools available. Set access policy to Allow to expose tools.</p>
                   ) : (
@@ -517,10 +693,81 @@ export default function McpEndpointsPage() {
                 })}
               </div>
             )}
+            {selectionOpen && selectionOwner && (
+              <div className="fixed inset-0 z-[130] bg-black/50 p-4 md:p-8 overflow-auto">
+                <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
+                  <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">
+                        Select Tools — {selectionOwner.type === 'app' ? 'Application' : 'Server'} {selectionOwner.name}
+                      </h3>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Leave empty to expose all tools.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectionOpen(false);
+                        setSelectionOwner(null);
+                        setSelectionTools([]);
+                        setSelectionSelected(new Set());
+                      }}
+                      className="text-sm text-slate-600 hover:text-slate-800"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    {selectionError && (
+                      <div className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm">
+                        {selectionError}
+                      </div>
+                    )}
+                    {selectionLoading ? (
+                      <p className="text-sm text-slate-600">Loading tools...</p>
+                    ) : selectionTools.length === 0 ? (
+                      <p className="text-sm text-slate-600">No tools found.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-[50vh] overflow-auto">
+                        {selectionTools.map((tool) => (
+                          <label key={tool.id} className="flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={selectionSelected.has(tool.id)}
+                              onChange={() => toggleSelection(tool.id)}
+                            />
+                            <span className="font-mono text-xs">{tool.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-5 py-4 border-t border-slate-200 flex justify-end gap-3">
+                    <button
+                      onClick={() => setSelectionSelected(new Set(selectionTools.map((t) => t.id)))}
+                      className="text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-2 rounded-lg"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      onClick={() => setSelectionSelected(new Set())}
+                      className="text-xs font-semibold text-slate-600 border border-slate-200 px-3 py-2 rounded-lg"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => void saveSelection()}
+                      className="text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 px-4 py-2 rounded-lg"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
     </div>
   );
 }
-

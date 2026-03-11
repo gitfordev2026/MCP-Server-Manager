@@ -84,9 +84,11 @@ from app.routers.endpoints import create_endpoints_router
 from app.routers.health import create_health_router
 from app.routers.servers import create_servers_router
 from app.routers.tools import create_tools_router
+from app.routers.realtime import create_realtime_router
 from app.schemas.registration import BaseURLRegistration, ServerRegistration
 from app.services.agent_runtime import build_default_agent
 from app.services.audit import write_audit_log
+from app.services.health_monitor import run_health_monitor
 from app.services.policy_utils import (
     ensure_default_access_policy_for_owner,
     ensure_tool_access_policy_for_owner,
@@ -113,13 +115,21 @@ def global_auth_dependency(request: Request) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    stop_event = asyncio.Event()
+    monitor_task: asyncio.Task | None = None
+    if ENV.live_monitor_enabled:
+        monitor_task = asyncio.create_task(run_health_monitor(stop_event))
     mcp_server = globals().get("combined_apps_mcp")
     if mcp_server is None:
+        stop_event.set()
         yield
         return
 
     async with run_mcp_server_lifespan(mcp_server):
         yield
+    stop_event.set()
+    if monitor_task:
+        monitor_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan, dependencies=[Depends(global_auth_dependency)])
@@ -452,6 +462,33 @@ def sync_tool_policies_from_registry() -> None:
         db.commit()
 
 
+def _upsert_tool_version(
+    db,
+    tool_id: int,
+    version: str,
+    description: str,
+    input_schema: dict[str, Any] | None,
+) -> None:
+    existing_version = db.scalar(
+        select(ToolVersionModel).where(
+            ToolVersionModel.tool_id == tool_id,
+            ToolVersionModel.version == version,
+        )
+    )
+    if existing_version:
+        existing_version.description = description
+        existing_version.input_schema = input_schema
+        return
+    db.add(
+        ToolVersionModel(
+            tool_id=tool_id,
+            version=version,
+            description=description,
+            input_schema=input_schema,
+        )
+    )
+
+
 def _host_of(url: str) -> str:
     parsed = urlparse((url or "").strip())
     return (parsed.netloc or parsed.hostname or "").lower()
@@ -501,6 +538,7 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
         for tool in tools.values():
             owner_id = f"app:{tool.app_name}"
             raw_api = db.scalar(select(BaseURLModel).where(BaseURLModel.name == tool.app_name))
+            app_description = (raw_api.description or "").strip() if raw_api else ""
             selected_endpoints = (
                 [str(item).strip() for item in (raw_api.selected_endpoints or []) if str(item).strip()]
                 if raw_api is not None
@@ -548,10 +586,15 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                     MCPToolModel.name == tool.name,
                 )
             )
+            combined_description = tool.description or ""
+            if app_description:
+                combined_description = f"{app_description} | {combined_description}".strip(" |")
+
             if existing:
+                tool_row = existing
                 existing.method = tool.method
                 existing.path = tool.path
-                existing.description = tool.description or existing.description
+                existing.description = combined_description or existing.description
                 existing.display_name = tool.title
                 existing.external_id = tool.name
                 existing.registration_state = "selected"
@@ -562,16 +605,14 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 existing.discovery_hash = discovery_hash
                 existing.sync_error = None
                 existing.raw_api_id = raw_api.id if raw_api else existing.raw_api_id
-                continue
-
-            db.add(
-                MCPToolModel(
+            else:
+                tool_row = MCPToolModel(
                     source_type="openapi",
                     owner_id=owner_id,
                     name=tool.name,
                     method=tool.method,
                     path=tool.path,
-                    description=tool.description or "",
+                    description=combined_description or "",
                     external_id=tool.name,
                     display_name=tool.title,
                     registration_state="selected",
@@ -583,6 +624,17 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                     sync_error=None,
                     raw_api_id=raw_api.id if raw_api else None,
                 )
+                db.add(tool_row)
+
+            db.flush()
+            version = tool_row.current_version or "1.0.0"
+            tool_row.current_version = version
+            _upsert_tool_version(
+                db,
+                tool_id=tool_row.id,
+                version=version,
+                description=tool_row.description or "",
+                input_schema=tool.input_schema,
             )
 
         # If owner has explicit selection, hide unselected OpenAPI tools.
@@ -670,6 +722,7 @@ def sync_mcp_tool_registry_from_mcp(
                 )
             )
             if existing:
+                tool_row = existing
                 existing.server_id = server.id if server else existing.server_id
                 existing.description = tool_description or existing.description
                 existing.display_name = tool_name
@@ -681,10 +734,8 @@ def sync_mcp_tool_registry_from_mcp(
                 existing.source_updated_on = synced_at
                 existing.discovery_hash = discovery_hash
                 existing.sync_error = None
-                continue
-
-            db.add(
-                MCPToolModel(
+            else:
+                tool_row = MCPToolModel(
                     source_type="mcp",
                     owner_id=owner_id,
                     name=tool_name,
@@ -700,6 +751,17 @@ def sync_mcp_tool_registry_from_mcp(
                     sync_error=None,
                     server_id=server.id if server else None,
                 )
+                db.add(tool_row)
+
+            db.flush()
+            version = tool_row.current_version or "1.0.0"
+            tool_row.current_version = version
+            _upsert_tool_version(
+                db,
+                tool_id=tool_row.id,
+                version=version,
+                description=tool_row.description or "",
+                input_schema=input_schema,
             )
 
         server_rows = db.scalars(select(ServerModel)).all()
@@ -1560,44 +1622,31 @@ def _effective_access_mode(policy_map: dict[str, dict[str, str]], owner_id: str,
 
 class CombinedAppsOpenAPIMCP(FastMCP[Any]):
     async def list_tools(self) -> list[MCPTool]:
-        import asyncio as _aio
+        from app.services.registry.exposure_service import resolve_exposable_tools
 
-        # Fetch both sources concurrently
-        catalog_task = build_openapi_tool_catalog()
-        mcp_task = _fetch_all_mcp_server_tools()
-        catalog, mcp_tools = await _aio.gather(catalog_task, mcp_task)
-
-        owner_ids = {f"app:{tool.app_name}" for tool in catalog.tools.values()}
-        owner_ids.update({f"mcp:{server_name}" for server_name, _, _ in mcp_tools.values()})
-        policy_map = _load_policy_mode_map(owner_ids)
+        with SessionLocal() as db:
+            tools_list, _ = resolve_exposable_tools(
+                db=db,
+                mcp_tool_model=MCPToolModel,
+                access_policy_model=AccessPolicyModel,
+                tool_version_model=ToolVersionModel,
+                registry_only=True,
+                public_only=False,
+            )
 
         tools: list[MCPTool] = []
-        for tool in catalog.tools.values():
-            owner_id = f"app:{tool.app_name}"
-            if _effective_access_mode(policy_map, owner_id, tool.name) == "deny":
-                continue
+        for tool in tools_list:
+            description = tool.get("description", "") or ""
+            if tool.get("source") == "mcp_server":
+                description = f"[MCP: {tool.get('app', '')}] {description}".strip()
             tools.append(
                 MCPTool(
-                    name=tool.name,
-                    title=tool.title,
-                    description=tool.description,
-                    inputSchema=tool.input_schema,
+                    name=tool["name"],
+                    title=tool.get("title") or tool["name"],
+                    description=description,
+                    inputSchema=tool.get("inputSchema") or {},
                 )
             )
-
-        for prefixed_name, (server_name, orig_name, tool_obj) in mcp_tools.items():
-            owner_id = f"mcp:{server_name}"
-            if _effective_access_mode(policy_map, owner_id, orig_name) == "deny":
-                continue
-            tools.append(
-                MCPTool(
-                    name=prefixed_name,
-                    title=getattr(tool_obj, "name", prefixed_name),
-                    description=f"[MCP: {server_name}] {getattr(tool_obj, 'description', '') or 'No description'}",
-                    inputSchema=getattr(tool_obj, "inputSchema", {}) or {},
-                )
-            )
-
         return tools
 
 
@@ -1623,8 +1672,21 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
 
             with SessionLocal() as db:
                 server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
-            if not server:
-                raise ValueError(f"MCP server '{server_name}' not found in database.")
+                tool_row = db.scalar(
+                    select(MCPToolModel).where(
+                        MCPToolModel.source_type == "mcp",
+                        MCPToolModel.owner_id == f"mcp:{server_name}",
+                        MCPToolModel.name == orig_tool_name,
+                        MCPToolModel.is_deleted == False,  # noqa: E712
+                        MCPToolModel.is_enabled == True,  # noqa: E712
+                        MCPToolModel.registration_state == "selected",
+                        MCPToolModel.exposure_state == "active",
+                    )
+                )
+            if not server or server.is_deleted or not server.is_enabled or not tool_row:
+                raise ValueError(f"MCP tool '{orig_tool_name}' on '{server_name}' not found or disabled.")
+            if ENV.live_monitor_enabled and tool_row.health_status not in ("healthy", "unknown"):
+                raise ValueError(f"MCP tool '{orig_tool_name}' is not healthy ({tool_row.health_status}).")
 
             config = {"mcpServers": {server_name: {"url": server.url}}}
             client = MCPClient(config)
@@ -1641,17 +1703,52 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             }
 
         # ---- OpenAPI app tool ----
-        catalog = await build_openapi_tool_catalog()
-        tool = catalog.tools.get(name)
+        with SessionLocal() as db:
+            tool_row = db.scalar(
+                select(MCPToolModel).where(
+                    MCPToolModel.source_type == "openapi",
+                    MCPToolModel.name == name,
+                    MCPToolModel.is_deleted == False,  # noqa: E712
+                    MCPToolModel.is_enabled == True,  # noqa: E712
+                    MCPToolModel.registration_state == "selected",
+                    MCPToolModel.exposure_state == "active",
+                )
+            )
+            if not tool_row:
+                raise ValueError(f"Unknown tool '{name}'. Refresh your MCP tool list and try again.")
+            if ENV.live_monitor_enabled and tool_row.health_status not in ("healthy", "unknown"):
+                raise ValueError(f"Tool '{name}' is not healthy ({tool_row.health_status}).")
 
-        if tool is None:
-            catalog = await build_openapi_tool_catalog(force_refresh=True)
-            tool = catalog.tools.get(name)
+            owner_id = tool_row.owner_id or ""
+            _check_access(owner_id, tool_row.name)
 
-        if tool is None:
-            raise ValueError(f"Unknown tool '{name}'. Refresh your MCP tool list and try again.")
+            base_url = None
+            if tool_row.raw_api_id is not None:
+                base_url = db.scalar(select(BaseURLModel).where(BaseURLModel.id == tool_row.raw_api_id))
+            if base_url is None and owner_id.startswith("app:"):
+                base_name = owner_id.split(":", 1)[1]
+                base_url = db.scalar(select(BaseURLModel).where(BaseURLModel.name == base_name))
 
-        _check_access(f"app:{tool.app_name}", tool.name)
+        if not base_url or base_url.is_deleted or not base_url.is_enabled:
+            raise ValueError(f"Application for tool '{name}' not found or disabled.")
+
+        is_placeholder = tool_row.path == "/__placeholder__" and tool_row.name.endswith("__endpoint_unavailable")
+        placeholder_reason = tool_row.sync_error or "Endpoint unavailable"
+
+        tool = OpenAPIToolDefinition(
+            name=tool_row.name,
+            title=tool_row.display_name or tool_row.name,
+            description=tool_row.description or "",
+            app_name=base_url.name,
+            base_url=base_url.url,
+            method=tool_row.method or "GET",
+            path=tool_row.path or "/",
+            input_schema={},
+            body_content_type=None,
+            domain_type=base_url.domain_type or "ADM",
+            is_placeholder=is_placeholder,
+            placeholder_reason=placeholder_reason if is_placeholder else None,
+        )
 
         return await invoke_openapi_tool(tool, arguments or {})
 
@@ -1769,6 +1866,7 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         get_request_actor,
+        require_permission,
     ),
     tags=["Applications"],
 )
@@ -1777,6 +1875,7 @@ app.include_router(
         SessionLocal,
         AccessPolicyModel,
         MCPToolModel,
+        ToolVersionModel,
         BaseURLModel,
         ServerModel,
         build_openapi_tool_catalog,
@@ -1803,6 +1902,7 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         get_request_actor,
+        require_permission,
     ),
     tags=["MCP Servers"],
 )
@@ -1862,9 +1962,9 @@ app.include_router(
     ),
     tags=["API Endpoints"],
 )
+app.include_router(create_realtime_router(), tags=["Realtime"])
 
 
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8090, reload=True)
-

@@ -6,6 +6,7 @@ import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
+const PLAYGROUND_ENABLED = publicEnv.NEXT_PUBLIC_PLAYGROUND_ENABLED === 'true';
 
 interface ServerItem {
     name: string;
@@ -63,6 +64,10 @@ export default function PlaygroundPage() {
 
     /* --- data fetching --- */
     const fetchData = useCallback(async () => {
+        if (!PLAYGROUND_ENABLED) {
+            setLoading(false);
+            return;
+        }
         if (!NEXT_PUBLIC_BE_API_URL) {
             setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
             setLoading(false);
@@ -156,6 +161,7 @@ export default function PlaygroundPage() {
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!PLAYGROUND_ENABLED) return;
         if (!input.trim()) return;
 
         const userMessage: Message = {
@@ -230,6 +236,15 @@ export default function PlaygroundPage() {
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col pt-24 pb-4 relative z-10">
                 <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-full gap-6">
+                    {!PLAYGROUND_ENABLED && (
+                        <div className="bg-white/80 backdrop-blur-xl border border-rose-200/50 rounded-2xl p-4 sm:p-6 shadow-lg shadow-rose-200/20">
+                            <h2 className="text-lg font-semibold text-slate-800">Playground Disabled</h2>
+                            <p className="text-sm text-slate-600 mt-2">
+                                The playground is currently disabled by configuration. Enable it by setting
+                                `NEXT_PUBLIC_PLAYGROUND_ENABLED=true`.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Header Controls */}
                     <div className="bg-white/80 backdrop-blur-xl border border-rose-200/50 rounded-2xl p-6 shadow-lg shadow-rose-200/20 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -249,6 +264,7 @@ export default function PlaygroundPage() {
                                 <select
                                     value={selectedApp}
                                     onChange={(e) => handleAppSelect(e.target.value)}
+                                    disabled={!PLAYGROUND_ENABLED || loading}
                                     className="w-full sm:w-64 bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-rose-500 focus:border-rose-500 block p-2.5 shadow-sm transition-all hover:border-rose-300"
                                 >
                                     <option value="all">🌐 All Applications (Unrestricted)</option>
@@ -326,12 +342,12 @@ export default function PlaygroundPage() {
                                     onChange={(e) => setInput(e.target.value)}
                                     placeholder="Ask the agent to test a tool..."
                                     className="flex-1 px-5 py-3 border border-slate-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent bg-white text-slate-800 placeholder-slate-400 transition-all duration-300 hover:border-slate-400 font-medium"
-                                    disabled={chatLoading}
+                                    disabled={chatLoading || !PLAYGROUND_ENABLED}
                                     autoFocus
                                 />
                                 <button
                                     type="submit"
-                                    disabled={chatLoading || !input.trim()}
+                                    disabled={chatLoading || !input.trim() || !PLAYGROUND_ENABLED}
                                     className="cursor-pointer bg-gradient-to-r from-rose-500 to-orange-600 hover:from-rose-600 hover:to-orange-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-rose-400/40 hover:scale-[1.02] shadow-md active:scale-95"
                                 >
                                     {chatLoading ? (

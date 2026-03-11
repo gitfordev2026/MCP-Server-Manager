@@ -215,6 +215,8 @@ export default function AdminPanelPage() {
   // Map of id -> current draft description (only set when user opens the edit field)
   const [toolDescEdits, setToolDescEdits] = useState<Record<number, string>>({});
   const [endpointDescEdits, setEndpointDescEdits] = useState<Record<number, string>>({});
+  const [generatingToolDescId, setGeneratingToolDescId] = useState<number | null>(null);
+  const [generatingEndpointDescId, setGeneratingEndpointDescId] = useState<number | null>(null);
 
   // Forms (create forms currently commented out — kept here for future use)
   const [appForm, setAppForm] = useState({
@@ -358,6 +360,49 @@ export default function AdminPanelPage() {
       setToolDescEdits((prev) => { const next = { ...prev }; delete next[tool.id]; return next; });
     });
 
+  const resolveOwnerContext = useCallback((ownerId: string) => {
+    if (ownerId.startsWith('app:')) {
+      const name = ownerId.slice(4);
+      const app = apps.find((item) => item.name === name);
+      return { ownerName: name, ownerDescription: (app?.description || '').trim() };
+    }
+    if (ownerId.startsWith('mcp:')) {
+      const name = ownerId.slice(4);
+      const server = servers.find((item) => item.name === name);
+      return { ownerName: name, ownerDescription: (server?.description || '').trim() };
+    }
+    return { ownerName: ownerId, ownerDescription: '' };
+  }, [apps, servers]);
+
+  const generateToolDescription = useCallback(async (tool: Tool) => {
+    setGeneratingToolDescId(tool.id);
+    setActionError(null);
+    try {
+      const { ownerName, ownerDescription } = resolveOwnerContext(tool.owner_id || '');
+      const prompt = [
+        'You are helping document a tool.',
+        `Owner: ${ownerName || tool.owner_id || 'N/A'}`,
+        `Owner description: ${ownerDescription || 'N/A'}`,
+        `Tool name: ${tool.name}`,
+        `Source: ${tool.source_type}`,
+        `Method: ${tool.method || 'N/A'}`,
+        `Path: ${tool.path || 'N/A'}`,
+        'Return a concise 1-2 sentence description only.',
+      ].join('\n');
+      const payload = await http<{ response?: string }>(
+        `/agent/query?prompt=${encodeURIComponent(prompt)}`
+      );
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setToolDescEdits((prev) => ({ ...prev, [tool.id]: text }));
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to generate tool description');
+    } finally {
+      setGeneratingToolDescId(null);
+    }
+  }, [resolveOwnerContext]);
+
   // ── Endpoint Actions ──────────────────────────────────────────────────────
 
   /* createEndpoint — commented out, not needed right now
@@ -391,6 +436,32 @@ export default function AdminPanelPage() {
       });
       setEndpointDescEdits((prev) => { const next = { ...prev }; delete next[ep.id]; return next; });
     });
+
+  const generateEndpointDescription = useCallback(async (ep: Endpoint) => {
+    setGeneratingEndpointDescId(ep.id);
+    setActionError(null);
+    try {
+      const { ownerName, ownerDescription } = resolveOwnerContext(ep.owner_id || '');
+      const prompt = [
+        'You are helping document an API endpoint.',
+        `Owner: ${ownerName || ep.owner_id || 'N/A'}`,
+        `Owner description: ${ownerDescription || 'N/A'}`,
+        `Endpoint: ${ep.method} ${ep.path}`,
+        'Return a concise 1-2 sentence description only.',
+      ].join('\n');
+      const payload = await http<{ response?: string }>(
+        `/agent/query?prompt=${encodeURIComponent(prompt)}`
+      );
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: text }));
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to generate endpoint description');
+    } finally {
+      setGeneratingEndpointDescId(null);
+    }
+  }, [resolveOwnerContext]);
 
   // ── Filtered data ─────────────────────────────────────────────────────────
 
@@ -872,6 +943,14 @@ export default function AdminPanelPage() {
                           />
                           <div className="flex flex-col gap-1">
                             <Button size="sm" onClick={() => void saveToolDescription(tool)}>Save</Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={generatingToolDescId === tool.id}
+                              onClick={() => void generateToolDescription(tool)}
+                            >
+                              {generatingToolDescId === tool.id ? 'Generating...' : 'Generate'}
+                            </Button>
                             <Button size="sm" variant="ghost" onClick={() => setToolDescEdits((prev) => { const n = { ...prev }; delete n[tool.id]; return n; })}>Cancel</Button>
                           </div>
                         </>
@@ -979,6 +1058,14 @@ export default function AdminPanelPage() {
                           />
                           <div className="flex flex-col gap-1">
                             <Button size="sm" onClick={() => void saveEndpointDescription(ep)}>Save</Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={generatingEndpointDescId === ep.id}
+                              onClick={() => void generateEndpointDescription(ep)}
+                            >
+                              {generatingEndpointDescId === ep.id ? 'Generating...' : 'Generate'}
+                            </Button>
                             <Button size="sm" variant="ghost" onClick={() => setEndpointDescEdits((prev) => { const n = { ...prev }; delete n[ep.id]; return n; })}>Cancel</Button>
                           </div>
                         </>
@@ -1044,6 +1131,14 @@ export default function AdminPanelPage() {
                             />
                             <div className="flex flex-col gap-1">
                               <Button size="sm" onClick={() => void saveToolDescription(tool)}>Save</Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={generatingToolDescId === tool.id}
+                                onClick={() => void generateToolDescription(tool)}
+                              >
+                                {generatingToolDescId === tool.id ? 'Generating...' : 'Generate'}
+                              </Button>
                               <Button size="sm" variant="ghost" onClick={() => setToolDescEdits((prev) => { const n = { ...prev }; delete n[tool.id]; return n; })}>Cancel</Button>
                             </div>
                           </>

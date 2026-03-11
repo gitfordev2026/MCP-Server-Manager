@@ -51,7 +51,7 @@ uvicorn app.main:app --reload --port 8090
 ### 2. Frontend Setup
 
 ```bash
-cd frontend/mcp-dashboard
+cd frontend
 npm install
 
 # Run the development server
@@ -81,4 +81,3 @@ graph TD
     
     Backend -->|Persist| DB[(SQLite / Postgres)]
 ```
-

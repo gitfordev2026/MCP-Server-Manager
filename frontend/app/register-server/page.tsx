@@ -69,11 +69,59 @@ export default function RegisterServerPage() {
   const [draftToolDescriptions, setDraftToolDescriptions] = useState<Record<string, string>>({});
   const [savingToolDescriptionName, setSavingToolDescriptionName] = useState<string | null>(null);
   const [selectedToolDescriptions, setSelectedToolDescriptions] = useState<Record<string, string>>({});
+  const [toolSearch, setToolSearch] = useState('');
+  const [registeredToolSearch, setRegisteredToolSearch] = useState('');
+  const [toolTag, setToolTag] = useState('all');
+  const [registeredToolTag, setRegisteredToolTag] = useState('all');
+  const [generatingToolDescriptionName, setGeneratingToolDescriptionName] = useState<string | null>(null);
+  const [generatingRegisteredToolDescriptionName, setGeneratingRegisteredToolDescriptionName] = useState<string | null>(null);
 
   const activeTool = useMemo(
     () => discoveredTools.find((tool) => tool.name === activeToolName) ?? null,
     [activeToolName, discoveredTools]
   );
+  const filteredDiscoveredTools = useMemo(() => {
+    const term = toolSearch.trim().toLowerCase();
+    return discoveredTools.filter((tool) => {
+      const matchesText =
+        !term ||
+        tool.name.toLowerCase().includes(term) ||
+        (tool.description || '').toLowerCase().includes(term);
+      if (!matchesText) return false;
+      if (toolTag === 'all') return true;
+      const token = tool.name.split(/[^a-zA-Z0-9]+/).filter(Boolean)[0]?.toLowerCase() || 'other';
+      return token === toolTag;
+    });
+  }, [toolSearch, discoveredTools, toolTag]);
+  const filteredRegisteredTools = useMemo(() => {
+    const term = registeredToolSearch.trim().toLowerCase();
+    return registeredTools.filter((tool) => {
+      const matchesText =
+        !term ||
+        tool.name.toLowerCase().includes(term) ||
+        (tool.description || '').toLowerCase().includes(term);
+      if (!matchesText) return false;
+      if (registeredToolTag === 'all') return true;
+      const token = tool.name.split(/[^a-zA-Z0-9]+/).filter(Boolean)[0]?.toLowerCase() || 'other';
+      return token === registeredToolTag;
+    });
+  }, [registeredToolSearch, registeredTools, registeredToolTag]);
+  const toolTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const tool of discoveredTools) {
+      const token = tool.name.split(/[^a-zA-Z0-9]+/).filter(Boolean)[0]?.toLowerCase() || 'other';
+      tags.add(token);
+    }
+    return ['all', ...Array.from(tags).sort()];
+  }, [discoveredTools]);
+  const registeredToolTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const tool of registeredTools) {
+      const token = tool.name.split(/[^a-zA-Z0-9]+/).filter(Boolean)[0]?.toLowerCase() || 'other';
+      tags.add(token);
+    }
+    return ['all', ...Array.from(tags).sort()];
+  }, [registeredTools]);
 
   const fetchServers = async () => {
     try {
@@ -153,6 +201,67 @@ export default function RegisterServerPage() {
 
   const setSelectedToolDescription = (toolName: string, description: string) => {
     setSelectedToolDescriptions((prev) => ({ ...prev, [toolName]: description }));
+  };
+
+  const generateToolDescription = async (tool: DiscoveredTool) => {
+    if (!formData.name.trim()) {
+      setError('Set a server name before generating descriptions.');
+      return;
+    }
+    setGeneratingToolDescriptionName(tool.name);
+    setError(null);
+    try {
+      const prompt = [
+        `You are helping document an MCP tool.`,
+        `Server name: ${formData.name.trim()}`,
+        `Server description: ${formData.description.trim() || 'N/A'}`,
+        `Tool: ${tool.name}`,
+        `Description: ${tool.description || 'N/A'}`,
+        `Return a concise 1-2 sentence description only.`,
+      ].join('\n');
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        { method: 'GET' }
+      );
+      const payload = await response.json().catch(() => ({}));
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setSelectedToolDescription(tool.name, text);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate description');
+    } finally {
+      setGeneratingToolDescriptionName(null);
+    }
+  };
+
+  const generateRegisteredToolDescription = async (tool: ModalTool) => {
+    if (!selectedServerName) return;
+    const server = servers.find((item) => item.name === selectedServerName);
+    setGeneratingRegisteredToolDescriptionName(tool.name);
+    setRegisteredToolsError(null);
+    try {
+      const prompt = [
+        `You are helping document an MCP tool.`,
+        `Server name: ${selectedServerName}`,
+        `Server description: ${(server?.description || '').trim() || 'N/A'}`,
+        `Tool: ${tool.name}`,
+        `Return a concise 1-2 sentence description only.`,
+      ].join('\n');
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        { method: 'GET' }
+      );
+      const payload = await response.json().catch(() => ({}));
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setDraftToolDescriptions((prev) => ({ ...prev, [tool.name]: text }));
+      }
+    } catch (err) {
+      setRegisteredToolsError(err instanceof Error ? err.message : 'Failed to generate description');
+    } finally {
+      setGeneratingRegisteredToolDescriptionName(null);
+    }
   };
 
   const syncCatalog = async () => {
@@ -473,7 +582,24 @@ export default function RegisterServerPage() {
               <div className="p-4 border-r border-slate-200 max-h-[70vh] overflow-auto">
                 {discoveredTools.length === 0 && <p className="text-sm text-slate-600">No tools discovered.</p>}
                 <div className="space-y-2">
-                  {discoveredTools.map((tool) => (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={toolSearch}
+                      onChange={(e) => setToolSearch(e.target.value)}
+                      placeholder="Filter tools by name/description"
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                    />
+                    <select
+                      value={toolTag}
+                      onChange={(e) => setToolTag(e.target.value)}
+                      className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+                    >
+                      {toolTags.map((tag) => (
+                        <option key={tag} value={tag}>{tag}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {filteredDiscoveredTools.map((tool) => (
                     <button
                       key={tool.name}
                       type="button"
@@ -504,6 +630,19 @@ export default function RegisterServerPage() {
                         rows={2}
                         placeholder="Description override for registration"
                       />
+                      <div className="mt-2 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void generateToolDescription(tool);
+                          }}
+                          className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                          disabled={generatingToolDescriptionName === tool.name}
+                        >
+                          {generatingToolDescriptionName === tool.name ? 'Generating...' : 'Generate with LLM'}
+                        </button>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -558,7 +697,24 @@ export default function RegisterServerPage() {
                 <p className="text-sm text-slate-600">No tools discovered for this server.</p>
               ) : (
                 <div className="space-y-2">
-                  {registeredTools.map((tool) => (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={registeredToolSearch}
+                      onChange={(e) => setRegisteredToolSearch(e.target.value)}
+                      placeholder="Filter registered tools"
+                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                    />
+                    <select
+                      value={registeredToolTag}
+                      onChange={(e) => setRegisteredToolTag(e.target.value)}
+                      className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+                    >
+                      {registeredToolTags.map((tag) => (
+                        <option key={tag} value={tag}>{tag}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {filteredRegisteredTools.map((tool) => (
                     <div key={tool.name} className="p-3 rounded-lg border border-slate-200 bg-slate-50">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex-1">
@@ -575,6 +731,16 @@ export default function RegisterServerPage() {
                             rows={2}
                             placeholder="Tool description"
                           />
+                          <div className="mt-2 flex items-center justify-end">
+                            <button
+                              type="button"
+                              onClick={() => void generateRegisteredToolDescription(tool)}
+                              className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                              disabled={generatingRegisteredToolDescriptionName === tool.name}
+                            >
+                              {generatingRegisteredToolDescriptionName === tool.name ? 'Generating...' : 'Generate with LLM'}
+                            </button>
+                          </div>
                         </div>
                         <div className="flex gap-2 lg:flex-col lg:min-w-[140px]">
                           <Button

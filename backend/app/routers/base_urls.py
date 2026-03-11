@@ -3,6 +3,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
+from app.services.cache import cache_delete
 
 
 def create_base_urls_router(
@@ -23,6 +24,7 @@ def create_base_urls_router(
     write_audit_log_fn,
     audit_log_model,
     get_actor_dep,
+    require_permission_fn,
 ) -> APIRouter:
     router = APIRouter()
     allowed_domains = {"ADM", "OPS"}
@@ -100,6 +102,27 @@ def create_base_urls_router(
         db.execute(delete(api_server_link_model).where(api_server_link_model.raw_api_id == base_url_id))
         return {"tools": len(tool_ids), "endpoints": len(endpoint_ids)}
 
+    def _restore_base_url_dependents(db, base_url_id: int, owner_id: str) -> dict[str, int]:
+        tools = db.scalars(
+            select(mcp_tool_model).where(
+                (mcp_tool_model.raw_api_id == base_url_id) | (mcp_tool_model.owner_id == owner_id)
+            )
+        ).all()
+        for tool in tools:
+            tool.is_deleted = False
+            tool.is_enabled = True
+            tool.registration_state = "selected"
+            tool.exposure_state = "active"
+
+        endpoints = db.scalars(
+            select(api_endpoint_model).where(api_endpoint_model.owner_id == owner_id)
+        ).all()
+        for endpoint in endpoints:
+            endpoint.is_deleted = False
+            endpoint.is_enabled = True
+
+        return {"tools": len(tools), "endpoints": len(endpoints)}
+
     @router.post(
         "/register-base-url",
         summary="Register Application",
@@ -107,7 +130,7 @@ def create_base_urls_router(
     )
     def register_base_url(
         data: base_url_registration_model,
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("application:manage")),
     ) -> dict[str, Any]:
         normalized_openapi_path = normalize_openapi_path_fn(data.openapi_path)
         include_unreachable = 1 if data.include_unreachable_tools else 0
@@ -115,6 +138,18 @@ def create_base_urls_router(
         try:
             with session_local_factory() as db:
                 existing = db.scalar(select(base_url_model).where(base_url_model.name == data.name))
+                duplicate_url = db.scalar(
+                    select(base_url_model).where(
+                        base_url_model.url == data.url,
+                        base_url_model.name != data.name,
+                        base_url_model.is_deleted == False,  # noqa: E712
+                    )
+                )
+                if duplicate_url:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Another application already uses URL '{data.url}'.",
+                    )
                 before_state = None
                 if existing:
                     before_state = {
@@ -190,6 +225,8 @@ def create_base_urls_router(
 
             sync_api_server_links_by_host_fn()
             reset_openapi_catalog_fn()
+            cache_delete("catalog:registry:public=False")
+            cache_delete("catalog:registry:public=True")
 
             return {
                 "message": "Base URL registered successfully",
@@ -281,7 +318,7 @@ def create_base_urls_router(
     def update_base_url(
         name: str,
         payload: BaseURLUpdate,
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("application:manage")),
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             row = db.scalar(select(base_url_model).where(base_url_model.name == name))
@@ -313,6 +350,9 @@ def create_base_urls_router(
                 row.include_unreachable_tools = 1 if payload.include_unreachable_tools else 0
             if payload.is_enabled is not None:
                 row.is_enabled = payload.is_enabled
+                if payload.is_enabled:
+                    row.is_deleted = False
+                    _restore_base_url_dependents(db, row.id, f"app:{row.name}")
 
             write_audit_log_fn(
                 db,
@@ -337,6 +377,8 @@ def create_base_urls_router(
             db.commit()
 
         reset_openapi_catalog_fn()
+        cache_delete("catalog:registry:public=False")
+        cache_delete("catalog:registry:public=True")
         return {"status": "updated", "name": name}
 
     @router.delete(
@@ -347,7 +389,7 @@ def create_base_urls_router(
     def delete_base_url(
         name: str,
         hard: bool = Query(default=False),
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("application:manage")),
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             row = db.scalar(select(base_url_model).where(base_url_model.name == name))
@@ -399,6 +441,8 @@ def create_base_urls_router(
                 raise HTTPException(status_code=500, detail=f"Failed to delete base URL '{name}': {exc}") from exc
 
         reset_openapi_catalog_fn()
+        cache_delete("catalog:registry:public=False")
+        cache_delete("catalog:registry:public=True")
         return {"status": "deleted", "name": name, "hard": hard}
 
     @router.post(
@@ -408,7 +452,7 @@ def create_base_urls_router(
     )
     async def sync_base_url(
         name: str,
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("application:manage")),
     ) -> dict[str, Any]:
         import datetime
 

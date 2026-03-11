@@ -1,0 +1,413 @@
+
+hi go through this project and understand and tell me what you had understand 
+and if you have any doubt the ask it before proceeding further
+
+
+Worked for 2m 12s
+I had a good time walking through this repo and it’s a solid, cohesive MCP manager, so here’s the concise picture of what I understand so far along with a few concrete questions to confirm before we move on.
+
+Understanding
+This is a full‑stack MCP Server Manager that lets admins register MCP servers and raw API base URLs, discover tools (from native MCP servers or OpenAPI specs), and expose them through a unified MCP endpoint. The FastAPI backend boots with DB schema checks, seeds RBAC defaults, sets up access policy rows, and mounts a combined MCP server at /mcp/apps. It generates tools from OpenAPI (build_openapi_tool_catalog) with caching and diagnostics, optionally inserts placeholder tools when specs are unreachable, and syncs tool metadata into mcp_tools. On the MCP side it probes registered servers, prefixes tools with mcp__{server}__{tool}, and merges tool lists while enforcing access policies at list/call time. Access policies are stored in DB per owner and per tool, with a default policy per owner. The frontend is a Next.js App Router UI with pages for dashboard, server/app registration, API explorer, access control, chat, and MCP endpoints; it uses React Query and talks to the backend via a base URL env var. There’s also a small mock-mcp-server Python service for local testing.
+Key references: README.md, backend/app/main.py, backend/project.md, SCHEMA_CONTRACT.md, frontend/app
+
+Doubts to confirm before proceeding
+
+Which auth mode should we target for this phase: AUTH_ENABLED=true with Keycloak enforced, or the current permissive mode?
+Should the frontend path be treated as frontend/ (current structure) or frontend/mcp-dashboard (older docs mention that path)?
+Which DB is the intended source of truth right now: PostgreSQL via DATABASE_URL, or SQLite fallback (servers.db)?
+For access policy defaults, do you want “deny by default” or “allow by default”? The code enforces policy rows but the fallback is effectively allow if a tool lacks a policy row.
+Are ADM/OPS domains both in use, or should we focus on only one domain profile for Keycloak and tool auth?
+Once you confirm those, I can proceed with whatever next step you want.
+
+
+Which auth mode should we target for this phase: AUTH_ENABLED=true with Keycloak enforced, or the current permissive mode? auth enabled 
+Should the frontend path be treated as frontend/ (current structure) or frontend/mcp-dashboard (older docs mention that path)? current structure which is frontend not frontend/mcp-dashboard and also update docs respectively 
+Which DB is the intended source of truth right now: PostgreSQL via DATABASE_URL, or SQLite fallback (servers.db)? postgres 
+For access policy defaults, do you want “deny by default” or “allow by default”? The code enforces policy rows but the fallback is effectively allow if a tool lacks a policy row. allow by default and now update db tables accordingly 
+Are ADM/OPS domains both in use, or should we focus on only one domain profile for Keycloak and tool auth? both in use
+
+moreover there is some mismanagement of mis planning to decide and create database table so . i need deep research on it and update tables accordingly and when combined mcp server exposed then it must exposed the allowed endpoints only and if some user knows the actual endpoint url and try to access that through this application then he must be stopped procceding after confirming as that api/tool is not allowed so that 
+
+now keeping all of the above in mind i need a through analysis of this project architecture and any mis management or configuration or design flaws
+
+
+Worked for 57s
+Thanks for the clear answers and the tighter constraints; this is a thoughtful system and I like where you’re taking it. Based on a deeper pass, here’s a focused architecture and risk analysis, followed by the concrete changes I think we should make next.
+
+Architecture Snapshot
+Backend is a FastAPI app that boots DB schema, seeds RBAC defaults, syncs policy rows, and mounts a combined MCP server at /mcp/apps. Tool discovery pulls from two sources: OpenAPI specs for registered base URLs and native MCP servers, then merges them into mcp_tools. Access policies are stored in exposed_mcp_tools (default row per owner + per‑tool rows). The combined MCP server enforces access policy on list_tools and call_tool, and OpenAPI tool invocation proxies upstream requests with domain‑specific Keycloak tokens. Frontend is a Next.js app in frontend/ with routes for dashboard, registration, access control, API explorer, chat, and MCP endpoints.
+Key files: backend/app/main.py, backend/app/models/db_models.py, backend/app/services/registry/exposure_service.py, backend/app/services/policy_utils.py, README.md
+
+Design/Config Issues and Mis‑planning (ordered by impact)
+
+Auth is token‑only at /mcp/apps, but access policies are not user‑aware. JWTAuthASGIMiddleware only validates the token; access policy checks do not use user identity or groups, and allowed_users/allowed_groups are ignored. This means any authenticated user can call any tool allowed for the owner, regardless of user‑level policy intent.
+Files: backend/app/main.py, backend/app/routers/access_policies.py
+
+Registry‑only contract is violated in multiple places.
+CombinedAppsOpenAPIMCP.list_tools() always does live discovery rather than registry‑only. The catalog endpoint defaults force_refresh=True even when registry_only=True, so it still pulls upstream and mutates DB. This conflicts with the schema contract’s “DB is the source of truth”.
+Files: backend/app/main.py, backend/app/routers/catalog.py, SCHEMA_CONTRACT.md
+
+Default policy behavior is inconsistent at the schema level.
+AccessPolicyModel.mode defaults to deny in the table model, but policy_utils inserts allow for default and per‑tool rows. Existing DB rows (or new rows created outside policy_utils) can be deny unintentionally. This is likely why you’re seeing mis‑planning around DB tables.
+Files: backend/app/models/db_models.py, backend/app/services/policy_utils.py
+
+Access control on admin operations is incomplete.
+Server/base‑URL registration and deletion routes are not guarded by RBAC permissions. Even with AUTH_ENABLED=true, any authenticated user can register or modify.
+Files: backend/app/routers/servers.py, backend/app/routers/base_urls.py
+
+Exposure filtering is inconsistent between registry‑based catalog and runtime MCP.
+exposure_service.resolve_exposable_tools filters from registry tables and respects access_mode, but runtime MCP uses live discovery, so you can see different tools in UI vs actual MCP output.
+Files: backend/app/services/registry/exposure_service.py, backend/app/main.py
+
+Documentation is out of sync with repo structure.
+README references frontend/mcp-dashboard and backend/main.py, while the actual Next app is in frontend/ and backend entry is backend/app/main.py.
+Files: README.md
+
+About “user knows the real endpoint URL”
+Inside this app, we can and should block any call that isn’t allowed by policy. That means enforcing policy in both list_tools and call_tool, and ensuring the combined MCP server and any proxy endpoints only operate on allowed tools. If a user can directly hit the upstream service outside this app, the manager can’t prevent that unless network controls are in place. We can only ensure they cannot use this manager as a bypass.
+
+Recommended Fix Set (matches your constraints)
+
+Switch access policy schema defaults to allow and backfill existing rows in Postgres so mode is allow for defaults and for any rows created before this change.
+Make combined MCP registry‑only by default and ensure its tool list and call behavior use the same exposure rules as the catalog (including is_enabled, is_deleted, registration_state, exposure_state).
+Enforce per‑user policy checks: interpret allowed_users/allowed_groups from Keycloak claims and block if not allowed.
+Guard admin routes with RBAC using require_permission for server and base URL registration/deletion.
+Update docs to reflect frontend/ and backend/app/main.py, and note that auth is enabled with ADM/OPS domains.
+If you want, I can start implementing the database migrations (Postgres), policy enforcement, registry‑only MCP runtime, and doc updates in one pass. Should I proceed with code changes now?
+
+
+ok lets make a plan to implement 
+but i have some more concerns add them also in it
+
+i had a playground and a chat page on frontend so that i am able to test exposed tools using llm which is available on ollama locally 
+workaround and create some confirutation enable/disable from .env or from db like rbac, auth, default policy mode etc
+when combined mcp endpoint exposed all tools then must ensure tool must be available from registered in db not from live 
+monitor each tool health live and update status using hight speed or like websocket when a tool is down the it must be marked as stale and immediately hides from mcp client and does not show in tool list
+when i soft delete/disable any app / server and then try to enable then it gives me error like app not found or tool not found it is a issue with my backend logic and db scheme
+must always db be the single source of truth when mcp client tool list or call tool for live enable or disable any tool think about redis or kafka or any high speed solution
+i observed some delay in live tracking of server status/ tool status/ api status/ while fetching tools /apis this is a major issue and must be catered
+manage or implement some business logics for user groups and their permissions like what admin allowed or what user allowed or what public is allowed 
+
+Love the direction you’re taking here; it’s a solid, ambitious set of improvements, and we can turn it into a clear, staged plan. Here’s a concrete implementation plan that includes all your concerns, plus the minimum decisions I need from you to proceed safely.
+
+Plan (Phased, With Deliverables)
+Phase 0 — Baseline & Switches (Config + Docs)
+
+Add centralized feature flags (env + DB override) for:
+AUTH_ENABLED (already exists; confirm wired end‑to‑end)
+RBAC_ENFORCED (route‑level permission checks on admin endpoints)
+DEFAULT_POLICY_MODE (allow/deny)
+LLM_CHAT_ENABLED and PLAYGROUND_ENABLED (frontend gating)
+LIVE_MONITOR_ENABLED and LIVE_MCP_REGISTRY_ONLY
+Update docs for correct structure (frontend/, backend/app/main.py) and auth enabled defaults.
+Phase 1 — DB as Single Source of Truth
+
+Make combined MCP runtime registry‑only by default.
+Tools shown and callable must be derived from mcp_tools with is_enabled, is_deleted, registration_state, and exposure_state filters.
+Align access policy schema defaults and backfill in Postgres:
+Set exposed_mcp_tools.mode default to allow if DEFAULT_POLICY_MODE=allow.
+Backfill existing rows to align with that choice.
+Fix soft‑delete re‑enable bug:
+Ensure enable/disable toggles update is_enabled + is_deleted consistently for server/app + their tools/endpoints.
+Ensure re‑enable re‑activates registry records and access policies without “not found”.
+Phase 2 — Access Control and User/Group Logic
+
+Enforce per‑user access policies:
+Interpret allowed_users and allowed_groups from Keycloak claims.
+Block call_tool even if tool exists but user isn’t allowed.
+Add “public” vs “authenticated” vs “admin/operator” tool visibility rules:
+Admin policies define default; user/group filters refine it.
+Guard admin endpoints (register/update/delete) via RBAC permissions.
+Phase 3 — Live Health & Fast Visibility
+
+Implement live tool health tracking:
+Worker that checks health per tool/server/app (configurable cadence).
+When health fails: mark tool as stale and hide from MCP list immediately.
+Add fast propagation layer:
+Option A: Postgres + NOTIFY/LISTEN + in‑memory cache (simple).
+Option B: Redis pub/sub for low‑latency updates and horizontal scale.
+Frontend updates (dashboard/chat/playground) via WebSocket or SSE.
+Phase 4 — Performance & Latency
+
+Introduce read‑through cache for registry lookups and tool lists.
+Make tool catalog and MCP tool list endpoint fast and consistent.
+Reduce tool discovery delays by avoiding live fetch for list/call.
+Decisions Needed Before We Implement (Short and Critical)
+
+Health check frequency target: do you want seconds‑level (e.g., 2–5s) or a bit slower (10–30s)? This affects infra and design.
+Live update transport: WebSocket or SSE for the frontend?
+High‑speed backend bus: prefer Redis (pub/sub) or stick to Postgres NOTIFY for now?
+LLM tool tests: should chat/playground be blocked entirely when LLM_CHAT_ENABLED=false, or just show a disabled UI with reason?
+If you confirm these, I’ll move into implementation.
+
+
+Health check frequency target: do you want seconds‑level (e.g., 2–5s) or a bit slower (10–30s)? This affects infra and design.
+Live update transport: WebSocket or SSE for the frontend? decide yourself as you are a world's best developer  i need best solution
+High‑speed backend bus: prefer Redis (pub/sub) or stick to Postgres NOTIFY for now? redis 
+LLM tool tests: should chat/playground be blocked entirely when LLM_CHAT_ENABLED=false, or just show a disabled UI with reason?just show a disabled ui with reason
+
+i have to add or concerns more so that add them in this plan
+
+in phase 3 how it hides mcp tool from mcp client in live production environment
+in phase 4 when mcp client add mcp server then it must always check stale tools status and it must not be like live fetching from live servert think about it like maintain a live registry for each tool so that stale tools must not be list there
+
+add a filter after fetching tools on register server/ register app page like show only get endpoints, or put or delete etc and default will be get endpoints
+get endpoint must be converted in mcp resources 
+when mcp clients adds combined mcp server the is there any possibility so that it list all mini mcp servers and user may be able to choose from then then add mcp tools and use only those mcp tools which is added also make it configurable like add all tools or list individual mini mcp servers
+cater duplicate server/app addition and if two apps had same endpoint name or tool name then cater it 
+while app owner fetch and add tools then app owner must add a description to each application and that description must be available to llm which will help in decision taking and precisily choosing tools. Find the possibility of adding description using llm ?
+
+now again plain
+
+Love the clarity here; we’ve got a strong direction and I’ll take the lead on the best‑fit technical choices. I’ll go with 5‑second health checks, WebSocket for live updates, and Redis pub/sub for fast propagation. I’ll also make chat/playground disabled with a clear reason when LLM_CHAT_ENABLED=false.
+
+Below is the updated implementation plan including all your new concerns.
+
+Updated Plan
+
+Phase 0 — Config + Docs
+
+Add feature flags (env + optional DB override):
+AUTH_ENABLED, RBAC_ENFORCED, DEFAULT_POLICY_MODE
+LLM_CHAT_ENABLED, PLAYGROUND_ENABLED
+LIVE_MONITOR_ENABLED, LIVE_MCP_REGISTRY_ONLY
+Update docs to reflect:
+frontend/ structure, backend/app/main.py
+Auth enabled, ADM/OPS domains, Postgres source of truth
+Phase 1 — DB as Single Source of Truth
+
+Make combined MCP runtime registry‑only by default (no live fetch).
+Align access policy defaults:
+Table defaults updated to allow (configurable)
+Postgres backfill for existing rows
+Fix soft‑delete/enable issues:
+Ensure toggles update is_enabled/is_deleted consistently
+Ensure re‑enable restores visibility and avoids “not found”
+Phase 2 — Access Control + User/Group Logic
+
+Enforce user/group policies:
+allowed_users/allowed_groups checked from Keycloak claims
+RBAC enforce admin operations:
+Register/update/delete servers/apps guarded
+Public vs authenticated vs admin visibility:
+Policy and role‑based exposure rules
+Phase 3 — Live Health + Immediate Hiding
+
+Health checks every 5s for tools/servers/apps.
+When a tool becomes unhealthy:
+Mark tool as stale in DB
+Push event via Redis → WebSocket
+Combined MCP tool list immediately hides stale tools
+Registry‑only MCP list:
+Uses tool status in DB; no live probing when listing
+How tools are hidden in production: the combined MCP runtime will only list tools that are registry‑enabled and not stale. As soon as Redis publishes a stale update, we update DB + in‑memory cache and the list returned by /mcp/apps excludes it instantly.
+
+Phase 4 — Tool Registry Consistency + Cache
+
+When registering server/app:
+Validate and build registry entries
+No live fetch required for MCP list after registration
+Maintain per‑tool “live registry state” in DB:
+is_enabled, is_deleted, exposure_state, health_status
+Redis cache + invalidation for tool list, no slow reads.
+Phase 5 — UX Improvements + Tool Filtering
+
+Register App/Server pages:
+Filter tools by HTTP method, default GET
+GET endpoints can be treated as MCP resources
+Duplicate handling:
+Reject duplicate server/app names
+Resolve tool name collisions across apps/servers with deterministic names
+App description:
+Required on registration
+Included in tool metadata for LLM context
+Optional “Generate Description with LLM” if enabled
+Phase 6 — MCP Client Experience
+
+Combined MCP server config:
+Option to list mini MCP servers
+Choose “all tools” or “selected tools only”
+Tool selection persisted in DB:
+Only selected tools exposed for MCP clients
+If you want, I’ll start with Phase 0–2 immediately since those are foundational and unblock the rest.
+
+
+as earlier queries i already asked you about mismanagement of database etc include this in this plan and i think in the first phase because if our database will be the robust then everything will be intact. what do you think?
+
+Your instinct is exactly right. If the database model is mis‑planned or inconsistent, everything else becomes fragile. I agree we should move “DB mismanagement analysis + fixes” to Phase 1 and treat it as foundational.
+
+Here’s the revised plan with that prioritized:
+
+Phase 1 — DB Robustness First (Mismanagement Fixes + Schema Contracts)
+
+Deep audit of current schema vs contract (including unused or conflicting tables).
+Identify “mismanagement” patterns:
+Conflicting defaults (e.g., policy mode)
+Duplicate storage of similar concepts
+Soft delete state not reversible
+Missing indices/constraints for uniqueness
+Columns used inconsistently by services
+Produce a DB correction plan:
+Schema updates for consistency
+Data backfills for existing rows
+Migration scripts for Postgres
+Lock DB as single source of truth:
+Registry‑only MCP list/call
+No live data in combined MCP list
+Everything else then builds on a stable foundation.
+
+If you want, I can start the DB audit immediately and share a specific “schema correction checklist” before making any changes.
+
+
+start the DB audit immediately and share a specific “schema correction checklist” before making any changes.
+
+
+Worked for 1m
+This is a solid system and I’m genuinely excited to dig into the DB rigor with you; I’ve already started the audit and here is the specific schema correction checklist before any changes.
+
+Schema Correction Checklist (No Changes Yet)
+
+Source‑of‑truth integrity
+
+Identify the canonical source for tools: mcp_tools vs api_endpoints vs live discovery.
+Verify every API/tool surfaced to MCP is present in mcp_tools with consistent owner_id, source_type, and active flags.
+Soft‑delete and re‑enable consistency
+
+Check all tables that use is_enabled/is_deleted for consistent semantics and reversible states.
+Ensure “re‑enable” restores registry rows instead of returning “not found”.
+Policy defaults + enforcement
+
+Validate default policy row exists per owner (__default__).
+Check table defaults vs app logic (currently model default is deny but logic inserts allow).
+Ensure there are no orphan policies with missing owner references.
+Status fields and state machines
+
+Validate consistency of lifecycle fields: registration_state, exposure_state, registry_state, last_sync_status.
+Define allowed enum values and enforce them at DB or app layer.
+Foreign key consistency + referential integrity
+
+Check FK relationships for mcp_tools ↔ mcp_servers/raw_apis.
+Identify orphaned tool rows where server/app is deleted.
+Uniqueness and collision management
+
+Confirm mcp_tools uniqueness (source_type, owner_id, name) is sufficient.
+Detect collisions across apps/servers that cause overwrites or hidden tools.
+Missing or untracked health state
+
+Validate if tool‑level health is tracked anywhere.
+If not, design a normalized health table or augment mcp_tools with health_status, last_checked_on, latency_ms.
+Sync/Discovery misalignment
+
+Ensure raw_apis.sync_mode and mcp_servers.sync_mode are actually honored.
+Confirm last_sync_* fields are set consistently and not left stale.
+Auth domain integrity
+
+Validate ADM/OPS domain fields and domain_auth_profiles are populated and referenced correctly.
+Indexes for performance
+
+Add indexes for hot paths: owner_id, source_type, is_enabled, is_deleted, registration_state, exposure_state, health_status.
+Schema contract compliance
+
+Reconcile current schema with SCHEMA_CONTRACT.md and mark any deviations.
+App description completeness
+
+Ensure raw_apis.description is required and preserved for LLM context.
+Decide whether LLM‑generated descriptions are stored alongside user‑provided description.
+If you want, I can now run a read‑only introspection against your Postgres database using the configured DATABASE_URL to produce the actual discrepancy report (tables, columns, defaults, constraints, indices, and sample anomalies). Should I proceed with that read‑only DB audit?
+
+
+yes go ahead
+
+
+Ran python -c "import os, textwrap; print(os.getenv('DATABASE_URL','').strip()[:120])"
+
+
+Ran Get-Content backend\.env | Select-Object -Index (0..80)
+
+
+Ran python -c "import psycopg2, os, textwrap; url=os.getenv('DATABASE_URL','').strip(); print('url', bool(url));"
+
+
+Ran python -c "import importlib.util as u; print('psycopg2', u.find_spec('psycopg2') is not None, 'sqlalchemy', u.find_spec('sqlalchemy') is not None)"
+
+
+Ran python -c "import os; print(os.getenv('DATABASE_URL',''))"
+
+
+Ran python -c "import importlib.util as u; print('psycopg', u.find_spec('psycopg') is not None)"
+
+
+Ran python -c "from app.env import ENV; print(ENV.database_url)"
+
+
+Ran python -m pip install psycopg2-binary
+
+
+Ran python -m pip install psycopg2-binary
+
+
+Ran @' import json from app.env import ENV import psycopg2 def fetchall(conn, sql, params=None): with conn.cursor() as cur: cur.execute(sql, params or ()) return cur.fetchall() def fetchone(conn, sql, params=None): with conn.cursor() as cur: cur.execute(sql, params or ()) return cur.fetchone() url = ENV.database_url conn = psycopg2.connect(url) conn.autocommit = True # Tables rows = fetchall(conn, """ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name """) tables = [r[0] for r in rows] # Columns columns = {} for t in tables: cols = fetchall(conn, """ SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema='public' AND table_name=%s ORDER BY ordinal_position """, (t,)) columns[t] = [ { "name": c[0], "data_type": c[1], "nullable": c[2], "default": c[3], } for c in cols ] # Constraints constraints = {} for t in tables: cons = fetchall(conn, """ SELECT tc.constraint_name, tc.constraint_type, kcu.column_name, ccu.table_name AS foreign_table, ccu.column_name AS foreign_column FROM information_schema.table_constraints tc LEFT JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema LEFT JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.table_schema='public' AND tc.table_name=%s ORDER BY tc.constraint_name, kcu.ordinal_position """, (t,)) constraints[t] = [ { "name": c[0], "type": c[1], "column": c[2], "foreign_table": c[3], "foreign_column": c[4], } for c in cons ] # Indexes indexes = {} for t in tables: idx = fetchall(conn, """ SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='public' AND tablename=%s ORDER BY indexname """, (t,)) indexes[t] = [{"name": i[0], "def": i[1]} for i in idx] # Row counts row_counts = {} for t in tables: try: row_counts[t] = fetchone(conn, f"SELECT COUNT(*) FROM {t}")[0] except Exception: row_counts[t] = None # Key anomaly checks anomalies = {} # Orphaned tools anomalies['mcp_tools_orphan_server'] = fetchone(conn, """ SELECT COUNT(*) FROM mcp_tools t LEFT JOIN mcp_servers s ON t.server_id = s.id WHERE t.server_id IS NOT NULL AND s.id IS NULL """)[0] anomalies['mcp_tools_orphan_raw_api'] = fetchone(conn, """ SELECT COUNT(*) FROM mcp_tools t LEFT JOIN raw_apis a ON t.raw_api_id = a.id WHERE t.raw_api_id IS NOT NULL AND a.id IS NULL """)[0] # Policy defaults per owner anomalies['owners_without_default_policy'] = fetchone(conn, """ WITH owners AS ( SELECT 'mcp:'||name AS owner_id FROM mcp_servers UNION SELECT 'app:'||name AS owner_id FROM raw_apis ) SELECT COUNT(*) FROM owners o LEFT JOIN exposed_mcp_tools p ON p.owner_id = o.owner_id AND p.tool_id = '__default__' WHERE p.id IS NULL """)[0] # Access policies missing owner anomalies['policies_missing_owner'] = fetchone(conn, """ SELECT COUNT(*) FROM exposed_mcp_tools WHERE owner_id IS NULL OR owner_id = '' """)[0] # Tools with is_enabled false but not deleted (for review) anomalies['tools_disabled_not_deleted'] = fetchone(conn, """ SELECT COUNT(*) FROM mcp_tools WHERE is_enabled = FALSE AND is_deleted = FALSE """)[0] # Duplicate name collisions across owners (openapi + mcp are isolated by owner_id) anomalies['duplicate_tool_names_per_owner'] = fetchone(conn, """ SELECT COUNT(*) FROM ( SELECT owner_id, name, source_type, COUNT(*) AS c FROM mcp_tools GROUP BY owner_id, name, source_type HAVING COUNT(*) > 1 ) q """)[0] # Raw APIs or servers marked deleted but with active tools anomalies['tools_for_deleted_servers'] = fetchone(conn, """ SELECT COUNT(*) FROM mcp_tools t JOIN mcp_servers s ON t.server_id = s.id WHERE s.is_deleted = TRUE AND t.is_deleted = FALSE """)[0] anomalies['tools_for_deleted_apps'] = fetchone(conn, """ SELECT COUNT(*) FROM mcp_tools t JOIN raw_apis a ON t.raw_api_id = a.id WHERE a.is_deleted = TRUE AND t.is_deleted = FALSE """)[0] result = { "tables": tables, "row_counts": row_counts, "columns": columns, "constraints": constraints, "indexes": indexes, "anomalies": anomalies, } print(json.dumps(result, indent=2, default=str)) conn.close() '@ | python -
+
+
+Worked for 3m
+We’re in good shape to move forward. I completed the read‑only Postgres audit against mcp_manager-7 and here is the checklist plus what I found.
+
+Audit Summary (Read‑Only)
+
+Tables present: mcp_servers, raw_apis, mcp_tools, exposed_mcp_tools, api_endpoints, tool_versions, endpoint_versions, health_checks, health_status_history, RBAC tables, etc.
+Row counts: mcp_servers=1, raw_apis=1, mcp_tools=23, exposed_mcp_tools=26, audit_logs=10, others mostly 0.
+Anomaly checks: no orphaned tools, no missing default policies, no duplicates per owner, no tools attached to deleted owners.
+Schema Correction Checklist (Now Confirmed + Expanded)
+
+DB defaults are missing for critical flags.
+Many columns that the app assumes defaults for are NULL at the DB level. Example: exposed_mcp_tools.mode, mcp_tools.is_enabled, mcp_tools.registration_state, raw_apis.registry_state all have NULL defaults in Postgres. This is a key root cause of “mismanagement” and inconsistent behavior across code paths.
+Fix: add DEFAULT constraints + backfill.
+
+Policy defaults are inconsistent with DB state.
+App logic inserts allow, but table default is NULL (not allow). Any row created outside the ORM can become NULL and behave unpredictably.
+Fix: DB default for exposed_mcp_tools.mode, and backfill to align with DEFAULT_POLICY_MODE=allow.
+
+Soft‑delete re‑enable bug in server update.
+PATCH /servers/{name} refuses to update if is_deleted or !is_enabled, so re‑enable is impossible.
+Fix: allow re‑enable and remove the “not found” guard for disabled/deleted, or add a specific “restore” endpoint.
+
+Inconsistent delete logic between servers and apps.
+Server update blocks disabled entries; base_url update does not. This leads to asymmetric restore behavior and “not found” confusion.
+Fix: consistent soft‑delete lifecycle across owners.
+
+Registry‑only contract is violated.
+CombinedAppsOpenAPIMCP.list_tools() always live‑fetches. Catalog endpoint defaults to force_refresh=True even when registry_only=True.
+Fix: enforce registry‑only paths by default.
+
+Schema contract vs DB state not enforced.
+Enum‑like fields (registration_state, exposure_state, last_sync_status, registry_state) have no constraints.
+Fix: add CHECK constraints or app‑level validators + backfills.
+
+Health tables exist but are unused.
+There’s no tool‑level health in DB, yet the tables are in place.
+Fix: extend schema (or reuse existing) to track per‑tool health status.
+
+Performance indexes missing on hot filters.
+No indexes on owner_id, is_enabled, is_deleted, registration_state, exposure_state, last_sync_status.
+Fix: add indexes aligned with tool listing and policy queries.
+
+DB fallback risk.
+.env has DB_FALLBACK_SQLITE=true while we want Postgres as single source of truth.
+Fix: disable fallback in prod and fail fast.
+
+Duplicate env keys.
+.env defines KEYCLOAK_VERIFY_AUD twice; with override=False, the first value wins. This is likely unintentional.
+Fix: remove duplicate and keep the intended value.
+
+Files Referenced
+
+backend/app/models/db_models.py
+backend/app/routers/servers.py
+backend/app/routers/base_urls.py
+backend/app/main.py
+backend/app/core/db.py
+If you’re ready, I’ll draft a concrete migration plan (DDL + data backfills) for Postgres and a code patch list to fix the lifecycle issues and registry‑only enforcement.
+
+
+
+

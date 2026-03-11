@@ -1,6 +1,10 @@
 from typing import Any
 
 from fastapi import APIRouter, Query
+import json
+
+from app.env import ENV
+from app.services.cache import cache_get_async, cache_set_async
 from sqlalchemy import select
 
 
@@ -8,6 +12,7 @@ def create_catalog_router(
     session_local_factory,
     access_policy_model,
     mcp_tool_model,
+    tool_version_model,
     base_url_model,
     server_model,
     build_openapi_tool_catalog_fn,
@@ -23,7 +28,7 @@ def create_catalog_router(
         description="Return OpenAPI + MCP server tool catalog with policy modes. Source: backend/app/routers/catalog.py",
     )
     async def get_openapi_tool_catalog(
-        force_refresh: bool = Query(default=True),
+        force_refresh: bool = Query(default=False),
         retries: int = Query(default=openapi_mcp_fetch_retries, ge=0, le=5),
         registry_only: bool = Query(
             default=True,
@@ -37,6 +42,12 @@ def create_catalog_router(
     ) -> dict[str, Any]:
         from app.services.registry.exposure_service import resolve_exposable_tools
         
+        cache_key = f"catalog:registry:public={public_only}"
+        if registry_only and not force_refresh and not ENV.live_monitor_enabled:
+            cached = await cache_get_async(cache_key)
+            if cached:
+                return json.loads(cached)
+
         if force_refresh or not registry_only:
             # Trigger background pull and DB sync
             await build_openapi_tool_catalog_fn(force_refresh=True, retries_override=retries)
@@ -47,6 +58,7 @@ def create_catalog_router(
                 db=db,
                 mcp_tool_model=mcp_tool_model,
                 access_policy_model=access_policy_model,
+                tool_version_model=tool_version_model,
                 registry_only=registry_only,
                 public_only=public_only
             )
@@ -94,7 +106,7 @@ def create_catalog_router(
             tools_list = [tool for tool in tools_list if tool.get("access_mode") == "allow"]
             mcp_server_tool_list = [tool for tool in mcp_server_tool_list if tool.get("access_mode") == "allow"]
 
-        return {
+        payload = {
             "mcp_endpoint": "/mcp/apps",
             "generated_at": generated_at,
             "tool_count": len(tools_list),
@@ -117,6 +129,11 @@ def create_catalog_router(
             "mcp_server_tools": mcp_server_tool_list,
         }
 
+        if registry_only and not force_refresh and not ENV.live_monitor_enabled:
+            await cache_set_async(cache_key, json.dumps(payload, default=str), ttl_sec=15)
+
+        return payload
+
     @router.get(
         "/mcp/openapi/diagnostics",
         summary="Get Catalog Diagnostics",
@@ -136,4 +153,3 @@ def create_catalog_router(
         }
 
     return router
-

@@ -9,6 +9,7 @@ import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
+const CHAT_ENABLED = publicEnv.NEXT_PUBLIC_LLM_CHAT_ENABLED === 'true'
 
 
 interface Message {
@@ -41,6 +42,7 @@ export default function ChatPage() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!CHAT_ENABLED) return;
     if (!input.trim()) return;
 
     // Add user message
@@ -102,6 +104,19 @@ export default function ChatPage() {
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col pt-24 pb-4 relative z-10">
         <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-full">
+          {!CHAT_ENABLED && (
+            <div className="mb-4 sm:mb-6">
+              <Card className="border border-amber-300/50 bg-white/80 backdrop-blur-xl">
+                <div className="p-4 sm:p-6">
+                  <h2 className="text-lg font-semibold text-slate-800">Chat Disabled</h2>
+                  <p className="text-sm text-slate-600 mt-2">
+                    The chat experience is currently disabled by configuration. Enable it by setting
+                    `NEXT_PUBLIC_LLM_CHAT_ENABLED=true`.
+                  </p>
+                </div>
+              </Card>
+            </div>
+          )}
           {/* Messages Container */}
           <div className="flex-1 bg-white/70 backdrop-blur-xl border border-amber-300/50 rounded-2xl overflow-hidden flex flex-col shadow-lg shadow-amber-200/30">
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
@@ -165,11 +180,11 @@ export default function ChatPage() {
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Type your message here..."
                   className="flex-1 px-5 py-3 border border-amber-300/50 rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-white text-slate-800 placeholder-slate-400 transition-all duration-300 hover:border-amber-400/70"
-                  disabled={loading}
+                  disabled={loading || !CHAT_ENABLED}
                 />
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !CHAT_ENABLED}
                   className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/50 hover:scale-105 shadow-md active:scale-95"
                 >
                   {loading ? (
@@ -189,4 +204,3 @@ export default function ChatPage() {
     </div>
   );
 }
-

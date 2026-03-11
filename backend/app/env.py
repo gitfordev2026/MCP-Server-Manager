@@ -40,6 +40,15 @@ class BackendEnv:
     keycloak_verify_aud: bool
     database_url: str
     db_fallback_sqlite: bool
+    rbac_enforced: bool
+    default_policy_mode: str
+    live_mcp_registry_only: bool
+    live_monitor_enabled: bool
+    llm_chat_enabled: bool
+    playground_enabled: bool
+    redis_url: str
+    health_check_interval_sec: int
+    health_check_timeout_sec: int
     openapi_mcp_cache_ttl_sec: int
     openapi_mcp_fetch_retries: int
     agent_mcp_server_name: str
@@ -79,6 +88,15 @@ def load_backend_env() -> BackendEnv:
         keycloak_verify_aud=os.getenv("KEYCLOAK_VERIFY_AUD", "true").strip().lower() == "true",
         database_url=os.getenv("DATABASE_URL", "").strip(),
         db_fallback_sqlite=os.getenv("DB_FALLBACK_SQLITE", "true").strip().lower() == "true",
+        rbac_enforced=os.getenv("RBAC_ENFORCED", "true").strip().lower() == "true",
+        default_policy_mode=os.getenv("DEFAULT_POLICY_MODE", "allow").strip().lower(),
+        live_mcp_registry_only=os.getenv("LIVE_MCP_REGISTRY_ONLY", "true").strip().lower() == "true",
+        live_monitor_enabled=os.getenv("LIVE_MONITOR_ENABLED", "true").strip().lower() == "true",
+        llm_chat_enabled=os.getenv("LLM_CHAT_ENABLED", "true").strip().lower() == "true",
+        playground_enabled=os.getenv("PLAYGROUND_ENABLED", "true").strip().lower() == "true",
+        redis_url=os.getenv("REDIS_URL", "").strip(),
+        health_check_interval_sec=int(os.getenv("HEALTH_CHECK_INTERVAL_SEC", "5").strip()),
+        health_check_timeout_sec=int(os.getenv("HEALTH_CHECK_TIMEOUT_SEC", "5").strip()),
         openapi_mcp_cache_ttl_sec=int(os.getenv("OPENAPI_MCP_CACHE_TTL_SEC", "30").strip()),
         openapi_mcp_fetch_retries=int(os.getenv("OPENAPI_MCP_FETCH_RETRIES", "1").strip()),
         agent_mcp_server_name=os.getenv("AGENT_MCP_SERVER_NAME", "http_server").strip() or "http_server",

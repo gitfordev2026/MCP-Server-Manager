@@ -49,6 +49,13 @@ class ServerRegistration(BaseModel):
 
         return url
 
+    @field_validator("description")
+    @classmethod
+    def validate_server_description(cls, value: str | None) -> str:
+        if value is None:
+            return ""
+        return value.strip()
+
 
 class BaseURLRegistration(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -60,3 +67,13 @@ class BaseURLRegistration(BaseModel):
     include_unreachable_tools: bool = False
     domain_type: DomainType = DomainType.ADM
     selected_endpoints: list[str] = []
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("description is required")
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("description is required")
+        return trimmed

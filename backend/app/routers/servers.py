@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
+from app.services.cache import cache_delete
 
 
 def create_servers_router(
@@ -23,6 +24,7 @@ def create_servers_router(
     write_audit_log_fn,
     audit_log_model,
     get_actor_dep,
+    require_permission_fn,
 ) -> APIRouter:
     router = APIRouter()
     allowed_domains = {"ADM", "OPS"}
@@ -104,6 +106,27 @@ def create_servers_router(
 
         return {"tools": len(tool_ids), "endpoints": len(endpoint_ids)}
 
+    def _restore_server_dependents(db, server_id: int, owner_id: str) -> dict[str, int]:
+        tools = db.scalars(
+            select(mcp_tool_model).where(
+                (mcp_tool_model.server_id == server_id) | (mcp_tool_model.owner_id == owner_id)
+            )
+        ).all()
+        for tool in tools:
+            tool.is_deleted = False
+            tool.is_enabled = True
+            tool.registration_state = "selected"
+            tool.exposure_state = "active"
+
+        endpoints = db.scalars(
+            select(api_endpoint_model).where(api_endpoint_model.owner_id == owner_id)
+        ).all()
+        for endpoint in endpoints:
+            endpoint.is_deleted = False
+            endpoint.is_enabled = True
+
+        return {"tools": len(tools), "endpoints": len(endpoints)}
+
     async def probe_server_status(server_name: str, server_url: str, timeout_sec: float = 8.0) -> dict[str, Any]:
         started = perf_counter()
         server_config = {"mcpServers": {server_name: {"url": server_url}}}
@@ -179,7 +202,7 @@ def create_servers_router(
     )
     async def register_server(
         data: server_registration_model,
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("mcp_server:manage")),
     ) -> dict[str, Any]:
         try:
             probe_result = await probe_server_status(data.name, data.url, timeout_sec=8.0)
@@ -191,6 +214,18 @@ def create_servers_router(
                 )
 
             with session_local_factory() as db:
+                duplicate_url = db.scalar(
+                    select(server_model).where(
+                        server_model.url == data.url,
+                        server_model.name != data.name,
+                        server_model.is_deleted == False,  # noqa: E712
+                    )
+                )
+                if duplicate_url:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Another server already uses URL '{data.url}'.",
+                    )
                 existing = db.scalar(select(server_model).where(server_model.name == data.name))
                 before_state = None
                 if existing:
@@ -259,6 +294,8 @@ def create_servers_router(
                 db.commit()
 
             sync_api_server_links_by_host_fn()
+            cache_delete("catalog:registry:public=False")
+            cache_delete("catalog:registry:public=True")
             return {
                 "message": "Server registered successfully",
                 "name": data.name,
@@ -309,6 +346,8 @@ def create_servers_router(
                         mcp_tool_model.owner_id == f"mcp:{server_name}",
                         mcp_tool_model.is_deleted == False,  # noqa: E712
                         mcp_tool_model.is_enabled == True,  # noqa: E712
+                        mcp_tool_model.registration_state == "selected",
+                        mcp_tool_model.exposure_state == "active",
                     )
                 ).all()
             tools_list = []
@@ -442,11 +481,11 @@ def create_servers_router(
     def update_server(
         server_name: str,
         payload: ServerUpdate,
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("mcp_server:manage")),
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             server = db.scalar(select(server_model).where(server_model.name == server_name))
-            if not server or server.is_deleted or not server.is_enabled:
+            if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
             before_state = {
@@ -468,6 +507,9 @@ def create_servers_router(
                 server.selected_tools = _normalize_selected_tools(payload.selected_tools)
             if payload.is_enabled is not None:
                 server.is_enabled = payload.is_enabled
+                if payload.is_enabled:
+                    server.is_deleted = False
+                    _restore_server_dependents(db, server.id, f"mcp:{server.name}")
 
             write_audit_log_fn(
                 db,
@@ -488,6 +530,8 @@ def create_servers_router(
                 },
             )
             db.commit()
+        cache_delete("catalog:registry:public=False")
+        cache_delete("catalog:registry:public=True")
         return {"status": "updated", "name": server_name}
 
     @router.delete(
@@ -498,7 +542,7 @@ def create_servers_router(
     def delete_server(
         server_name: str,
         hard: bool = Query(default=False),
-        actor: dict[str, Any] = Depends(get_actor_dep),
+        actor: dict[str, Any] = Depends(require_permission_fn("mcp_server:manage")),
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             server = db.scalar(select(server_model).where(server_model.name == server_name))
@@ -549,6 +593,8 @@ def create_servers_router(
             except Exception as exc:
                 db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to delete server '{server_name}': {exc}") from exc
+        cache_delete("catalog:registry:public=False")
+        cache_delete("catalog:registry:public=True")
         return {"status": "deleted", "name": server_name, "hard": hard}
 
     @router.post(
@@ -637,4 +683,3 @@ def create_servers_router(
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return router
-

@@ -1,5 +1,6 @@
 from sqlalchemy import select
 
+from app.env import ENV
 from app.models.db_models import AccessPolicyModel, BaseURLModel, ServerModel, DEFAULT_TOOL_ID
 
 
@@ -26,6 +27,9 @@ def ensure_default_access_policy_for_owner(
     server_id: int | None = None,
     base_url_id: int | None = None,
 ) -> None:
+    default_mode = (ENV.default_policy_mode or "allow").strip().lower()
+    if default_mode not in {"allow", "deny", "approval"}:
+        default_mode = "allow"
     resolved_server_id, resolved_base_url_id = resolve_owner_fk_ids(
         db,
         owner_id,
@@ -47,7 +51,7 @@ def ensure_default_access_policy_for_owner(
         AccessPolicyModel(
             owner_id=owner_id,
             tool_id=DEFAULT_TOOL_ID,
-            mode="allow",
+            mode=default_mode,
             server_id=resolved_server_id,
             base_url_id=resolved_base_url_id,
         )
@@ -61,6 +65,9 @@ def ensure_tool_access_policy_for_owner(
     server_id: int | None = None,
     base_url_id: int | None = None,
 ) -> None:
+    default_mode = (ENV.default_policy_mode or "allow").strip().lower()
+    if default_mode not in {"allow", "deny", "approval"}:
+        default_mode = "allow"
     if not tool_id or tool_id == DEFAULT_TOOL_ID:
         return
 
@@ -85,9 +92,8 @@ def ensure_tool_access_policy_for_owner(
         AccessPolicyModel(
             owner_id=owner_id,
             tool_id=tool_id,
-            mode="allow",
+            mode=default_mode,
             server_id=resolved_server_id,
             base_url_id=resolved_base_url_id,
         )
     )
-

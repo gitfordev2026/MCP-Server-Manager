@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 
 from app.core.auth import AUTH_ENABLED
+from app.env import ENV
 from app.core.jwt_validator import TokenValidationError, validate_token
 
 ROLE_PERMISSION_FALLBACK: dict[str, set[str]] = {
@@ -101,6 +102,8 @@ def build_require_permission(
 ) -> Callable[[str], Callable[[dict[str, Any]], dict[str, Any]]]:
     def require_permission(permission_code: str):
         def _check(actor: dict[str, Any] = Depends(get_request_actor)) -> dict[str, Any]:
+            if not ENV.rbac_enforced:
+                return actor
             roles = [str(r).lower() for r in actor.get("roles", [])]
             if not roles:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No roles assigned")
