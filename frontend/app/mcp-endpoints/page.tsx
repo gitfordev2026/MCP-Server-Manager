@@ -6,7 +6,6 @@ import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
-const POLICY_STORAGE_KEY = 'mcp_access_control_policies_v1';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -41,12 +40,6 @@ interface McpTool {
 
 type AccessMode = 'allow' | 'approval' | 'deny';
 
-interface OwnerPolicy {
-  defaultMode: AccessMode;
-  endpointModes: Record<string, AccessMode>;
-}
-
-type Policies = Record<string, OwnerPolicy>;
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */

@@ -468,8 +468,8 @@ export default function AdminPanelPage() {
         {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-700 to-amber-700 bg-clip-text text-transparent">
-              Admin Control Plane
+            <h1 className="text-3xl font-bold bg-gradient from-cyan-700 to-amber-700 bg-clip-text text-transparent">
+              Admin Control Panel
             </h1>
             <p className="text-sm text-slate-500 mt-1">
               Governance for Applications, MCP Servers, Tools, and Endpoints
@@ -496,7 +496,7 @@ export default function AdminPanelPage() {
         )}
 
         {/* Tab bar */}
-        <div className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-0">
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
           {TABS.map((tab) => (
             <button
               key={tab.id}

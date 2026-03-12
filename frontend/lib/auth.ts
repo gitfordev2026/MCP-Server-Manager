@@ -33,18 +33,33 @@ const TOKEN_KEY = "mcp_access_token";
 const REFRESH_KEY = "mcp_refresh_token";
 const EXPIRY_KEY = "mcp_token_expiry";
 const PKCE_VERIFIER_KEY = "mcp_pkce_verifier";
+const LOGIN_REDIRECT_AT_KEY = "mcp_login_redirect_at";
 
 // Legacy keys to clean up
 const LEGACY_KEYS = ["mcp_admin_user", "mcp_admin_roles"];
 
 // ---------- Auth config ----------
 
+const authConfigCache = new Map<string, Promise<AuthConfig>>();
+
 export async function fetchAuthConfig(apiBase: string): Promise<AuthConfig> {
-  const res = await fetch(`${apiBase}/auth/config`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch auth config: ${res.status}`);
-  }
-  return res.json();
+  const cached = authConfigCache.get(apiBase);
+  if (cached) return cached;
+
+  const request = fetch(`${apiBase}/auth/config`)
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error(`Failed to fetch auth config: ${res.status}`);
+      }
+      return res.json() as Promise<AuthConfig>;
+    })
+    .catch((err) => {
+      authConfigCache.delete(apiBase);
+      throw err;
+    });
+
+  authConfigCache.set(apiBase, request);
+  return request;
 }
 
 // ---------- Token storage ----------
@@ -111,6 +126,13 @@ async function generatePKCE(): Promise<{ verifier: string; challenge: string }> 
 // ---------- Keycloak redirect ----------
 
 export async function redirectToLogin(config: AuthConfig): Promise<void> {
+  const now = Date.now();
+  const lastRedirect = sessionStorage.getItem(LOGIN_REDIRECT_AT_KEY);
+  if (lastRedirect && now - Number(lastRedirect) < 5000) {
+    return;
+  }
+  sessionStorage.setItem(LOGIN_REDIRECT_AT_KEY, now.toString());
+
   const { verifier, challenge } = await generatePKCE();
   sessionStorage.setItem(PKCE_VERIFIER_KEY, verifier);
 

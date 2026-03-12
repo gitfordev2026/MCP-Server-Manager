@@ -1,12 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import Card from '@/components/ui/Card';
 import {
   fetchAuthConfig,
   redirectToLogin,
-  clearTokens,
-  buildLogoutUrl,
   getStoredToken,
   type AuthConfig,
 } from '@/lib/auth';
@@ -52,17 +51,6 @@ export default function LoginPage() {
     };
   }, []);
 
-  const handleLogout = async () => {
-    try {
-      const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
-      clearTokens();
-      window.location.href = buildLogoutUrl(config);
-    } catch {
-      clearTokens();
-      window.location.href = '/login';
-    }
-  };
-
   if (authDisabled) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white via-slate-50 to-slate-100">
@@ -74,12 +62,12 @@ export default function LoginPage() {
             Authentication is not enabled on this instance. You can access the
             dashboard directly.
           </p>
-          <a
+          <Link
             href="/dashboard"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             Go to Dashboard
-          </a>
+          </Link>
         </Card>
       </div>
     );

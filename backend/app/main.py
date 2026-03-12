@@ -90,6 +90,8 @@ from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
+
+
 PUBLIC_PATHS = {"/health", "/mcp/runtime", "/auth/config", "/docs", "/openapi.json"}
 
 
@@ -1698,7 +1700,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
 
 def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
     base_kwargs = {
-        "name": "combined-apps-openapi",
+        "name": ENV.mcp_manager_name,
         "instructions": (
             "Combined MCP server exposing all registered app OpenAPI operations as tools. "
             "Use list_tools to discover operations and call_tool to invoke them."

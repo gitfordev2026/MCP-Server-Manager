@@ -13,7 +13,7 @@ const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 interface Tool {
   name: string;
   description: string;
-  inputSchema: Record<string, any>;
+  inputSchema: Record<string, unknown>;
 }
 
 interface ServerToolsData {
@@ -31,7 +31,7 @@ export default function ServerToolsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
-  const [isDark, setIsDark] = useState(false);
+  const isDark = false;
 
   useEffect(() => {
     const fetchServerTools = async () => {
@@ -78,7 +78,7 @@ export default function ServerToolsPage() {
     setExpandedTools(newExpanded);
   };
 
-  const formatSchema = (schema: Record<string, any>) => {
+  const formatSchema = (schema: Record<string, unknown>) => {
     return JSON.stringify(schema, null, 2);
   };
 

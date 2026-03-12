@@ -1,9 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
@@ -189,4 +186,3 @@ export default function ChatPage() {
     </div>
   );
 }
-

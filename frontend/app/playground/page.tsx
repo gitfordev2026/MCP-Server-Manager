@@ -27,6 +27,12 @@ interface Message {
     timestamp: Date;
 }
 
+interface PlaygroundPayload {
+    prompt: string;
+    app_name?: string;
+    selected_tools?: string[];
+}
+
 export default function PlaygroundPage() {
     const [servers, setServers] = useState<ServerItem[]>([]);
     const [catalogTools, setCatalogTools] = useState<CatalogTool[]>([]);
@@ -170,7 +176,7 @@ export default function PlaygroundPage() {
         setChatLoading(true);
 
         try {
-            const payload: any = {
+            const payload: PlaygroundPayload = {
                 prompt: input,
             };
 
@@ -238,7 +244,7 @@ export default function PlaygroundPage() {
                                 Testing Playground
                             </h1>
                             <p className="text-slate-600 text-sm mt-1">
-                                Select an application to filter the LLM agent's tool access context.
+                                Select an application to filter the LLM agent&apos;s tool access context.
                             </p>
                         </div>
 
@@ -263,6 +269,12 @@ export default function PlaygroundPage() {
                             )}
                         </div>
                     </div>
+
+                    {error && (
+                        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            {error}
+                        </div>
+                    )}
 
                     {/* Chat Container */}
                     <div className="flex-1 bg-white/70 backdrop-blur-xl border border-rose-300/40 rounded-2xl overflow-hidden flex flex-col shadow-xl shadow-orange-200/20">

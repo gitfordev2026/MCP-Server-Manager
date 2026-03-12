@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
@@ -20,7 +19,7 @@ interface BaseURL {
 
 export default function AppDetailsPage() {
   const params = useParams();
-  const name = params.name as string;
+  void params;
 
   const [allApps, setAllApps] = useState<BaseURL[]>([]);
   const [loading, setLoading] = useState(true);

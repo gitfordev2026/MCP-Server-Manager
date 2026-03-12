@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   fetchAuthConfig,
   exchangeCodeForToken,
+  getStoredToken,
   storeTokens,
 } from '@/lib/auth';
 import { publicEnv } from '@/lib/env';
@@ -13,33 +15,57 @@ export default function AuthCallbackPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const exchangeStarted = useRef(false);
+  const exchangeStarted = useRef<string | null>(null);
+  const code = searchParams.get('code');
+  const errorParam = searchParams.get('error');
+  const errorDescription = searchParams.get('error_description');
 
   useEffect(() => {
-    // Guard against React Strict Mode double-invocation:
-    // the first run removes the PKCE verifier from sessionStorage,
-    // so the second run would fail.
-    if (exchangeStarted.current) return;
-    exchangeStarted.current = true;
-
-    const code = searchParams.get('code');
     if (!code) {
-      setError('No authorization code received from Keycloak.');
       return;
     }
 
+    // Guard against React Strict Mode double-invocation and duplicate code exchanges.
+    if (exchangeStarted.current === code) return;
+    exchangeStarted.current = code;
+
     (async () => {
       try {
+        if (getStoredToken()) {
+          router.replace('/dashboard');
+          return;
+        }
         const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
         const tokenResponse = await exchangeCodeForToken(config, code);
         storeTokens(tokenResponse);
         router.replace('/dashboard');
       } catch (err) {
         console.error('Auth callback error:', err);
-        setError(err instanceof Error ? err.message : 'Token exchange failed');
+        const message = err instanceof Error ? err.message : 'Token exchange failed';
+        if (message.toLowerCase().includes('pkce verifier missing')) {
+          return;
+        }
+        setError(message);
       }
     })();
-  }, [searchParams, router]);
+  }, [code, router]);
+
+  if (errorParam) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="bg-white rounded-lg shadow-md p-8 max-w-md text-center">
+          <h1 className="text-xl font-bold text-red-600 mb-2">Authentication Error</h1>
+          <p className="text-slate-600 mb-4">{errorDescription || errorParam}</p>
+          <Link
+            href="/login"
+            className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Return to Login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -47,12 +73,12 @@ export default function AuthCallbackPage() {
         <div className="bg-white rounded-lg shadow-md p-8 max-w-md text-center">
           <h1 className="text-xl font-bold text-red-600 mb-2">Authentication Error</h1>
           <p className="text-slate-600 mb-4">{error}</p>
-          <a
+          <Link
             href="/login"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             Return to Login
-          </a>
+          </Link>
         </div>
       </div>
     );

@@ -20,6 +20,7 @@ interface NavigationProps {
 export default function Navigation({ pageTitle, isDark = false }: NavigationProps) {
   const pathname = usePathname();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const getPageName = () => {
     if (pageTitle) return pageTitle;
@@ -78,7 +79,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
           : 'bg-gradient-to-r from-white/95 to-slate-50/95 border-b border-amber-400/30 shadow-lg shadow-amber-200/20'
           } backdrop-blur-3xl transition-all duration-500`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-22 py-4 flex items-center gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-4">
 
           {/* Logo - fixed width, never shrinks */}
           <Link href="/" className="flex-shrink-0">
@@ -97,27 +98,108 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
             </div>
           </Link>
 
-          {/* Nav buttons - scrolls horizontally if needed */}
-          <div className="flex-1 overflow-hidden">
-            <div className="flex gap-2 items-center justify-end flex-nowrap">
-              <Link href="/"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Dashboard</Button></Link>
+          {/* Desktop nav */}
+          <div className="hidden lg:flex flex-1 items-center gap-2">
+            <div className="flex-1 overflow-x-auto">
+              <div className="flex gap-2 items-center justify-end flex-nowrap pr-2">
+              <Link href="/"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Dashboard</Button></Link>
 
-              <Link href="/register-server"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-server' || pathname.includes('/servers/') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register MCP</Button></Link>
+              <Link href="/register-server"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-server' || pathname.includes('/servers/') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register MCP</Button></Link>
 
-              <Link href="/register-app"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register App</Button></Link>
+              <Link href="/register-app"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register App</Button></Link>
 
-              <Link href="/access-control"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Access Control</Button></Link>
+              <Link href="/access-control"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Access Control</Button></Link>
 
-              <Link href="/mcp-endpoints"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>MCP Endpoints</Button></Link>
+              <Link href="/mcp-endpoints"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>MCP Endpoints</Button></Link>
 
-              <Link href="/playground"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/playground' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Playground</Button></Link>
+              <Link href="/playground"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/playground' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Playground</Button></Link>
 
-              <Link href="/chat"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Chat</Button></Link>
+              <Link href="/chat"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Chat</Button></Link>
 
-              <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Admin</Button></Link>
+              <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Admin</Button></Link>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              className="flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 bg-white/70 text-slate-700 hover:bg-white/90 border border-slate-200/50"
+              onClick={handleLogout}
+              disabled={loggingOut}
+            >
+              {loggingOut ? 'Logging out...' : 'Logout'}
+            </Button>
+          </div>
+
+          {/* Mobile toggle */}
+          <div className="flex-1 flex lg:hidden justify-end">
+            <button
+              type="button"
+              aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen((prev) => !prev)}
+              className={`inline-flex items-center justify-center h-10 w-10 rounded-lg border transition-all ${isDark
+                ? 'border-slate-700 bg-slate-900/70 text-slate-200 hover:bg-slate-800'
+                : 'border-slate-200 bg-white/70 text-slate-700 hover:bg-white'
+                }`}
+            >
+              <span className="sr-only">{mobileOpen ? 'Close menu' : 'Open menu'}</span>
+              <svg
+                className={`h-5 w-5 transition-transform ${mobileOpen ? 'rotate-90' : ''}`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {mobileOpen ? (
+                  <>
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </>
+                ) : (
+                  <>
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </>
+                )}
+              </svg>
+            </button>
+          </div>
+
+        </div>
+
+        {/* Mobile menu */}
+        {mobileOpen && (
+          <div className={`lg:hidden border-t ${isDark ? 'border-slate-700/60' : 'border-amber-200/60'}`}>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 grid gap-2">
+              <Link href="/" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Dashboard</Button>
+              </Link>
+              <Link href="/register-server" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/register-server' || pathname.includes('/servers/') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Register MCP</Button>
+              </Link>
+              <Link href="/register-app" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Register App</Button>
+              </Link>
+              <Link href="/access-control" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Access Control</Button>
+              </Link>
+              <Link href="/mcp-endpoints" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>MCP Endpoints</Button>
+              </Link>
+              <Link href="/playground" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/playground' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Playground</Button>
+              </Link>
+              <Link href="/chat" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Chat</Button>
+              </Link>
+              <Link href="/admin" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Admin</Button>
+              </Link>
               <Button
                 variant="ghost"
-                className="flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50"
+                className="w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold bg-white/70 text-slate-700 border border-slate-200/50"
                 onClick={handleLogout}
                 disabled={loggingOut}
               >
@@ -125,8 +207,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               </Button>
             </div>
           </div>
-
-        </div>
+        )}
       </nav>
       <div className="h-[80px]" aria-hidden="true"></div>
     </>

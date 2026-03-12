@@ -33,6 +33,7 @@ def _resolve_env_file() -> Path:
 @dataclass(frozen=True)
 class BackendEnv:
     env_file: Path
+    mcp_manager_name: str
     auth_enabled: bool
     keycloak_server_url: str
     keycloak_realm: str
@@ -72,6 +73,7 @@ def load_backend_env() -> BackendEnv:
 
     return BackendEnv(
         env_file=env_file,
+        mcp_manager_name=os.getenv("MCP_MANAGER_NAME", "COMBINED MCP MANAGER").strip(),
         auth_enabled=os.getenv("AUTH_ENABLED", "true").strip().lower() == "true",
         keycloak_server_url=os.getenv("KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
         keycloak_realm=os.getenv("KEYCLOAK_REALM", "").strip(),

@@ -4,6 +4,7 @@ import { AccessMode, OwnerPolicy } from '@/types/accessPolicies';
 import { toast } from '@/lib/toast';
 
 const POLICIES_KEY = ['access-policies'];
+type PoliciesResponse = { policies: Record<string, OwnerPolicy> };
 
 export function usePolicies() {
   return useQuery({
@@ -36,10 +37,12 @@ export function useUpdateEndpointPolicy() {
     onMutate: async ({ ownerId, endpointId, mode, allowed_users, allowed_groups }) => {
       await queryClient.cancelQueries({ queryKey: POLICIES_KEY });
 
-      const previous = queryClient.getQueryData<any>(POLICIES_KEY);
+      const previous = queryClient.getQueryData<PoliciesResponse>(POLICIES_KEY);
 
-      queryClient.setQueryData(POLICIES_KEY, (old: any) => {
-        const next = structuredClone(old);
+      queryClient.setQueryData<PoliciesResponse>(POLICIES_KEY, (old) => {
+        const next: PoliciesResponse = structuredClone(
+          old ?? { policies: {} as Record<string, OwnerPolicy> }
+        );
         // Ensure structure exists
         if (!next.policies[ownerId]) {
           next.policies[ownerId] = {
@@ -101,10 +104,12 @@ export function useUpdateOwnerDefaultPolicy() {
 
     onMutate: async ({ ownerId, mode, allowed_users, allowed_groups }) => {
       await queryClient.cancelQueries({ queryKey: POLICIES_KEY });
-      const previous = queryClient.getQueryData<any>(POLICIES_KEY);
+      const previous = queryClient.getQueryData<PoliciesResponse>(POLICIES_KEY);
 
-      queryClient.setQueryData(POLICIES_KEY, (old: any) => {
-        const next = structuredClone(old);
+      queryClient.setQueryData<PoliciesResponse>(POLICIES_KEY, (old) => {
+        const next: PoliciesResponse = structuredClone(
+          old ?? { policies: {} as Record<string, OwnerPolicy> }
+        );
         // Ensure structure exists
         if (!next.policies[ownerId]) {
           next.policies[ownerId] = {
