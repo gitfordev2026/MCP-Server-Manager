@@ -12,7 +12,7 @@ import {
 import { publicEnv } from '@/lib/env';
 
 /** Paths that should never trigger the auth guard. */
-const PUBLIC_PATHS = ['/auth/callback', '/login'];
+const PUBLIC_PATHS = ['/auth/callback', '/auth/register', '/login'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

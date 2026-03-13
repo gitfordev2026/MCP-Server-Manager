@@ -331,11 +331,13 @@ export default function RegisterAppPage() {
         is_enabled: boolean;
       }>
     }>('/tools');
-    const dbByEndpointKey = new Map(
-      (dbPayload.tools || [])
-        .filter((tool) => tool.owner_id === `app:${appName}` && tool.source_type === 'openapi')
-        .map((tool) => [`${(tool.method || '').toUpperCase()} ${tool.path || ''}`, tool] as const)
-    );
+    const dbByEndpointKey = new Map<string, (typeof dbPayload.tools)[number]>();
+    (dbPayload.tools || [])
+      .filter((tool) => tool.owner_id === `app:${appName}` && tool.source_type === 'openapi')
+      .forEach((tool) => {
+        const key = `${(tool.method || '').toUpperCase()} ${tool.path || ''}`;
+        dbByEndpointKey.set(key, tool);
+      });
 
     return liveEndpoints
       .map((endpoint) => {

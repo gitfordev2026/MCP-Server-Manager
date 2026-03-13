@@ -1,5 +1,5 @@
 import { publicEnv } from '@/lib/env';
-import { getStoredToken, clearTokens } from '@/lib/auth';
+import { getStoredToken, clearTokens, storePostLoginRedirect } from '@/lib/auth';
 
 const API_BASE = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
@@ -53,6 +53,9 @@ export async function http<T>(
 
   if (res.status === 401 && typeof window !== 'undefined') {
     clearTokens();
+    storePostLoginRedirect(
+      `${window.location.pathname}${window.location.search}${window.location.hash}`
+    );
     window.location.href = '/login';
     throw new Error('Authentication expired — redirecting to login');
   }

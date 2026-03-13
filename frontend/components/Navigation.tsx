@@ -1,8 +1,17 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Button from '@/components/ui/Button';
+import {
+  fetchAuthConfig,
+  buildLogoutUrl,
+  clearTokens,
+  getStoredToken,
+  type AuthConfig,
+} from '@/lib/auth';
+import { publicEnv } from '@/lib/env';
 
 interface NavigationProps {
   pageTitle?: string;
@@ -11,6 +20,40 @@ interface NavigationProps {
 
 export default function Navigation({ pageTitle, isDark = false }: NavigationProps) {
   const pathname = usePathname();
+  const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
+  const [hasToken, setHasToken] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
+        if (!cancelled) setAuthEnabled(config.auth_enabled);
+      } catch {
+        if (!cancelled) setAuthEnabled(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setHasToken(Boolean(getStoredToken()));
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    try {
+      const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
+      clearTokens();
+      window.location.href = buildLogoutUrl(config);
+    } catch {
+      clearTokens();
+      window.location.href = '/login';
+    }
+  };
 
   const getPageName = () => {
     if (pageTitle) return pageTitle;
@@ -88,6 +131,15 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               <Link href="/chat"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Chat</Button></Link>
 
               <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Admin</Button></Link>
+              {authEnabled && hasToken && (
+                <Button
+                  variant="ghost"
+                  onClick={() => void handleLogout()}
+                  className="flex-shrink-0 px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50"
+                >
+                  Logout
+                </Button>
+              )}
             </div>
           </div>
 

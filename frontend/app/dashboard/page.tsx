@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
@@ -31,11 +32,16 @@ type DashboardCards = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [servers, setServers] = useState<Server[]>([]);
   const [apps, setApps] = useState<BaseURL[]>([]);
   const [cards, setCards] = useState<DashboardCards | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    router.replace('/');
+  }, [router]);
 
   useEffect(() => {
     const fetchData = async () => {

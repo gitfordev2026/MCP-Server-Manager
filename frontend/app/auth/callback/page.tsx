@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import {
   fetchAuthConfig,
   exchangeCodeForToken,
+  consumePostLoginRedirect,
   storeTokens,
 } from '@/lib/auth';
 import { publicEnv } from '@/lib/env';
@@ -23,6 +24,7 @@ export default function AuthCallbackPage() {
     exchangeStarted.current = true;
 
     const code = searchParams.get('code');
+    const state = searchParams.get('state');
     if (!code) {
       setError('No authorization code received from Keycloak.');
       return;
@@ -33,7 +35,8 @@ export default function AuthCallbackPage() {
         const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
         const tokenResponse = await exchangeCodeForToken(config, code);
         storeTokens(tokenResponse);
-        router.replace('/dashboard');
+        const nextPath = consumePostLoginRedirect(state) || '/';
+        router.replace(nextPath);
       } catch (err) {
         console.error('Auth callback error:', err);
         setError(err instanceof Error ? err.message : 'Token exchange failed');

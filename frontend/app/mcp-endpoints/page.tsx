@@ -178,7 +178,9 @@ export default function McpEndpointsPage() {
       const tools = Array.isArray(toolsPayload?.tools) ? toolsPayload.tools : [];
       if (owner.type === 'app') {
         const app = apps.find((item) => item.name === owner.name);
-        const selected = new Set((app?.selected_endpoints || []).map((item) => String(item).trim()).filter(Boolean));
+        const selected = new Set<string>(
+          (app?.selected_endpoints || []).map((item) => String(item).trim()).filter(Boolean)
+        );
         const filtered = tools
           .filter((tool: any) => tool.owner_id === `app:${owner.name}` && tool.source_type === 'openapi')
           .map((tool: any) => {
@@ -186,15 +188,17 @@ export default function McpEndpointsPage() {
             return { id: key, label: `${String(tool.method || '').toUpperCase()} ${tool.path || ''}` };
           });
         setSelectionTools(filtered);
-        setSelectionSelected(selected.size ? selected : new Set(filtered.map((t) => t.id)));
+        setSelectionSelected(selected.size ? selected : new Set(filtered.map((t: { id: string }) => t.id)));
       } else {
         const server = servers.find((item) => item.name === owner.name) as any;
-        const selected = new Set((server?.selected_tools || []).map((item: string) => String(item).trim()).filter(Boolean));
+        const selected = new Set<string>(
+          (server?.selected_tools || []).map((item: string) => String(item).trim()).filter(Boolean)
+        );
         const filtered = tools
           .filter((tool: any) => tool.owner_id === `mcp:${owner.name}` && tool.source_type === 'mcp')
           .map((tool: any) => ({ id: tool.name, label: tool.name }));
         setSelectionTools(filtered);
-        setSelectionSelected(selected.size ? selected : new Set(filtered.map((t) => t.id)));
+        setSelectionSelected(selected.size ? selected : new Set(filtered.map((t: { id: string }) => t.id)));
       }
     } catch (err) {
       setSelectionError(err instanceof Error ? err.message : 'Failed to load tools');

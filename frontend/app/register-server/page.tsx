@@ -600,11 +600,18 @@ export default function RegisterServerPage() {
                     </select>
                   </div>
                   {filteredDiscoveredTools.map((tool) => (
-                    <button
+                    <div
                       key={tool.name}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setActiveToolName(tool.name)}
-                      className={`w-full text-left p-3 rounded-lg border ${activeToolName === tool.name ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setActiveToolName(tool.name);
+                        }
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border cursor-pointer ${activeToolName === tool.name ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-slate-900">{tool.name}</p>
@@ -643,7 +650,7 @@ export default function RegisterServerPage() {
                           {generatingToolDescriptionName === tool.name ? 'Generating...' : 'Generate with LLM'}
                         </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
