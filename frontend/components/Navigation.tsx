@@ -108,7 +108,6 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
 
               <Link href="/register-app"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register App</Button></Link>
 
-              <Link href="/access-control"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Access Control</Button></Link>
 
               <Link href="/mcp-endpoints"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>MCP Endpoints</Button></Link>
 
@@ -181,9 +180,6 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               </Link>
               <Link href="/register-app" onClick={() => setMobileOpen(false)}>
                 <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Register App</Button>
-              </Link>
-              <Link href="/access-control" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Access Control</Button>
               </Link>
               <Link href="/mcp-endpoints" onClick={() => setMobileOpen(false)}>
                 <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>MCP Endpoints</Button>

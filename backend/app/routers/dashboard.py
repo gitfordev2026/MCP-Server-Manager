@@ -6,6 +6,8 @@ import httpx
 from fastapi import APIRouter
 from sqlalchemy import select
 
+from app.core.cache import cache_get_json, cache_set_json
+from app.env import ENV
 
 def create_dashboard_router(
     session_local_factory,
@@ -45,6 +47,10 @@ def create_dashboard_router(
         description="Return dashboard cards and live status checks for apps and MCP servers. Source: backend/app/routers/dashboard.py",
     )
     async def get_dashboard_stats() -> dict[str, Any]:
+        cache_key = "status:dashboard:stats"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         with session_local_factory() as db:
             apps = db.scalars(select(base_url_model).where(base_url_model.is_deleted == False)).all()  # noqa: E712
             servers = db.scalars(select(server_model).where(server_model.is_deleted == False)).all()  # noqa: E712
@@ -73,7 +79,7 @@ def create_dashboard_router(
         apps_alive = sum(1 for item in app_statuses if item.get("status") == "alive")
         servers_alive = sum(1 for item in server_statuses if item.get("status") == "alive")
 
-        return {
+        result = {
             "cards": {
                 "total_applications": len(apps),
                 "applications_alive": apps_alive,
@@ -87,6 +93,8 @@ def create_dashboard_router(
             "applications": app_statuses,
             "mcp_servers": server_statuses,
         }
+        cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
+        return result
 
     @router.get(
         "/dashboard/sync-health",
@@ -94,6 +102,10 @@ def create_dashboard_router(
         description="Return raw API sync lifecycle state and stale tool counters from DB registry. Source: backend/app/routers/dashboard.py",
     )
     def get_sync_health() -> dict[str, Any]:
+        cache_key = "status:dashboard:sync-health"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         with session_local_factory() as db:
             apps = db.scalars(select(base_url_model)).all()
             servers = db.scalars(select(server_model)).all()
@@ -193,7 +205,7 @@ def create_dashboard_router(
                 }
             )
 
-        return {
+        result = {
             "summary": {
                 "apps_total": len(app_rows),
                 "failed_sync_apps": failed_sync_apps,
@@ -204,5 +216,7 @@ def create_dashboard_router(
             "apps": app_rows,
             "servers": server_rows,
         }
+        cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
+        return result
 
     return router

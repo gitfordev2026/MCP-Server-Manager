@@ -211,7 +211,7 @@ export default function RegisterServerPage() {
       source_type: string;
       current_version?: string;
       is_enabled: boolean;
-    }> }>('/tools');
+    }> }>('/tools?include_inactive=true');
     const dbByName = new Map(
       (dbPayload.tools || [])
         .filter((tool) => tool.source_type === 'mcp' && tool.owner_id === `mcp:${serverName}`)
@@ -315,7 +315,7 @@ export default function RegisterServerPage() {
         name: string;
         source_type: string;
         current_version?: string;
-      }> }>('/tools');
+      }> }>('/tools?include_inactive=true');
       const dbTool = (payload.tools || []).find(
         (item) =>
           item.owner_id === `mcp:${selectedServerName}` &&
@@ -383,7 +383,7 @@ export default function RegisterServerPage() {
         description: string;
         source_type: string;
         current_version?: string;
-      }> }>('/tools');
+      }> }>('/tools?include_inactive=true');
       const ownerId = `mcp:${formData.name.trim()}`;
       const selectedNames = new Set(Array.from(selectedTools));
       const selectedRows = (toolsPayload.tools || []).filter(

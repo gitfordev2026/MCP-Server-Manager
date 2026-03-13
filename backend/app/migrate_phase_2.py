@@ -34,6 +34,12 @@ def migrate():
     add_column_if_not_exists("mcp_tools", "source_updated_on", "DATETIME")
     add_column_if_not_exists("mcp_tools", "discovery_hash", "VARCHAR(128)")
     add_column_if_not_exists("mcp_tools", "sync_error", "TEXT")
+    add_column_if_not_exists("mcp_tools", "admin_enabled", "BOOLEAN NOT NULL DEFAULT 1")
+    add_column_if_not_exists("mcp_tools", "owner_enabled", "BOOLEAN NOT NULL DEFAULT 1")
+
+    # api_endpoints
+    add_column_if_not_exists("api_endpoints", "admin_enabled", "BOOLEAN NOT NULL DEFAULT 1")
+    add_column_if_not_exists("api_endpoints", "owner_enabled", "BOOLEAN NOT NULL DEFAULT 1")
     
     # raw_apis
     add_column_if_not_exists("raw_apis", "sync_mode", "VARCHAR(24) NOT NULL DEFAULT 'manual'")

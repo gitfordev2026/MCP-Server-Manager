@@ -5,6 +5,8 @@ def resolve_exposable_tools(
     db: Any,
     mcp_tool_model: Any,
     access_policy_model: Any,
+    server_model: Any,
+    base_url_model: Any,
     registry_only: bool = True,
     public_only: bool = False
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -31,17 +33,41 @@ def resolve_exposable_tools(
     tools_list: list[dict[str, Any]] = []
     mcp_server_tool_list: list[dict[str, Any]] = []
 
+    active_server_ids = {
+        row.id
+        for row in db.scalars(
+            select(server_model).where(
+                server_model.is_deleted == False,  # noqa: E712
+                server_model.is_enabled == True,  # noqa: E712
+            )
+        ).all()
+    }
+    active_base_url_ids = {
+        row.id
+        for row in db.scalars(
+            select(base_url_model).where(
+                base_url_model.is_deleted == False,  # noqa: E712
+                base_url_model.is_enabled == True,  # noqa: E712
+            )
+        ).all()
+    }
+
     # Get all active tools across everything from mcp_tools single truth
     rows = db.scalars(
         select(mcp_tool_model).where(
             mcp_tool_model.is_deleted == False,
-            mcp_tool_model.is_enabled == True,
+            mcp_tool_model.admin_enabled == True,
+            mcp_tool_model.owner_enabled == True,
             mcp_tool_model.registration_state.in_(["selected", "active"]),
             mcp_tool_model.exposure_state.notin_(["disabled", "deleted"]),
         )
     ).all()
 
     for row in rows:
+        if row.source_type == "mcp" and row.server_id is not None and row.server_id not in active_server_ids:
+            continue
+        if row.source_type == "openapi" and row.raw_api_id is not None and row.raw_api_id not in active_base_url_ids:
+            continue
         owner_id = row.owner_id or ""
         owner_name = owner_id.split(":", 1)[1] if ":" in owner_id else owner_id
         

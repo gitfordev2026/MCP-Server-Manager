@@ -43,6 +43,10 @@ class BackendEnv:
     db_fallback_sqlite: bool
     openapi_mcp_cache_ttl_sec: int
     openapi_mcp_fetch_retries: int
+    redis_enabled: bool
+    redis_url: str
+    redis_status_ttl_sec: int
+    redis_list_ttl_sec: int
     agent_mcp_server_name: str
     agent_mcp_server_url: str
     agent_ollama_model: str
@@ -83,6 +87,10 @@ def load_backend_env() -> BackendEnv:
         db_fallback_sqlite=os.getenv("DB_FALLBACK_SQLITE", "true").strip().lower() == "true",
         openapi_mcp_cache_ttl_sec=int(os.getenv("OPENAPI_MCP_CACHE_TTL_SEC", "30").strip()),
         openapi_mcp_fetch_retries=int(os.getenv("OPENAPI_MCP_FETCH_RETRIES", "1").strip()),
+        redis_enabled=os.getenv("REDIS_ENABLED", "true").strip().lower() == "true",
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0").strip(),
+        redis_status_ttl_sec=int(os.getenv("REDIS_STATUS_TTL_SEC", "5").strip()),
+        redis_list_ttl_sec=int(os.getenv("REDIS_LIST_TTL_SEC", "5").strip()),
         agent_mcp_server_name=os.getenv("AGENT_MCP_SERVER_NAME", "http_server").strip() or "http_server",
         agent_mcp_server_url=os.getenv("AGENT_MCP_SERVER_URL", "http://11.0.25.132:8005/mcp").strip(),
         agent_ollama_model=os.getenv("AGENT_OLLAMA_MODEL", "gpt-oss:120b").strip(),

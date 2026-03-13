@@ -331,6 +331,8 @@ def ensure_phase2_schema_columns() -> None:
             ("source_updated_on", "TIMESTAMP"),
             ("discovery_hash", "VARCHAR(128)"),
             ("sync_error", "TEXT"),
+            ("admin_enabled", "BOOLEAN"),
+            ("owner_enabled", "BOOLEAN"),
             ("is_enabled", "BOOLEAN"),
             ("is_deleted", "BOOLEAN"),
         ],
@@ -359,6 +361,10 @@ def ensure_phase2_schema_columns() -> None:
         ],
         EndpointVersionModel.__tablename__: [
             ("endpoint_id", "INTEGER"),
+        ],
+        APIEndpointModel.__tablename__: [
+            ("admin_enabled", "BOOLEAN"),
+            ("owner_enabled", "BOOLEAN"),
         ],
     }
     for table_name, additions in table_to_columns.items():
@@ -402,6 +408,24 @@ def ensure_domain_defaults() -> None:
         )
         conn.exec_driver_sql(
             f"UPDATE {MCPToolModel.__tablename__} SET exposure_state = 'active' WHERE exposure_state IS NULL OR exposure_state = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {MCPToolModel.__tablename__} SET admin_enabled = COALESCE(admin_enabled, is_enabled, TRUE)"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {MCPToolModel.__tablename__} SET owner_enabled = COALESCE(owner_enabled, is_enabled, TRUE)"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {MCPToolModel.__tablename__} SET is_enabled = CASE WHEN admin_enabled = TRUE AND owner_enabled = TRUE THEN TRUE ELSE FALSE END"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {APIEndpointModel.__tablename__} SET admin_enabled = COALESCE(admin_enabled, is_enabled, TRUE)"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {APIEndpointModel.__tablename__} SET owner_enabled = COALESCE(owner_enabled, is_enabled, TRUE)"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {APIEndpointModel.__tablename__} SET is_enabled = CASE WHEN admin_enabled = TRUE AND owner_enabled = TRUE THEN TRUE ELSE FALSE END"
         )
 
 
@@ -611,14 +635,16 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
             for row in rows:
                 if row.name in selected_names:
                     row.is_deleted = False
-                    row.is_enabled = True
+                    row.owner_enabled = True
+                    row.is_enabled = bool(row.admin_enabled and row.owner_enabled)
                     row.registration_state = "selected"
                     row.exposure_state = "active"
                     row.last_synced_on = synced_at
                     row.sync_error = None
                 else:
                     row.is_deleted = True
-                    row.is_enabled = False
+                    row.owner_enabled = False
+                    row.is_enabled = bool(row.admin_enabled and row.owner_enabled)
                     row.registration_state = "unselected"
                     row.exposure_state = "disabled"
                     row.last_synced_on = synced_at
@@ -727,14 +753,16 @@ def sync_mcp_tool_registry_from_mcp(
             for row in rows:
                 if row.name in selected_names:
                     row.is_deleted = False
-                    row.is_enabled = True
+                    row.owner_enabled = True
+                    row.is_enabled = bool(row.admin_enabled and row.owner_enabled)
                     row.registration_state = "selected"
                     row.exposure_state = "active"
                     row.last_synced_on = synced_at
                     row.sync_error = None
                 else:
                     row.is_deleted = True
-                    row.is_enabled = False
+                    row.owner_enabled = False
+                    row.is_enabled = bool(row.admin_enabled and row.owner_enabled)
                     row.registration_state = "unselected"
                     row.exposure_state = "disabled"
                     row.last_synced_on = synced_at
@@ -1574,6 +1602,8 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
                 db=db,
                 mcp_tool_model=MCPToolModel,
                 access_policy_model=AccessPolicyModel,
+                server_model=ServerModel,
+                base_url_model=BaseURLModel,
                 registry_only=True,
                 public_only=True,
             )

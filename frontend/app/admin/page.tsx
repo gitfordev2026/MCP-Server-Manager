@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Navigation from '@/components/Navigation';
 import Button from '@/components/ui/Button';
 import { http } from '@/services/http';
+import { toast } from '@/lib/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,6 +89,11 @@ type Tool = {
   path: string | null;
   current_version: string;
   is_enabled: boolean;
+  admin_enabled: boolean;
+  owner_enabled: boolean;
+  is_deleted?: boolean;
+  parent_is_enabled?: boolean;
+  parent_is_deleted?: boolean;
 };
 
 type Endpoint = {
@@ -99,8 +105,13 @@ type Endpoint = {
   mcp_tool_id: number | null;
   current_version: string;
   is_enabled: boolean;
+  admin_enabled: boolean;
+  owner_enabled: boolean;
+  is_deleted?: boolean;
   exposed_to_mcp: boolean;
   exposure_approved: boolean;
+  parent_is_enabled?: boolean;
+  parent_is_deleted?: boolean;
 };
 
 type AuditLog = {
@@ -177,13 +188,20 @@ export default function AdminPanelPage() {
 
   // Role is read from env/session — not switchable from UI in production.
   // In dev, it's read from localStorage (set externally via settings page or env).
-  const [actorRole] = useState<Role>(() => {
+  const [actorRole, setActorRole] = useState<Role>(() => {
     if (typeof window === 'undefined') return 'read_only';
     const stored = window.localStorage.getItem('mcp_admin_roles');
     return (['super_admin', 'admin', 'operator', 'read_only'].includes(stored ?? '')
       ? (stored as Role)
       : 'read_only');
   });
+
+  const handleRoleChange = (nextRole: Role) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('mcp_admin_roles', nextRole);
+    }
+    setActorRole(nextRole);
+  };
 
   const [stats, setStats] = useState<DashboardCards | null>(null);
   const [syncHealth, setSyncHealth] = useState<SyncHealthResponse | null>(null);
@@ -252,8 +270,8 @@ export default function AdminPanelPage() {
         http<SyncHealthResponse>('/dashboard/sync-health'),
         http<{ base_urls: AppItem[] }>('/base-urls?include_inactive=true'),
         http<{ servers: ServerItem[] }>('/servers?include_inactive=true'),
-        http<{ tools: Tool[] }>('/tools'),
-        http<{ endpoints: Endpoint[] }>('/endpoints'),
+        http<{ tools: Tool[] }>('/tools?include_inactive=true'),
+        http<{ endpoints: Endpoint[] }>('/endpoints?include_inactive=true'),
         http<{ logs: AuditLog[] }>('/audit-logs?limit=500'),
       ]);
       setStats(statsRes.cards);
@@ -274,13 +292,15 @@ export default function AdminPanelPage() {
 
   // ── Action wrapper ────────────────────────────────────────────────────────
 
-  const withAction = useCallback(async (fn: () => Promise<void>) => {
+  const withAction = useCallback(async (fn: () => Promise<void>, successMessage = 'Action completed') => {
     try {
       setActionError(null);
       await fn();
       await fetchAll();
+      toast.success(successMessage);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Action failed');
+      toast.error(err instanceof Error ? err.message : 'Action failed');
     }
   }, [fetchAll]);
 
@@ -293,7 +313,7 @@ export default function AdminPanelPage() {
   const createApp = () => withAction(async () => {
     await http('/register-base-url', { method: 'POST', body: JSON.stringify(appForm) });
     setAppForm({ name: '', url: '', description: '', openapi_path: '/openapi.json', include_unreachable_tools: false });
-  });
+  }, 'Application created');
 
   const saveEditApp = (app: AppItem) => withAction(async () => {
     await http(`/base-urls/${encodeURIComponent(app.name)}`, {
@@ -301,15 +321,21 @@ export default function AdminPanelPage() {
       body: JSON.stringify({ url: app.url, description: app.description, openapi_path: app.openapi_path }),
     });
     setEditingApp(null);
-  });
+  }, 'Application updated');
 
   const patchApp = (app: AppItem, patch: Record<string, unknown>) =>
-    withAction(() => http(`/base-urls/${encodeURIComponent(app.name)}`, { method: 'PATCH', body: JSON.stringify(patch) }));
+    withAction(
+      () => http(`/base-urls/${encodeURIComponent(app.name)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+      'Application updated'
+    );
 
   const deleteApp = (app: AppItem, hard: boolean) =>
     requireConfirm(
       hard ? `Permanently delete application "${app.name}"? This cannot be undone.` : `Soft-delete "${app.name}"?`,
-      () => void withAction(() => http(`/base-urls/${encodeURIComponent(app.name)}?hard=${hard}`, { method: 'DELETE' })),
+      () => void withAction(
+        () => http(`/base-urls/${encodeURIComponent(app.name)}?hard=${hard}`, { method: 'DELETE' }),
+        hard ? 'Application deleted permanently' : 'Application deleted'
+      ),
     );
 
   // ── Server Actions ────────────────────────────────────────────────────────
@@ -317,7 +343,7 @@ export default function AdminPanelPage() {
   const createServer = () => withAction(async () => {
     await http('/register-server', { method: 'POST', body: JSON.stringify(serverForm) });
     setServerForm({ name: '', url: '', description: '' });
-  });
+  }, 'Server registered');
 
   const saveEditServer = (server: ServerItem) => withAction(async () => {
     await http(`/servers/${encodeURIComponent(server.name)}`, {
@@ -325,15 +351,21 @@ export default function AdminPanelPage() {
       body: JSON.stringify({ url: server.url, description: server.description }),
     });
     setEditingServer(null);
-  });
+  }, 'Server updated');
 
   const patchServer = (server: ServerItem, patch: Record<string, unknown>) =>
-    withAction(() => http(`/servers/${encodeURIComponent(server.name)}`, { method: 'PATCH', body: JSON.stringify(patch) }));
+    withAction(
+      () => http(`/servers/${encodeURIComponent(server.name)}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+      'Server updated'
+    );
 
   const deleteServer = (server: ServerItem, hard: boolean) =>
     requireConfirm(
       hard ? `Permanently delete server "${server.name}"? This cannot be undone.` : `Soft-delete "${server.name}"?`,
-      () => void withAction(() => http(`/servers/${encodeURIComponent(server.name)}?hard=${hard}`, { method: 'DELETE' })),
+      () => void withAction(
+        () => http(`/servers/${encodeURIComponent(server.name)}?hard=${hard}`, { method: 'DELETE' }),
+        hard ? 'Server deleted permanently' : 'Server deleted'
+      ),
     );
 
   // ── Tool Actions ──────────────────────────────────────────────────────────
@@ -346,7 +378,10 @@ export default function AdminPanelPage() {
   */
 
   const toggleToolEnabled = (tool: Tool) =>
-    withAction(() => http(`/tools/${tool.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: !tool.is_enabled }) }));
+    withAction(
+      () => http(`/tools/${tool.id}`, { method: 'PATCH', body: JSON.stringify({ admin_enabled: !tool.admin_enabled }) }),
+      tool.admin_enabled ? 'Tool disabled (admin)' : 'Tool enabled (admin)'
+    );
 
   const saveToolDescription = (tool: Tool) =>
     withAction(async () => {
@@ -356,7 +391,7 @@ export default function AdminPanelPage() {
         body: JSON.stringify({ description, version: tool.current_version || '1.0.0' }),
       });
       setToolDescEdits((prev) => { const next = { ...prev }; delete next[tool.id]; return next; });
-    });
+    }, 'Tool description saved');
 
   // ── Endpoint Actions ──────────────────────────────────────────────────────
 
@@ -374,13 +409,19 @@ export default function AdminPanelPage() {
         exposed_to_mcp: !ep.exposed_to_mcp,
         exposure_approved: ep.exposed_to_mcp ? ep.exposure_approved : true,
       }),
-    }));
+    }), ep.exposed_to_mcp ? 'Endpoint hidden' : 'Endpoint exposed');
+
+  const restoreEndpoint = (ep: Endpoint) =>
+    withAction(() => http(`/endpoints/${ep.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ admin_enabled: true }),
+    }), 'Endpoint restored');
 
   const approveEndpointExposure = (ep: Endpoint) =>
     withAction(() => http(`/endpoints/${ep.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ exposure_approved: !ep.exposure_approved }),
-    }));
+    }), ep.exposure_approved ? 'Exposure approval revoked' : 'Exposure approved');
 
   const saveEndpointDescription = (ep: Endpoint) =>
     withAction(async () => {
@@ -390,7 +431,7 @@ export default function AdminPanelPage() {
         body: JSON.stringify({ description, version: ep.current_version || '1.0.0' }),
       });
       setEndpointDescEdits((prev) => { const next = { ...prev }; delete next[ep.id]; return next; });
-    });
+    }, 'Endpoint description saved');
 
   // ── Filtered data ─────────────────────────────────────────────────────────
 
@@ -479,9 +520,24 @@ export default function AdminPanelPage() {
               </span>
             </p>
           </div>
-          <Button variant="primary" onClick={() => void fetchAll()} disabled={loading}>
-            {loading ? 'Refreshing…' : 'Refresh'}
-          </Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="uppercase tracking-wide">Role</span>
+              <select
+                className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 bg-white"
+                value={actorRole}
+                onChange={(e) => handleRoleChange(e.target.value as Role)}
+              >
+                <option value="super_admin">Super Admin</option>
+                <option value="admin">Admin</option>
+                <option value="operator">Operator</option>
+                <option value="read_only">Read Only</option>
+              </select>
+            </div>
+            <Button variant="primary" onClick={() => void fetchAll()} disabled={loading}>
+              {loading ? 'Refreshing…' : 'Refresh'}
+            </Button>
+          </div>
         </div>
 
         {/* Global error */}
@@ -713,15 +769,42 @@ export default function AdminPanelPage() {
                         <p className="font-semibold text-sm text-slate-900">{app.name}</p>
                         <p className="text-xs text-slate-500 truncate">{app.url} · <span className="font-mono">{app.openapi_path}</span></p>
                         {app.description && <p className="text-xs text-slate-400 mt-0.5">{app.description}</p>}
-                        {app.is_deleted && <span className="text-xs text-red-500 mt-0.5 inline-block">⚠ soft-deleted</span>}
+                        {app.is_deleted && (
+                          <span
+                            className="text-xs text-red-500 mt-0.5 inline-block"
+                            title="Soft-deleted (is_deleted=true). Use Restore to bring it back."
+                          >
+                            ⚠ soft-deleted
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2 py-1 rounded-full ${(app.is_enabled ?? true) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${(app.is_enabled ?? true) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                          title={(app.is_enabled ?? true) ? 'Enabled (is_enabled=true)' : 'Disabled (is_enabled=false)'}
+                        >
                           {(app.is_enabled ?? true) ? 'enabled' : 'disabled'}
                         </span>
                         {canManageApps && (
                           <>
-                            <Button size="sm" variant="secondary" onClick={() => void patchApp(app, { is_enabled: !(app.is_enabled ?? true) })}>Toggle</Button>
+                            {app.is_deleted && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void patchApp(app, { is_enabled: true, restore_dependents: true })}
+                              >
+                                Restore
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void patchApp(app, { is_enabled: !(app.is_enabled ?? true) })}
+                              disabled={app.is_deleted}
+                              title={app.is_deleted ? 'Restore first to enable/disable' : 'Toggle enabled/disabled'}
+                            >
+                              Toggle
+                            </Button>
                             <Button size="sm" variant="secondary" onClick={() => setEditingApp({ ...app })}>Edit</Button>
                             <Button size="sm" variant="ghost" onClick={() => deleteApp(app, false)}>Soft Delete</Button>
                             {canHardDelete && <Button size="sm" variant="ghost" onClick={() => deleteApp(app, true)}>Hard Delete</Button>}
@@ -778,15 +861,42 @@ export default function AdminPanelPage() {
                         <p className="font-semibold text-sm text-slate-900">{server.name}</p>
                         <p className="text-xs text-slate-500 truncate">{server.url}</p>
                         {server.description && <p className="text-xs text-slate-400 mt-0.5">{server.description}</p>}
-                        {server.is_deleted && <span className="text-xs text-red-500 mt-0.5 inline-block">⚠ soft-deleted</span>}
+                        {server.is_deleted && (
+                          <span
+                            className="text-xs text-red-500 mt-0.5 inline-block"
+                            title="Soft-deleted (is_deleted=true). Use Restore to bring it back."
+                          >
+                            ⚠ soft-deleted
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2 py-1 rounded-full ${(server.is_enabled ?? true) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${(server.is_enabled ?? true) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                          title={(server.is_enabled ?? true) ? 'Enabled (is_enabled=true)' : 'Disabled (is_enabled=false)'}
+                        >
                           {(server.is_enabled ?? true) ? 'enabled' : 'disabled'}
                         </span>
                         {canManageServers && (
                           <>
-                            <Button size="sm" variant="secondary" onClick={() => void patchServer(server, { is_enabled: !(server.is_enabled ?? true) })}>Toggle</Button>
+                            {server.is_deleted && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void patchServer(server, { is_enabled: true, restore_dependents: true })}
+                              >
+                                Restore
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void patchServer(server, { is_enabled: !(server.is_enabled ?? true) })}
+                              disabled={server.is_deleted}
+                              title={server.is_deleted ? 'Restore first to enable/disable' : 'Toggle enabled/disabled'}
+                            >
+                              Toggle
+                            </Button>
                             <Button size="sm" variant="secondary" onClick={() => setEditingServer({ ...server })}>Edit</Button>
                             <Button size="sm" variant="ghost" onClick={() => deleteServer(server, false)}>Soft Delete</Button>
                             {canHardDelete && <Button size="sm" variant="ghost" onClick={() => deleteServer(server, true)}>Hard Delete</Button>}
@@ -830,6 +940,9 @@ export default function AdminPanelPage() {
               {filteredTools.length === 0 ? <EmptyState message="No tools found" /> : filteredTools.map((tool) => {
                 const isEditingDesc = tool.id in toolDescEdits;
                 const draftDesc = toolDescEdits[tool.id] ?? tool.description;
+                const adminDisabled = tool.admin_enabled === false;
+                const ownerDisabled = tool.owner_enabled === false;
+                const effectiveEnabled = !adminDisabled && !ownerDisabled;
                 return (
                   <div key={tool.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
                     {/* Top row: identity + toggle */}
@@ -849,11 +962,56 @@ export default function AdminPanelPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded-full ${tool.is_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {tool.is_enabled ? 'enabled' : 'disabled'}
+                        <span className={`text-xs px-2 py-1 rounded-full ${effectiveEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {effectiveEnabled ? 'enabled' : 'disabled'}
                         </span>
+                        {adminDisabled && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700" title="Disabled by admin (admin_enabled=false)">
+                            admin disabled
+                          </span>
+                        )}
+                        {!adminDisabled && ownerDisabled && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700" title="Disabled by owner (owner_enabled=false)">
+                            owner disabled
+                          </span>
+                        )}
+                        {tool.is_deleted && (
+                          <span className="text-xs text-red-500" title="Soft-deleted (is_deleted=true)">
+                            ⚠ deleted
+                          </span>
+                        )}
+                        {(tool.parent_is_deleted || tool.parent_is_enabled === false) && (
+                          <span className="text-xs text-amber-600" title="Parent is disabled or deleted">
+                            ⛔ parent inactive
+                          </span>
+                        )}
                         {canManageTools && (
-                          <Button size="sm" variant="secondary" onClick={() => void toggleToolEnabled(tool)}>Toggle</Button>
+                          <>
+                            {tool.is_deleted && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void toggleToolEnabled({ ...tool, admin_enabled: false })}
+                              >
+                                Restore
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void toggleToolEnabled(tool)}
+                              disabled={tool.is_deleted || tool.parent_is_deleted || tool.parent_is_enabled === false}
+                              title={
+                                tool.is_deleted
+                                  ? 'Restore first to enable/disable'
+                                  : tool.parent_is_deleted || tool.parent_is_enabled === false
+                                    ? 'Parent is disabled or deleted'
+                                    : 'Toggle admin enabled/disabled'
+                              }
+                            >
+                              Toggle
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -927,6 +1085,9 @@ export default function AdminPanelPage() {
               {filteredEndpoints.length === 0 ? <EmptyState message="No endpoints found" /> : filteredEndpoints.map((ep) => {
                 const isEditingDesc = ep.id in endpointDescEdits;
                 const draftDesc = endpointDescEdits[ep.id] ?? ep.description;
+                const adminDisabled = ep.admin_enabled === false;
+                const ownerDisabled = ep.owner_enabled === false;
+                const effectiveEnabled = !adminDisabled && !ownerDisabled;
                 return (
                   <div key={ep.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
                     {/* Top row: identity + exposure controls */}
@@ -943,6 +1104,19 @@ export default function AdminPanelPage() {
                         <p className="text-xs text-slate-500 mt-0.5">{ep.owner_id}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs px-2 py-1 rounded-full ${effectiveEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {effectiveEnabled ? 'enabled' : 'disabled'}
+                        </span>
+                        {adminDisabled && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700" title="Disabled by admin (admin_enabled=false)">
+                            admin disabled
+                          </span>
+                        )}
+                        {!adminDisabled && ownerDisabled && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700" title="Disabled by owner (owner_enabled=false)">
+                            owner disabled
+                          </span>
+                        )}
                         <span className={`text-xs px-2 py-1 rounded-full ${ep.exposed_to_mcp ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
                           {ep.exposed_to_mcp ? 'exposed' : 'hidden'}
                         </span>
@@ -951,10 +1125,43 @@ export default function AdminPanelPage() {
                             {ep.exposure_approved ? 'approved' : 'pending'}
                           </span>
                         )}
+                        {ep.is_deleted && (
+                          <span className="text-xs text-red-500" title="Soft-deleted (is_deleted=true)">
+                            ⚠ deleted
+                          </span>
+                        )}
+                        {(ep.parent_is_deleted || ep.parent_is_enabled === false) && (
+                          <span className="text-xs text-amber-600" title="Parent is disabled or deleted">
+                            ⛔ parent inactive
+                          </span>
+                        )}
                         {canManageEndpoints && (
-                          <Button size="sm" variant="secondary" onClick={() => void toggleEndpointExposure(ep)}>
-                            {ep.exposed_to_mcp ? 'Hide' : 'Expose'}
-                          </Button>
+                          <>
+                            {ep.is_deleted && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void restoreEndpoint(ep)}
+                              >
+                                Restore
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void toggleEndpointExposure(ep)}
+                              disabled={ep.is_deleted || ep.parent_is_deleted || ep.parent_is_enabled === false}
+                              title={
+                                ep.is_deleted
+                                  ? 'Restore first to manage exposure'
+                                  : ep.parent_is_deleted || ep.parent_is_enabled === false
+                                    ? 'Parent is disabled or deleted'
+                                    : 'Toggle exposure'
+                              }
+                            >
+                              {ep.exposed_to_mcp ? 'Hide' : 'Expose'}
+                            </Button>
+                          </>
                         )}
                         {ep.exposed_to_mcp && !ep.exposure_approved && canApproveExposure && (
                           <Button size="sm" variant="primary" onClick={() => void approveEndpointExposure(ep)}>Approve</Button>
@@ -1004,6 +1211,9 @@ export default function AdminPanelPage() {
                 {rawApiTools.length === 0 ? <EmptyState message="No raw API tools found" /> : rawApiTools.map((tool) => {
                   const isEditingDesc = tool.id in toolDescEdits;
                   const draftDesc = toolDescEdits[tool.id] ?? tool.description;
+                  const adminDisabled = tool.admin_enabled === false;
+                  const ownerDisabled = tool.owner_enabled === false;
+                  const effectiveEnabled = !adminDisabled && !ownerDisabled;
                   return (
                     <div key={tool.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1022,11 +1232,56 @@ export default function AdminPanelPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-1 rounded-full ${tool.is_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                            {tool.is_enabled ? 'enabled' : 'disabled'}
+                          <span className={`text-xs px-2 py-1 rounded-full ${effectiveEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {effectiveEnabled ? 'enabled' : 'disabled'}
                           </span>
+                          {adminDisabled && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700" title="Disabled by admin (admin_enabled=false)">
+                              admin disabled
+                            </span>
+                          )}
+                          {!adminDisabled && ownerDisabled && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700" title="Disabled by owner (owner_enabled=false)">
+                              owner disabled
+                            </span>
+                          )}
+                          {tool.is_deleted && (
+                            <span className="text-xs text-red-500" title="Soft-deleted (is_deleted=true)">
+                              ⚠ deleted
+                            </span>
+                          )}
+                          {(tool.parent_is_deleted || tool.parent_is_enabled === false) && (
+                            <span className="text-xs text-amber-600" title="Parent is disabled or deleted">
+                              ⛔ parent inactive
+                            </span>
+                          )}
                           {canManageTools && (
-                            <Button size="sm" variant="secondary" onClick={() => void toggleToolEnabled(tool)}>Toggle</Button>
+                            <>
+                              {tool.is_deleted && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void toggleToolEnabled({ ...tool, admin_enabled: false })}
+                              >
+                                Restore
+                              </Button>
+                            )}
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void toggleToolEnabled(tool)}
+                                disabled={tool.is_deleted || tool.parent_is_deleted || tool.parent_is_enabled === false}
+                                title={
+                                  tool.is_deleted
+                                    ? 'Restore first to enable/disable'
+                                    : tool.parent_is_deleted || tool.parent_is_enabled === false
+                                      ? 'Parent is disabled or deleted'
+                                      : 'Toggle admin enabled/disabled'
+                                }
+                              >
+                                Toggle
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1132,3 +1387,4 @@ export default function AdminPanelPage() {
     </div>
   );
 }
+

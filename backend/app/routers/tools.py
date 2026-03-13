@@ -1,9 +1,11 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
+from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.env import ENV
 
 class ToolCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -18,6 +20,8 @@ class ToolCreate(BaseModel):
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
     is_enabled: bool = True
+    admin_enabled: bool | None = None
+    owner_enabled: bool | None = None
 
 
 class ToolUpdate(BaseModel):
@@ -31,6 +35,8 @@ class ToolUpdate(BaseModel):
     input_schema: dict[str, Any] | None = None
     output_schema: dict[str, Any] | None = None
     is_enabled: bool | None = None
+    admin_enabled: bool | None = None
+    owner_enabled: bool | None = None
 
 
 def create_tools_router(
@@ -50,7 +56,13 @@ def create_tools_router(
         summary="List Tools",
         description="List all non-deleted tools from the registry. Source: backend/app/routers/tools.py",
     )
-    def list_tools() -> dict[str, Any]:
+    def list_tools(
+        include_inactive: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        cache_key = f"status:tools:include_inactive={str(include_inactive).lower()}"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         with session_local_factory() as db:
             active_server_ids = {
                 row.id
@@ -70,19 +82,35 @@ def create_tools_router(
                     )
                 ).all()
             }
-            rows = db.scalars(
-                select(mcp_tool_model).where(mcp_tool_model.is_deleted == False)  # noqa: E712
-            ).all()
+            server_states = {
+                row.id: {"is_enabled": bool(row.is_enabled), "is_deleted": bool(row.is_deleted)}
+                for row in db.scalars(select(server_model)).all()
+            }
+            base_url_states = {
+                row.id: {"is_enabled": bool(row.is_enabled), "is_deleted": bool(row.is_deleted)}
+                for row in db.scalars(select(base_url_model)).all()
+            }
+            stmt = select(mcp_tool_model)
+            if not include_inactive:
+                stmt = stmt.where(
+                    mcp_tool_model.is_deleted == False,  # noqa: E712
+                    mcp_tool_model.admin_enabled == True,  # noqa: E712
+                    mcp_tool_model.owner_enabled == True,  # noqa: E712
+                )
+            rows = db.scalars(stmt).all()
 
         visible_rows = []
         for row in rows:
+            if include_inactive:
+                visible_rows.append(row)
+                continue
             if row.source_type == "mcp" and row.server_id is not None and row.server_id not in active_server_ids:
                 continue
             if row.source_type == "openapi" and row.raw_api_id is not None and row.raw_api_id not in active_base_url_ids:
                 continue
             visible_rows.append(row)
 
-        return {
+        result = {
             "tools": [
                 {
                     "id": row.id,
@@ -93,11 +121,30 @@ def create_tools_router(
                     "method": row.method,
                     "path": row.path,
                     "current_version": row.current_version,
-                    "is_enabled": row.is_enabled,
+                    "is_enabled": bool(row.admin_enabled and row.owner_enabled),
+                    "admin_enabled": row.admin_enabled,
+                    "owner_enabled": row.owner_enabled,
+                    "is_deleted": row.is_deleted,
+                    "parent_is_enabled": (
+                        server_states.get(row.server_id, {}).get("is_enabled")
+                        if row.source_type == "mcp" and row.server_id is not None
+                        else base_url_states.get(row.raw_api_id, {}).get("is_enabled")
+                        if row.source_type == "openapi" and row.raw_api_id is not None
+                        else True
+                    ),
+                    "parent_is_deleted": (
+                        server_states.get(row.server_id, {}).get("is_deleted")
+                        if row.source_type == "mcp" and row.server_id is not None
+                        else base_url_states.get(row.raw_api_id, {}).get("is_deleted")
+                        if row.source_type == "openapi" and row.raw_api_id is not None
+                        else False
+                    ),
                 }
                 for row in visible_rows
             ]
         }
+        cache_set_json(cache_key, result, ENV.redis_list_ttl_sec)
+        return result
 
     @router.post(
         "/tools",
@@ -123,6 +170,9 @@ def create_tools_router(
             if existing:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tool already exists")
 
+            admin_enabled = payload.admin_enabled if payload.admin_enabled is not None else payload.is_enabled
+            owner_enabled = payload.owner_enabled if payload.owner_enabled is not None else True
+            effective_enabled = bool(admin_enabled and owner_enabled)
             tool = mcp_tool_model(
                 owner_id=payload.owner_id,
                 name=payload.name,
@@ -131,7 +181,9 @@ def create_tools_router(
                 method=payload.method,
                 path=payload.path,
                 current_version=payload.version,
-                is_enabled=payload.is_enabled,
+                admin_enabled=admin_enabled,
+                owner_enabled=owner_enabled,
+                is_enabled=effective_enabled,
             )
             db.add(tool)
             db.flush()
@@ -157,10 +209,13 @@ def create_tools_router(
                     "name": tool.name,
                     "description": tool.description,
                     "current_version": tool.current_version,
+                    "admin_enabled": tool.admin_enabled,
+                    "owner_enabled": tool.owner_enabled,
                     "is_enabled": tool.is_enabled,
                 },
             )
             db.commit()
+            cache_delete_prefix("status:")
             return {"status": "created", "id": tool.id}
 
     @router.patch(
@@ -175,8 +230,22 @@ def create_tools_router(
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             tool = db.scalar(select(mcp_tool_model).where(mcp_tool_model.id == tool_id))
-            if not tool or tool.is_deleted:
+            if not tool:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+            if tool.is_deleted and not (
+                payload.is_enabled is True
+                or payload.admin_enabled is True
+                or payload.owner_enabled is True
+            ):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+            if tool.source_type == "mcp" and tool.server_id is not None:
+                server = db.scalar(select(server_model).where(server_model.id == tool.server_id))
+                if server and (server.is_deleted or not server.is_enabled):
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Parent server is disabled or deleted")
+            if tool.source_type == "openapi" and tool.raw_api_id is not None:
+                base_url = db.scalar(select(base_url_model).where(base_url_model.id == tool.raw_api_id))
+                if base_url and (base_url.is_deleted or not base_url.is_enabled):
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Parent application is disabled or deleted")
 
             before_state = {
                 "name": tool.name,
@@ -184,6 +253,8 @@ def create_tools_router(
                 "current_version": tool.current_version,
                 "method": tool.method,
                 "path": tool.path,
+                "admin_enabled": tool.admin_enabled,
+                "owner_enabled": tool.owner_enabled,
                 "is_enabled": tool.is_enabled,
             }
 
@@ -198,8 +269,15 @@ def create_tools_router(
                 tool.method = payload.method
             if payload.path is not None:
                 tool.path = payload.path
+            if payload.admin_enabled is not None:
+                tool.admin_enabled = payload.admin_enabled
+            if payload.owner_enabled is not None:
+                tool.owner_enabled = payload.owner_enabled
             if payload.is_enabled is not None:
-                tool.is_enabled = payload.is_enabled
+                tool.admin_enabled = payload.is_enabled
+            tool.is_enabled = bool(tool.admin_enabled and tool.owner_enabled)
+            if tool.is_enabled:
+                tool.is_deleted = False
 
             metadata_changed = (
                 payload.description is not None
@@ -248,10 +326,13 @@ def create_tools_router(
                     "current_version": tool.current_version,
                     "method": tool.method,
                     "path": tool.path,
+                    "admin_enabled": tool.admin_enabled,
+                    "owner_enabled": tool.owner_enabled,
                     "is_enabled": tool.is_enabled,
                 },
             )
             db.commit()
+            cache_delete_prefix("status:")
             return {"status": "updated", "id": tool.id}
 
     @router.delete(
@@ -268,6 +349,14 @@ def create_tools_router(
             tool = db.scalar(select(mcp_tool_model).where(mcp_tool_model.id == tool_id))
             if not tool:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+            if tool.source_type == "mcp" and tool.server_id is not None:
+                server = db.scalar(select(server_model).where(server_model.id == tool.server_id))
+                if server and (server.is_deleted or not server.is_enabled):
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Parent server is disabled or deleted")
+            if tool.source_type == "openapi" and tool.raw_api_id is not None:
+                base_url = db.scalar(select(base_url_model).where(base_url_model.id == tool.raw_api_id))
+                if base_url and (base_url.is_deleted or not base_url.is_enabled):
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Parent application is disabled or deleted")
 
             before_state = {
                 "name": tool.name,
@@ -279,7 +368,6 @@ def create_tools_router(
                 action = "tool.delete.hard"
             else:
                 tool.is_deleted = True
-                tool.is_enabled = False
                 action = "tool.delete.soft"
 
             write_audit_log_fn(
@@ -290,9 +378,10 @@ def create_tools_router(
                 resource_type="tool",
                 resource_id=str(tool_id),
                 before_state=before_state,
-                after_state=None if hard else {"is_deleted": True, "is_enabled": False},
+                after_state=None if hard else {"is_deleted": True, "is_enabled": tool.is_enabled},
             )
             db.commit()
+            cache_delete_prefix("status:")
             return {"status": "deleted", "hard": hard}
 
     return router

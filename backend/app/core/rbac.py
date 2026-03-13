@@ -5,6 +5,11 @@ from sqlalchemy import func, select
 
 from app.core.auth import AUTH_ENABLED
 from app.core.jwt_validator import TokenValidationError, validate_token
+from app.env import ENV
+from app.core.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 ROLE_PERMISSION_FALLBACK: dict[str, set[str]] = {
     "super_admin": {"*"},

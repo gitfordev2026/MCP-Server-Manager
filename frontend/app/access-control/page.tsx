@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { notFound } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import ApplicationCard from '@/components/access-control/ApplicationCard';
 import AccessControlModal from '@/components/access-control/AccessControlModal';
@@ -11,8 +12,13 @@ import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
+const ACCESS_CONTROL_ENABLED = false;
 
 export default function AccessPolicyPage() {
+  if (!ACCESS_CONTROL_ENABLED) {
+    notFound();
+  }
+
   const { data, isLoading, isError, refetch } = usePolicies();
   const policies = useMemo(() => data?.policies ?? {}, [data]);
 

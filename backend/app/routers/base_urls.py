@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
 
+from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.env import ENV
 
 def create_base_urls_router(
     session_local_factory,
@@ -50,6 +52,7 @@ def create_base_urls_router(
         openapi_path: str | None = None
         include_unreachable_tools: bool | None = None
         is_enabled: bool | None = None
+        restore_dependents: bool | None = None
 
     def _soft_delete_base_url_dependents(db, base_url_id: int, owner_id: str) -> dict[str, int]:
         tools = db.scalars(
@@ -59,14 +62,12 @@ def create_base_urls_router(
         ).all()
         for tool in tools:
             tool.is_deleted = True
-            tool.is_enabled = False
 
         endpoints = db.scalars(
             select(api_endpoint_model).where(api_endpoint_model.owner_id == owner_id)
         ).all()
         for endpoint in endpoints:
             endpoint.is_deleted = True
-            endpoint.is_enabled = False
             endpoint.exposed_to_mcp = False
 
         return {"tools": len(tools), "endpoints": len(endpoints)}
@@ -190,6 +191,7 @@ def create_base_urls_router(
 
             sync_api_server_links_by_host_fn()
             reset_openapi_catalog_fn()
+            cache_delete_prefix("status:")
 
             return {
                 "message": "Base URL registered successfully",
@@ -216,6 +218,10 @@ def create_base_urls_router(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         _ = current_user
+        cache_key = f"status:base-urls:include_inactive={str(include_inactive).lower()}"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         try:
             with session_local_factory() as db:
                 stmt = select(base_url_model)
@@ -240,7 +246,9 @@ def create_base_urls_router(
                     for row in rows
                 ]
 
-            return {"base_urls": base_urls}
+            result = {"base_urls": base_urls}
+            cache_set_json(cache_key, result, ENV.redis_list_ttl_sec)
+            return result
 
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -313,6 +321,26 @@ def create_base_urls_router(
                 row.include_unreachable_tools = 1 if payload.include_unreachable_tools else 0
             if payload.is_enabled is not None:
                 row.is_enabled = payload.is_enabled
+                if payload.is_enabled:
+                    row.is_deleted = False
+                    if payload.restore_dependents:
+                        tools = db.scalars(
+                            select(mcp_tool_model).where(
+                                (mcp_tool_model.raw_api_id == row.id)
+                                | (mcp_tool_model.owner_id == f"app:{row.name}")
+                            )
+                        ).all()
+                        for tool in tools:
+                            tool.is_deleted = False
+
+                        endpoints = db.scalars(
+                            select(api_endpoint_model).where(api_endpoint_model.owner_id == f"app:{row.name}")
+                        ).all()
+                        for endpoint in endpoints:
+                            endpoint.is_deleted = False
+                            endpoint.exposed_to_mcp = False
+                            if hasattr(endpoint, "exposure_approved"):
+                                endpoint.exposure_approved = False
 
             write_audit_log_fn(
                 db,
@@ -337,6 +365,7 @@ def create_base_urls_router(
             db.commit()
 
         reset_openapi_catalog_fn()
+        cache_delete_prefix("status:")
         return {"status": "updated", "name": name}
 
     @router.delete(
@@ -399,6 +428,7 @@ def create_base_urls_router(
                 raise HTTPException(status_code=500, detail=f"Failed to delete base URL '{name}': {exc}") from exc
 
         reset_openapi_catalog_fn()
+        cache_delete_prefix("status:")
         return {"status": "deleted", "name": name, "hard": hard}
 
     @router.post(
@@ -435,6 +465,7 @@ def create_base_urls_router(
                     row.last_sync_error = None
                     db.commit()
 
+            cache_delete_prefix("status:")
             return {
                 "message": f"Sync initiated for {name}",
                 "status": "success" 

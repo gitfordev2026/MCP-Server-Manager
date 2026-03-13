@@ -6,6 +6,7 @@ from app.core.auth import (
     KEYCLOAK_ISSUER,
     KEYCLOAK_VERIFY_AUD,
 )
+from app.core.cache import cache_get_json, cache_set_json
 from app.env import ENV
 
 
@@ -18,13 +19,19 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
         description="Service health and auth/db runtime flags. Source: backend/app/routers/health.py",
     )
     def health() -> dict[str, object]:
-        return {
+        cache_key = "status:health"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
+        result = {
             "status": "ok",
             "db_backend": db_backend,
             "auth_enabled": auth_enabled,
             "issuer": issuer,
             "audience_check": audience_check,
         }
+        cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
+        return result
 
     @router.get(
         "/auth/config",

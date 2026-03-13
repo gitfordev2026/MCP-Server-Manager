@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
 
+from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.env import ENV
 
 def create_servers_router(
     session_local_factory,
@@ -48,6 +50,7 @@ def create_servers_router(
         domain_type: str | None = None
         selected_tools: list[str] | None = None
         is_enabled: bool | None = None
+        restore_dependents: bool | None = None
 
     class ServerDiscoveryRequest(BaseModel):
         model_config = ConfigDict(extra="forbid")
@@ -63,14 +66,12 @@ def create_servers_router(
         ).all()
         for tool in tools:
             tool.is_deleted = True
-            tool.is_enabled = False
 
         endpoints = db.scalars(
             select(api_endpoint_model).where(api_endpoint_model.owner_id == owner_id)
         ).all()
         for endpoint in endpoints:
             endpoint.is_deleted = True
-            endpoint.is_enabled = False
             endpoint.exposed_to_mcp = False
 
         return {"tools": len(tools), "endpoints": len(endpoints)}
@@ -229,6 +230,7 @@ def create_servers_router(
                 db.commit()
 
             sync_api_server_links_by_host_fn()
+            cache_delete_prefix("status:")
             return {
                 "message": "Server registered successfully",
                 "name": data.name,
@@ -278,7 +280,8 @@ def create_servers_router(
                         mcp_tool_model.source_type == "mcp",
                         mcp_tool_model.owner_id == f"mcp:{server_name}",
                         mcp_tool_model.is_deleted == False,  # noqa: E712
-                        mcp_tool_model.is_enabled == True,  # noqa: E712
+                        mcp_tool_model.admin_enabled == True,  # noqa: E712
+                        mcp_tool_model.owner_enabled == True,  # noqa: E712
                     )
                 ).all()
             tools_list = []
@@ -318,6 +321,10 @@ def create_servers_router(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         _ = current_user
+        cache_key = f"status:servers:include_inactive={str(include_inactive).lower()}"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         try:
             with session_local_factory() as db:
                 stmt = select(server_model)
@@ -340,7 +347,9 @@ def create_servers_router(
                     for row in rows
                 ]
 
-            return {"servers": servers}
+            result = {"servers": servers}
+            cache_set_json(cache_key, result, ENV.redis_list_ttl_sec)
+            return result
 
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -354,6 +363,10 @@ def create_servers_router(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = current_user
+        cache_key = "status:servers:health"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         try:
             with session_local_factory() as db:
                 rows = db.scalars(
@@ -370,7 +383,7 @@ def create_servers_router(
             alive_count = sum(1 for s in statuses if s["status"] == "alive")
             down_count = len(statuses) - alive_count
 
-            return {
+            result = {
                 "servers": statuses,
                 "summary": {
                     "total": len(statuses),
@@ -378,6 +391,8 @@ def create_servers_router(
                     "down": down_count,
                 },
             }
+            cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
+            return result
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Error retrieving server statuses: {exc}") from exc
 
@@ -391,6 +406,10 @@ def create_servers_router(
         current_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = current_user
+        cache_key = f"status:server:{server_name}"
+        cached = cache_get_json(cache_key)
+        if cached is not None:
+            return cached
         try:
             with session_local_factory() as db:
                 server = db.scalar(select(server_model).where(server_model.name == server_name))
@@ -398,7 +417,9 @@ def create_servers_router(
             if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-            return await probe_server_status(server.name, server.url)
+            result = await probe_server_status(server.name, server.url)
+            cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
+            return result
         except HTTPException:
             raise
         except Exception as exc:
@@ -416,7 +437,7 @@ def create_servers_router(
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             server = db.scalar(select(server_model).where(server_model.name == server_name))
-            if not server or server.is_deleted or not server.is_enabled:
+            if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
             before_state = {
@@ -438,6 +459,26 @@ def create_servers_router(
                 server.selected_tools = _normalize_selected_tools(payload.selected_tools)
             if payload.is_enabled is not None:
                 server.is_enabled = payload.is_enabled
+                if payload.is_enabled:
+                    server.is_deleted = False
+                    if payload.restore_dependents:
+                        tools = db.scalars(
+                            select(mcp_tool_model).where(
+                                (mcp_tool_model.server_id == server.id)
+                                | (mcp_tool_model.owner_id == f"mcp:{server.name}")
+                            )
+                        ).all()
+                        for tool in tools:
+                            tool.is_deleted = False
+
+                        endpoints = db.scalars(
+                            select(api_endpoint_model).where(api_endpoint_model.owner_id == f"mcp:{server.name}")
+                        ).all()
+                        for endpoint in endpoints:
+                            endpoint.is_deleted = False
+                            endpoint.exposed_to_mcp = False
+                            if hasattr(endpoint, "exposure_approved"):
+                                endpoint.exposure_approved = False
 
             write_audit_log_fn(
                 db,
@@ -458,6 +499,7 @@ def create_servers_router(
                 },
             )
             db.commit()
+        cache_delete_prefix("status:")
         return {"status": "updated", "name": server_name}
 
     @router.delete(
@@ -519,6 +561,7 @@ def create_servers_router(
             except Exception as exc:
                 db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to delete server '{server_name}': {exc}") from exc
+        cache_delete_prefix("status:")
         return {"status": "deleted", "name": server_name, "hard": hard}
 
     @router.post(
@@ -585,6 +628,7 @@ def create_servers_router(
                 server.last_sync_error = snapshot.error
                 db.commit()
 
+            cache_delete_prefix("status:")
             return {
                 "message": f"Sync completed for {server_name}",
                 "status": "success" if snapshot.is_alive else "failed",

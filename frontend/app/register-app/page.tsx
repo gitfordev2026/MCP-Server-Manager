@@ -282,7 +282,7 @@ export default function RegisterAppPage() {
         current_version?: string;
         is_enabled: boolean;
       }>
-    }>('/tools');
+    }>('/tools?include_inactive=true');
     const dbByEndpointKey = new Map(
       (dbPayload.tools || [])
         .filter((tool) => tool.owner_id === `app:${appName}` && tool.source_type === 'openapi')
@@ -396,7 +396,7 @@ export default function RegisterAppPage() {
           path?: string;
           current_version?: string;
         }>
-      }>('/tools');
+      }>('/tools?include_inactive=true');
       const dbEndpoint = (payload.tools || []).find(
         (item) =>
           item.owner_id === `app:${selectedAppName}` &&
@@ -476,7 +476,7 @@ export default function RegisterAppPage() {
           description: string;
           current_version?: string;
         }>
-      }>('/tools');
+      }>('/tools?include_inactive=true');
       const ownerId = `app:${formData.name.trim()}`;
       const selectedIds = new Set(Array.from(selectedEndpoints));
       const selectedRows = (toolsPayload.tools || []).filter((tool) => {

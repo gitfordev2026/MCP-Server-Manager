@@ -1,6 +1,6 @@
 # MCP Use Agent - Working Memory
 
-Last updated: 2026-03-11
+Last updated: 2026-03-13
 
 ## 1) What this app is
 - Existing app (not greenfield) with:
@@ -123,3 +123,32 @@ Last updated: 2026-03-11
    - Added MCP client runtime (`mcp_client_runtime.py`) using official streamable HTTP client for server probe/list/call.
    - Server & dashboard routers now use injected MCP runtime helpers instead of `mcp_use.MCPClient`.
    - CORS exposes MCP session headers and mounts `/mcp/apps` and `/mcp/apps/` (auth preserved via JWT ASGI middleware).
+- 2026-03-12: Frontend cleanup, auth UX stabilization, and UI changes.
+   - Removed duplicated nested frontend folders (e.g., `frontend/app/app`, `frontend/components/components`, etc.) and fixed lint.
+   - Auth flow stabilized: cached `/auth/config`, throttled login redirects, improved `AuthGuard` and callback handling.
+   - Navigation responsive with mobile menu, single-line buttons, logout pinned on desktop.
+   - Admin tab bar now wraps instead of horizontal scroll.
+   - Access Control hidden from navbar and route disabled via `notFound()` in `frontend/app/access-control/page.tsx`.
+   - Admin actions now emit toast notifications for create/update/delete/toggle/description saves.
+   - Admin page now has a role dropdown (writes `mcp_admin_roles` to localStorage for quick role switching).
+   - Fixed re-enable flow after soft-delete: server/app PATCH now allows re-enabling and clears `is_deleted`.
+   - Added optional `restore_dependents` flag on server/app PATCH to re-enable soft-deleted tools/endpoints.
+   - Admin UI now shows tooltips for enabled/disabled/deleted and adds Restore button for soft-deleted apps/servers.
+   - Tools/endpoints list endpoints now support `include_inactive=true` to return disabled/deleted rows.
+   - Restore now only clears `is_deleted` on dependents; preserves prior `is_enabled` state.
+   - Tool/endpoint soft delete now preserves `is_enabled` (only sets `is_deleted` + clears exposure for endpoints).
+   - Exposure resolution now filters out tools from disabled/deleted servers/apps to keep MCP endpoints accurate.
+   - Tool toggle now allows restoring deleted tools (backend clears `is_deleted` when `is_enabled=true`); admin shows deleted badge/restore.
+   - Endpoint restore now supported (backend clears `is_deleted` when `is_enabled=true`); admin shows deleted badge/restore.
+   - Tools/endpoints now include parent active flags and backend blocks modifications when parent is disabled/deleted; admin disables actions and shows "parent inactive".
+- 2026-03-13: Dual-control enablement for tools/endpoints.
+  - Added `admin_enabled` and `owner_enabled` columns on `mcp_tools` and `api_endpoints` (model + schema migration/backfill).
+  - `is_enabled` now represents effective state (`admin_enabled && owner_enabled`) and is recomputed on updates/sync.
+  - Tool/endpoint list and exposure filters now require both admin/owner enabled.
+  - Registry sync now toggles `owner_enabled` based on selection while preserving admin decisions.
+  - Admin UI now shows badges for "admin disabled" vs "owner disabled" and toggles admin-enabled state.
+- 2026-03-13: Redis cache layer for status-heavy endpoints.
+  - Added `app/core/cache.py` Redis helper (get/set JSON + prefix invalidation).
+  - Added env config: `REDIS_ENABLED`, `REDIS_URL`, `REDIS_STATUS_TTL_SEC`, `REDIS_LIST_TTL_SEC`.
+  - Cached list endpoints (`/servers`, `/base-urls`, `/tools`, `/endpoints`) and status endpoints (`/servers/status`, `/servers/{name}/status`, `/dashboard/*`).
+  - Mutations now invalidate `status:` cache prefix to keep UI fresh.

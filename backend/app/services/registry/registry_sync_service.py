@@ -46,7 +46,8 @@ def sync_tools_from_discovery(
             if record.is_deleted:
                 # recover
                 record.is_deleted = False
-                record.is_enabled = True
+                record.owner_enabled = True
+                record.is_enabled = bool(record.admin_enabled and record.owner_enabled)
             stats["updated"] += 1
         else:
             new_record = mcp_tool_model(
@@ -60,6 +61,8 @@ def sync_tools_from_discovery(
                 exposure_state="active",
                 last_discovered_on=now,
                 last_synced_on=now,
+                admin_enabled=True,
+                owner_enabled=True,
                 is_enabled=True,
                 is_deleted=False
             )
@@ -71,9 +74,9 @@ def sync_tools_from_discovery(
         if name not in discovered_map:
             if not record.is_deleted:
                 record.is_deleted = True
-                record.is_enabled = False
+                record.owner_enabled = False
+                record.is_enabled = bool(record.admin_enabled and record.owner_enabled)
                 record.registration_state = "stale"
                 stats["soft_deleted"] += 1
                 
     return stats
-

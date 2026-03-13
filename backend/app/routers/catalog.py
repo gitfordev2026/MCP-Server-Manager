@@ -47,6 +47,8 @@ def create_catalog_router(
                 db=db,
                 mcp_tool_model=mcp_tool_model,
                 access_policy_model=access_policy_model,
+                server_model=server_model,
+                base_url_model=base_url_model,
                 registry_only=registry_only,
                 public_only=public_only
             )
@@ -136,4 +138,3 @@ def create_catalog_router(
         }
 
     return router
-
