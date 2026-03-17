@@ -1967,4 +1967,4 @@ app.include_router(create_realtime_router(), tags=["Realtime"])
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8090, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8099, reload=True)

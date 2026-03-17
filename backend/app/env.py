@@ -27,7 +27,7 @@ def _resolve_env_file() -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise RuntimeError("No backend env file found. Expected backend/.env or project .env")
+    raise RuntimeError("No backend env file found. Expected app/.env or backend/.env")
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,34 @@
+services:
+  backend-mcp:
+    container_name: backend-mcp
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8099:8099"
+    env_file:
+      - ./backend/app/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend-mcp:
+    container_name: frontend-mcp
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend-mcp
+
+  mock-mcp-server:
+    container_name: mock-mcp-server
+    build:
+      context: ./mock-mcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1

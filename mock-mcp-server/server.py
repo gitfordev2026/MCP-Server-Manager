@@ -363,4 +363,4 @@ def calculate_rest(a: float, b: float, op: str = "add"):
     return {"a": a, "b": b, "op": op, "result": ops[op]}
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True, ws="wsproto")
+    uvicorn.run("server:app", host="0.0.0.0", port=8001, reload=True, ws="wsproto")
