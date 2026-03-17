@@ -199,7 +199,7 @@ def code_review_prompt(code: str, language: str = "Python") -> str:
 # ─────────────────────────────────────────────────────────────
 # We specify path="/mcp" so FastMCP creates routes at /mcp natively.
 # This avoids FastAPI's aggressive 307 trailing slash redirects when mounting.
-mcp_app = mcp.http_app(path="/mcp")
+mcp_app = mcp.http_app(path="/")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ app.add_middleware(
 # Since mcp_app is configured with path="/mcp", it will only intercept
 # exactly /mcp and /mcp/messages, avoiding standard FastAPI router 307 redirects
 # for trailing slashes when interacting with external MCP clients.
-app.mount("/", mcp_app)
+app.mount("/mcp/", mcp_app)
 
 
 # ──── Pydantic models ────────────────────────────────────────

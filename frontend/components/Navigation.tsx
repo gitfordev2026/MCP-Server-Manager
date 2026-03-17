@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Button from '@/components/ui/Button';
 import { publicEnv } from '@/lib/env';
 import {
   buildLogoutUrl,
   clearTokens,
   fetchAuthConfig,
+  getStoredToken,
   type AuthConfig,
 } from '@/lib/auth';
 
@@ -21,6 +22,8 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
   const pathname = usePathname();
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
+  const [hasToken, setHasToken] = useState(false);
 
   const getPageName = () => {
     if (pageTitle) return pageTitle;
@@ -71,6 +74,27 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
     window.location.href = '/login';
   }, [loggingOut]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
+        if (!cancelled) setAuthEnabled(config.auth_enabled);
+      } catch {
+        if (!cancelled) setAuthEnabled(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setHasToken(Boolean(getStoredToken()));
+  }, [pathname]);
+
   return (
     <>
       <nav
@@ -108,6 +132,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
 
               <Link href="/register-app"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Register App</Button></Link>
 
+              <Link href="/access-control"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Access Control</Button></Link>
 
               <Link href="/mcp-endpoints"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>MCP Endpoints</Button></Link>
 
@@ -118,14 +143,16 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50'}`}>Admin</Button></Link>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              className="flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 bg-white/70 text-slate-700 hover:bg-white/90 border border-slate-200/50"
-              onClick={handleLogout}
-              disabled={loggingOut}
-            >
-              {loggingOut ? 'Logging out...' : 'Logout'}
-            </Button>
+            {authEnabled && hasToken && (
+              <Button
+                variant="ghost"
+                className="flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 bg-white/70 text-slate-700 hover:bg-white/90 border border-slate-200/50"
+                onClick={handleLogout}
+                disabled={loggingOut}
+              >
+                {loggingOut ? 'Logging out...' : 'Logout'}
+              </Button>
+            )}
           </div>
 
           {/* Mobile toggle */}
@@ -181,6 +208,9 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               <Link href="/register-app" onClick={() => setMobileOpen(false)}>
                 <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Register App</Button>
               </Link>
+              <Link href="/access-control" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/access-control' ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Access Control</Button>
+              </Link>
               <Link href="/mcp-endpoints" onClick={() => setMobileOpen(false)}>
                 <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>MCP Endpoints</Button>
               </Link>
@@ -193,14 +223,16 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               <Link href="/admin" onClick={() => setMobileOpen(false)}>
                 <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : 'bg-white/70 text-slate-700 border border-slate-200/50'}`}>Admin</Button>
               </Link>
-              <Button
-                variant="ghost"
-                className="w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold bg-white/70 text-slate-700 border border-slate-200/50"
-                onClick={handleLogout}
-                disabled={loggingOut}
-              >
-                {loggingOut ? 'Logging out...' : 'Logout'}
-              </Button>
+              {authEnabled && hasToken && (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold bg-white/70 text-slate-700 border border-slate-200/50"
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                >
+                  {loggingOut ? 'Logging out...' : 'Logout'}
+                </Button>
+              )}
             </div>
           </div>
         )}

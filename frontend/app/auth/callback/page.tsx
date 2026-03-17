@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import {
   fetchAuthConfig,
   exchangeCodeForToken,
+  consumePostLoginRedirect,
   getStoredToken,
   storeTokens,
 } from '@/lib/auth';
@@ -19,6 +20,7 @@ export default function AuthCallbackPage() {
   const code = searchParams.get('code');
   const errorParam = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
+  const state = searchParams.get('state');
 
   useEffect(() => {
     if (!code) {
@@ -32,13 +34,13 @@ export default function AuthCallbackPage() {
     (async () => {
       try {
         if (getStoredToken()) {
-          router.replace('/dashboard');
+          router.replace(consumePostLoginRedirect(state) || '/');
           return;
         }
         const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
         const tokenResponse = await exchangeCodeForToken(config, code);
         storeTokens(tokenResponse);
-        router.replace('/dashboard');
+        router.replace(consumePostLoginRedirect(state) || '/');
       } catch (err) {
         console.error('Auth callback error:', err);
         const message = err instanceof Error ? err.message : 'Token exchange failed';

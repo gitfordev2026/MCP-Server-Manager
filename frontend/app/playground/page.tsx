@@ -31,11 +31,15 @@ interface PlaygroundPayload {
     prompt: string;
     app_name?: string;
     selected_tools?: string[];
+    model?: string;
 }
 
 export default function PlaygroundPage() {
     const [servers, setServers] = useState<ServerItem[]>([]);
     const [catalogTools, setCatalogTools] = useState<CatalogTool[]>([]);
+    const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+    const [selectedModel, setSelectedModel] = useState<string>('');
+    const [modelError, setModelError] = useState<string | null>(null);
 
     // Selection State
     const [selectedApp, setSelectedApp] = useState<string>('all');
@@ -77,9 +81,10 @@ export default function PlaygroundPage() {
         try {
             setLoading(true);
             // Fetch both servers and the public catalog of tools
-            const [serversRes, catalogRes] = await Promise.allSettled([
+            const [serversRes, catalogRes, modelsRes] = await Promise.allSettled([
                 authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
                 authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=true`),
+                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/models`),
             ]);
 
             let loadedServers: ServerItem[] = [];
@@ -95,6 +100,17 @@ export default function PlaygroundPage() {
                 const payload = await catalogRes.value.json();
                 loadedTools = Array.isArray(payload?.tools) ? payload.tools : [];
                 setCatalogTools(loadedTools);
+            }
+
+            if (modelsRes.status === 'fulfilled' && modelsRes.value.ok) {
+                const payload = await modelsRes.value.json();
+                const models = Array.isArray(payload?.models) ? payload.models : [];
+                setOllamaModels(models);
+                const defaultModel = typeof payload?.default_model === 'string' ? payload.default_model : '';
+                setSelectedModel((prev) => prev || defaultModel || models[0] || '');
+                setModelError(null);
+            } else if (modelsRes.status === 'fulfilled' && !modelsRes.value.ok) {
+                setModelError(`Failed to load models (${modelsRes.value.status})`);
             }
             setError(null);
         } catch (err) {
@@ -180,6 +196,10 @@ export default function PlaygroundPage() {
                 prompt: input,
             };
 
+            if (selectedModel) {
+                payload.model = selectedModel;
+            }
+
             if (selectedApp !== 'all') {
                 payload.app_name = selectedApp;
                 payload.selected_tools = Array.from(selectedToolNames);
@@ -248,24 +268,45 @@ export default function PlaygroundPage() {
                             </p>
                         </div>
 
-                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                            <div className="w-full sm:w-56">
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Ollama Model</label>
+                                {ollamaModels.length > 0 ? (
+                                    <select
+                                        value={selectedModel}
+                                        onChange={(e) => setSelectedModel(e.target.value)}
+                                        className="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-rose-500 focus:border-rose-500 block p-2.5 shadow-sm transition-all hover:border-rose-300"
+                                    >
+                                        {ollamaModels.map((model) => (
+                                            <option key={model} value={model}>{model}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <div className="text-xs text-slate-400 border border-dashed border-slate-300 rounded-lg px-3 py-2">
+                                        {modelError ? modelError : 'No models loaded'}
+                                    </div>
+                                )}
+                            </div>
                             {loading ? (
                                 <div className="text-sm font-medium text-slate-500 animate-pulse">Loading apps...</div>
                             ) : (
-                                <select
-                                    value={selectedApp}
-                                    onChange={(e) => handleAppSelect(e.target.value)}
-                                    className="w-full sm:w-64 bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-rose-500 focus:border-rose-500 block p-2.5 shadow-sm transition-all hover:border-rose-300"
-                                >
-                                    <option value="all">🌐 All Applications (Unrestricted)</option>
-                                    {uniqueApps.map(app => (
-                                        <option key={app} value={app}>📦 {app}</option>
-                                    ))}
-                                    {/* Also show raw MCP servers if they have tools */}
-                                    {servers.filter(s => !uniqueApps.includes(`mcp:${s.name}`)).map(s => (
-                                        <option key={`mcp:${s.name}`} value={`mcp:${s.name}`}>⚙️ {s.name} (Server)</option>
-                                    ))}
-                                </select>
+                                <div className="w-full sm:w-64">
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Application Context</label>
+                                    <select
+                                        value={selectedApp}
+                                        onChange={(e) => handleAppSelect(e.target.value)}
+                                        className="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-rose-500 focus:border-rose-500 block p-2.5 shadow-sm transition-all hover:border-rose-300"
+                                    >
+                                        <option value="all">🌐 All Applications (Unrestricted)</option>
+                                        {uniqueApps.map(app => (
+                                            <option key={app} value={app}>📦 {app}</option>
+                                        ))}
+                                        {/* Also show raw MCP servers if they have tools */}
+                                        {servers.filter(s => !uniqueApps.includes(`mcp:${s.name}`)).map(s => (
+                                            <option key={`mcp:${s.name}`} value={`mcp:${s.name}`}>⚙️ {s.name} (Server)</option>
+                                        ))}
+                                    </select>
+                                </div>
                             )}
                         </div>
                     </div>

@@ -29,9 +29,9 @@ export default function LoginPage() {
           return;
         }
 
-        // If user already has a valid token, send to dashboard.
+        // If user already has a valid token, send home.
         if (getStoredToken()) {
-          window.location.href = '/dashboard';
+          window.location.href = '/';
           return;
         }
 
@@ -63,7 +63,7 @@ export default function LoginPage() {
             dashboard directly.
           </p>
           <Link
-            href="/dashboard"
+            href="/"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             Go to Dashboard

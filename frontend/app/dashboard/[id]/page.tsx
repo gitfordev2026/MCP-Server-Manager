@@ -19,7 +19,7 @@ export default function DashboardDetailPage() {
             The route <code>/dashboard/{id}</code> is currently not connected to an active API.
           </p>
           <Link
-            href="/dashboard"
+            href="/"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
             Back to Dashboard

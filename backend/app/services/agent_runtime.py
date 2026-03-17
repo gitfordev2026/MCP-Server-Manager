@@ -39,3 +39,24 @@ def build_default_agent() -> MCPAgent:
 
     return MCPAgent(llm=llm, client=client, callbacks=callbacks)
 
+
+def build_agent_with_model(model: str) -> MCPAgent:
+    config = {
+        "mcpServers": {
+            ENV.agent_mcp_server_name: {
+                "url": ENV.agent_mcp_server_url,
+            }
+        }
+    }
+
+    client = MCPClient(config)
+    callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
+
+    llm = ChatOllama(
+        model=model,
+        base_url=ENV.agent_ollama_base_url,
+        temperature=ENV.agent_ollama_temperature,
+        callbacks=callbacks,
+    )
+
+    return MCPAgent(llm=llm, client=client, callbacks=callbacks)

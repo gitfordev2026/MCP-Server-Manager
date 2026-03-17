@@ -152,3 +152,11 @@ Last updated: 2026-03-13
   - Added env config: `REDIS_ENABLED`, `REDIS_URL`, `REDIS_STATUS_TTL_SEC`, `REDIS_LIST_TTL_SEC`.
   - Cached list endpoints (`/servers`, `/base-urls`, `/tools`, `/endpoints`) and status endpoints (`/servers/status`, `/servers/{name}/status`, `/dashboard/*`).
   - Mutations now invalidate `status:` cache prefix to keep UI fresh.
+- 2026-03-17: Auth guard now blocks when backend/auth config is unreachable.
+  - On `/auth/config` failure, the UI shows an "Authentication Unavailable" screen with retry instead of rendering protected pages.
+  - Auth config cache now has a short TTL so toggling `AUTH_ENABLED` in backend `.env` takes effect without a hard refresh.
+- 2026-03-17: Playground fixes + Ollama model selection.
+  - Fixed `/agent/playground/query` body handling by using auth dependency (no embedded `request` field).
+  - Added `/agent/models` to list Ollama models from `ENV.agent_ollama_base_url`.
+  - Playground now lets users choose the Ollama model and sends it with the query.
+  - Agent endpoints now return 502 with a clear message when the MCP backend is unreachable (instead of 500 stack traces).

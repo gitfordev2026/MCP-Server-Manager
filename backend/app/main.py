@@ -73,7 +73,7 @@ from app.routers.health import create_health_router
 from app.routers.servers import create_servers_router
 from app.routers.tools import create_tools_router
 from app.schemas.registration import BaseURLRegistration, ServerRegistration
-from app.services.agent_runtime import build_default_agent
+from app.services.agent_runtime import build_default_agent, build_agent_with_model
 from app.services.audit import write_audit_log
 from app.services.mcp_client_runtime import (
     list_server_tools as list_server_tools_runtime,
@@ -1884,7 +1884,7 @@ app.include_router(
     ),
     tags=["MCP Servers"],
 )
-app.include_router(create_agent_router(agent), tags=["Agent"])
+app.include_router(create_agent_router(agent, build_agent_with_model, get_request_actor), tags=["Agent"])
 app.include_router(
     create_access_policy_router(
         SessionLocal,

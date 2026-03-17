@@ -34,17 +34,21 @@ const REFRESH_KEY = "mcp_refresh_token";
 const EXPIRY_KEY = "mcp_token_expiry";
 const PKCE_VERIFIER_KEY = "mcp_pkce_verifier";
 const LOGIN_REDIRECT_AT_KEY = "mcp_login_redirect_at";
+const POST_LOGIN_REDIRECT_KEY = "mcp_post_login_redirect";
 
 // Legacy keys to clean up
 const LEGACY_KEYS = ["mcp_admin_user", "mcp_admin_roles"];
 
 // ---------- Auth config ----------
 
-const authConfigCache = new Map<string, Promise<AuthConfig>>();
+const AUTH_CONFIG_TTL_MS = 5000;
+const authConfigCache = new Map<string, { promise: Promise<AuthConfig>; fetchedAt: number }>();
 
 export async function fetchAuthConfig(apiBase: string): Promise<AuthConfig> {
   const cached = authConfigCache.get(apiBase);
-  if (cached) return cached;
+  if (cached && Date.now() - cached.fetchedAt < AUTH_CONFIG_TTL_MS) {
+    return cached.promise;
+  }
 
   const request = fetch(`${apiBase}/auth/config`)
     .then((res) => {
@@ -58,7 +62,7 @@ export async function fetchAuthConfig(apiBase: string): Promise<AuthConfig> {
       throw err;
     });
 
-  authConfigCache.set(apiBase, request);
+  authConfigCache.set(apiBase, { promise: request, fetchedAt: Date.now() });
   return request;
 }
 
@@ -94,6 +98,51 @@ export function clearTokens(): void {
   localStorage.removeItem(EXPIRY_KEY);
   // Remove legacy header-based auth data.
   LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+}
+
+function normalizeRedirectPath(path: string): string {
+  if (!path || !path.startsWith("/")) return "/";
+  if (path.startsWith("/login") || path.startsWith("/auth/")) return "/";
+  return path;
+}
+
+export function storePostLoginRedirect(path: string): void {
+  if (typeof window === "undefined") return;
+  const normalized = normalizeRedirectPath(path);
+  const existing = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+  if (existing && normalizeRedirectPath(existing) !== "/") {
+    return;
+  }
+  sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, normalized);
+}
+
+function base64UrlEncodeString(value: string): string {
+  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlDecodeString(value: string): string {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padLength = (4 - (padded.length % 4)) % 4;
+  return atob(padded + "=".repeat(padLength));
+}
+
+function parseRedirectFromState(stateParam: string | null): string | null {
+  if (!stateParam) return null;
+  try {
+    const decoded = base64UrlDecodeString(stateParam);
+    const payload = JSON.parse(decoded) as { redirect?: string };
+    return payload?.redirect ? normalizeRedirectPath(payload.redirect) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function consumePostLoginRedirect(stateParam?: string | null): string | null {
+  if (typeof window === "undefined") return null;
+  const value = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+  sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+  if (value) return normalizeRedirectPath(value);
+  return parseRedirectFromState(stateParam ?? null);
 }
 
 // ---------- PKCE helpers ----------
@@ -137,6 +186,18 @@ export async function redirectToLogin(config: AuthConfig): Promise<void> {
   sessionStorage.setItem(PKCE_VERIFIER_KEY, verifier);
 
   const redirectUri = `${window.location.origin}/auth/callback`;
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const existingRedirect = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+  const redirectTarget = existingRedirect
+    ? normalizeRedirectPath(existingRedirect)
+    : normalizeRedirectPath(currentPath);
+  storePostLoginRedirect(redirectTarget);
+  const state = base64UrlEncodeString(
+    JSON.stringify({
+      redirect: redirectTarget,
+      ts: Date.now(),
+    })
+  );
 
   const params = new URLSearchParams({
     client_id: config.client_id,
@@ -145,6 +206,7 @@ export async function redirectToLogin(config: AuthConfig): Promise<void> {
     redirect_uri: redirectUri,
     code_challenge: challenge,
     code_challenge_method: "S256",
+    state,
   });
 
   window.location.href = `${config.authorization_endpoint}?${params.toString()}`;
