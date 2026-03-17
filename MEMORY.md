@@ -160,3 +160,22 @@ Last updated: 2026-03-13
   - Added `/agent/models` to list Ollama models from `ENV.agent_ollama_base_url`.
   - Playground now lets users choose the Ollama model and sends it with the query.
   - Agent endpoints now return 502 with a clear message when the MCP backend is unreachable (instead of 500 stack traces).
+- 2026-03-17: Auth-free Playground with strict combined-MCP tool scoping.
+  - Agent endpoints (`/agent/query`, `/agent/models`, `/agent/playground/query`) are now public and bypass global auth.
+  - Combined MCP endpoint `/mcp/apps` is mounted without JWT auth middleware for internal testing.
+  - Playground now pulls tools only from the combined MCP endpoint and validates selected tools against that list.
+  - Agent is instantiated per request with `disallowed_tools` and strict tool-only instructions; responses without a tool call return 422.
+- 2026-03-17: Playground agent loop guard.
+  - Agent builder now supports max_steps/retry_on_error overrides; playground uses max_steps=2 and retry_on_error=false to avoid recursion-limit failures.
+  - Tool-only instructions now explicitly tell the model not to retry when no tool applies.
+- 2026-03-17: Playground tool list fast-path.
+  - Added a direct response for “list tools” prompts that returns the filtered allowed tool list without invoking the LLM.
+- 2026-03-17: Playground agent step budget.
+  - Increased playground agent max_steps to 5 to avoid premature recursion-limit errors after tool calls.
+- 2026-03-17: Playground tool listing uses DB descriptions.
+  - Tool list response now groups by application and includes per-tool description from `mcp_tools` via `resolve_exposable_tools`.
+  - Tool list is filtered to the combined MCP tool set and current selection.
+- 2026-03-17: Playground strictness relaxed to avoid recursion.
+  - Tool-use instructions now prefer tools for actionable requests rather than forcing every request.
+  - Removed hard 422 when no tool call occurs.
+  - Increased agent max_steps to 8 and disabled memory for playground/query runs; added explicit stop-after-tool instruction.

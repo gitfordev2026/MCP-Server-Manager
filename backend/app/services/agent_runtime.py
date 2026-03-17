@@ -18,7 +18,13 @@ class LLMDebugCallback(BaseCallbackHandler):
         print("=======================================================\n")
 
 
-def build_default_agent() -> MCPAgent:
+def build_default_agent(
+    disallowed_tools: list[str] | None = None,
+    additional_instructions: str | None = None,
+    max_steps: int | None = None,
+    retry_on_error: bool | None = None,
+    memory_enabled: bool | None = None,
+) -> MCPAgent:
     config = {
         "mcpServers": {
             ENV.agent_mcp_server_name: {
@@ -37,10 +43,26 @@ def build_default_agent() -> MCPAgent:
         callbacks=callbacks,
     )
 
-    return MCPAgent(llm=llm, client=client, callbacks=callbacks)
+    return MCPAgent(
+        llm=llm,
+        client=client,
+        callbacks=callbacks,
+        disallowed_tools=disallowed_tools,
+        additional_instructions=additional_instructions,
+        max_steps=max_steps or 5,
+        retry_on_error=True if retry_on_error is None else retry_on_error,
+        memory_enabled=True if memory_enabled is None else memory_enabled,
+    )
 
 
-def build_agent_with_model(model: str) -> MCPAgent:
+def build_agent_with_model(
+    model: str | None = None,
+    disallowed_tools: list[str] | None = None,
+    additional_instructions: str | None = None,
+    max_steps: int | None = None,
+    retry_on_error: bool | None = None,
+    memory_enabled: bool | None = None,
+) -> MCPAgent:
     config = {
         "mcpServers": {
             ENV.agent_mcp_server_name: {
@@ -52,11 +74,21 @@ def build_agent_with_model(model: str) -> MCPAgent:
     client = MCPClient(config)
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
 
+    resolved_model = model or ENV.agent_ollama_model
     llm = ChatOllama(
-        model=model,
+        model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
         temperature=ENV.agent_ollama_temperature,
         callbacks=callbacks,
     )
 
-    return MCPAgent(llm=llm, client=client, callbacks=callbacks)
+    return MCPAgent(
+        llm=llm,
+        client=client,
+        callbacks=callbacks,
+        disallowed_tools=disallowed_tools,
+        additional_instructions=additional_instructions,
+        max_steps=max_steps or 5,
+        retry_on_error=True if retry_on_error is None else retry_on_error,
+        memory_enabled=True if memory_enabled is None else memory_enabled,
+    )

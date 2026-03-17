@@ -73,7 +73,7 @@ from app.routers.health import create_health_router
 from app.routers.servers import create_servers_router
 from app.routers.tools import create_tools_router
 from app.schemas.registration import BaseURLRegistration, ServerRegistration
-from app.services.agent_runtime import build_default_agent, build_agent_with_model
+from app.services.agent_runtime import build_agent_with_model
 from app.services.audit import write_audit_log
 from app.services.mcp_client_runtime import (
     list_server_tools as list_server_tools_runtime,
@@ -92,7 +92,16 @@ logger = get_logger(__name__)
 
 
 
-PUBLIC_PATHS = {"/health", "/mcp/runtime", "/auth/config", "/docs", "/openapi.json"}
+PUBLIC_PATHS = {
+    "/health",
+    "/mcp/runtime",
+    "/auth/config",
+    "/docs",
+    "/openapi.json",
+    "/agent/query",
+    "/agent/models",
+    "/agent/playground/query",
+}
 
 
 def global_auth_dependency(request: Request) -> None:
@@ -1795,16 +1804,10 @@ class JWTAuthASGIMiddleware:
         await self.app(scope, receive, send)
 
 
-if AUTH_ENABLED:
-    protected_mcp_app = JWTAuthASGIMiddleware(combined_mcp_asgi_app)
-    app.mount("/mcp/apps", protected_mcp_app)
-    app.mount("/mcp/apps/", protected_mcp_app)
-else:
-    app.mount("/mcp/apps", combined_mcp_asgi_app)
-    app.mount("/mcp/apps/", combined_mcp_asgi_app)
+app.mount("/mcp/apps", combined_mcp_asgi_app)
+app.mount("/mcp/apps/", combined_mcp_asgi_app)
 MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
 MCP_RUNTIME_INFO["mounted_paths"] = ["/mcp/apps", "/mcp/apps/"]
-agent = build_default_agent()
 require_permission = build_require_permission(
     SessionLocal,
     RoleModel,
@@ -1884,7 +1887,7 @@ app.include_router(
     ),
     tags=["MCP Servers"],
 )
-app.include_router(create_agent_router(agent, build_agent_with_model, get_request_actor), tags=["Agent"])
+app.include_router(create_agent_router(build_agent_with_model), tags=["Agent"])
 app.include_router(
     create_access_policy_router(
         SessionLocal,
