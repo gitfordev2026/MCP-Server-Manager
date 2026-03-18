@@ -364,3 +364,32 @@ def calculate_rest(a: float, b: float, op: str = "add"):
 
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True, ws="wsproto")
+
+
+######################## RAPID API WRAPPER ########################
+
+# @app.post("/get_movies_data")
+# def get_movies_data():
+#     pass
+
+
+@app.post("/get_weather_data")
+def get_weather_data():
+    import requests
+
+    url = "https://weatherbit-v1-mashape.p.rapidapi.com/forecast/3hourly"
+
+    querystring = {"lat":"35.5","lon":"-78.5","units":"imperial","lang":"en"}
+
+    headers = {
+        "x-rapidapi-key": "e0d113dbcemshe95f38550c29117p110a12jsnef56109312e9",
+        "x-rapidapi-host": "weatherbit-v1-mashape.p.rapidapi.com",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(url, headers=headers, params=querystring)
+
+    print(response.json())
+
+
+    return response.json()

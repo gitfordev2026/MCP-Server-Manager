@@ -74,6 +74,7 @@ def create_agent_router(build_agent_with_model: Callable[..., Any]) -> APIRouter
     )
     async def query(
         prompt: str,
+        model: str
     ) -> dict[str, Any]:
         try:
             all_tools = await _list_combined_tool_names()
@@ -81,7 +82,7 @@ def create_agent_router(build_agent_with_model: Callable[..., Any]) -> APIRouter
                 raise HTTPException(status_code=502, detail="No tools available from combined MCP endpoint")
             instructions = _build_tool_only_instructions(all_tools)
             model_agent = build_agent_with_model(
-                None,
+                model,
                 disallowed_tools=[],
                 additional_instructions=instructions,
                 max_steps=8,
