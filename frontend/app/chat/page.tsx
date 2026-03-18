@@ -85,7 +85,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-gradient from-white via-slate-50 to-slate-100 flex flex-col overflow-hidden">
       {/* Elegant background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-80 h-80 bg-amber-400/8 rounded-full blur-3xl animate-float"></div>
@@ -110,14 +110,14 @@ export default function ChatPage() {
                 >
                   <div className={`flex gap-3 max-w-xs sm:max-w-sm lg:max-w-xl`}>
                     {message.role === 'assistant' && (
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-500/30">
+                      <div className="w-8 h-8 rounded-full bg-gradient from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30">
                         <span className="text-white text-sm font-bold">AI</span>
                       </div>
                     )}
                     <div
                       className={`px-5 py-4 rounded-2xl transition-all duration-300 hover:scale-105 ${
                         message.role === 'user'
-                          ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-blue-500/30'
+                          ? 'bg-gradient from-blue-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-blue-500/30'
                           : 'bg-slate-800/70 text-slate-100 rounded-bl-none border border-amber-500/30 shadow-lg'
                       }`}
                     >
@@ -127,7 +127,7 @@ export default function ChatPage() {
                       </span>
                     </div>
                     {message.role === 'user' && (
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/30">
+                      <div className="w-8 h-8 rounded-full bg-gradient from-blue-600 to-blue-700 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30">
                         <span className="text-white text-sm font-bold">U</span>
                       </div>
                     )}
@@ -137,7 +137,7 @@ export default function ChatPage() {
               {loading && (
                 <div className="flex justify-start animate-slideInLeft">
                   <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-400/40">
+                    <div className="w-8 h-8 rounded-full bg-gradient from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/40">
                       <span className="text-white text-sm font-bold">AI</span>
                     </div>
                     <div className="bg-slate-100 text-slate-800 px-5 py-4 rounded-2xl rounded-bl-none border border-amber-300/50 shadow-md">
@@ -167,7 +167,7 @@ export default function ChatPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/50 hover:scale-105 shadow-md active:scale-95"
+                  className="cursor-pointer bg-gradient from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/50 hover:scale-105 shadow-md active:scale-95"
                 >
                   {loading ? (
                     <span className="inline-block animate-spin-slow">⚙️</span>

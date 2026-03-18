@@ -256,7 +256,6 @@ export default function PlaygroundPage() {
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col pt-24 pb-4 relative z-10">
                 <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-full gap-6">
-
                     {/* Header Controls */}
                     <div className="bg-white/80 backdrop-blur-xl border border-rose-200/50 rounded-2xl p-6 shadow-lg shadow-rose-200/20 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div>

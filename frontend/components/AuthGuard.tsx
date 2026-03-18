@@ -1,4 +1,4 @@
-'use client';
+﻿"use client"
 
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
@@ -32,12 +32,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         if (!cancelled) setError(null);
-        const config: AuthConfig = await fetchAuthConfig(
-          publicEnv.NEXT_PUBLIC_BE_API_URL
-        );
+        const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
 
         if (!config.auth_enabled) {
-          // Auth is disabled (dev mode) — render the app directly.
+          // Auth is disabled (dev mode) - render the app directly.
           if (!cancelled) setReadyPath(pathname);
           return;
         }
@@ -55,7 +53,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // No valid session — redirect to Keycloak login.
+        // No valid session - redirect to Keycloak login.
         if (!cancelled) {
           await redirectToLogin(config);
         }
@@ -118,3 +116,4 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
+

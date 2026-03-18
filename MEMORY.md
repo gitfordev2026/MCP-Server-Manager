@@ -179,3 +179,13 @@ Last updated: 2026-03-13
   - Tool-use instructions now prefer tools for actionable requests rather than forcing every request.
   - Removed hard 422 when no tool call occurs.
   - Increased agent max_steps to 8 and disabled memory for playground/query runs; added explicit stop-after-tool instruction.
+- 2026-03-18: Ported replica UI improvements into frontend.
+  - Navigation restored responsive layout and hid Access Control links.
+  - AuthGuard now shows auth-unavailable screen with retry/bypass.
+  - /dashboard now redirects to /.
+  - Playground now always enabled, adds Ollama model selector, and sends model in requests.
+  - Chat always enabled (removed feature flag gating).
+  - MCP Endpoints page simplified (removed selection modal/resources section, uses authenticated fetch).
+  - Admin UI enhancements: toasts, include_inactive tools/endpoints, restore actions, admin/owner badges, parent inactive indicators, role dropdown, wrapped tabs.
+  - Register App UI upgraded: pagination, batch select/apply for registered endpoints, two-pane detail modal; kept LLM description generation buttons.
+  - useAccessPolicies made type-safe for optimistic updates.

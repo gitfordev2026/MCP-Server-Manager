@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -118,6 +118,8 @@ export default function RegisterAppPage() {
   const [draftEndpointDescriptions, setDraftEndpointDescriptions] = useState<Record<string, string>>({});
   const [savingEndpointDescriptionId, setSavingEndpointDescriptionId] = useState<string | null>(null);
   const [selectedEndpointDescriptions, setSelectedEndpointDescriptions] = useState<Record<string, string>>({});
+  const [generatingEndpointDescriptionId, setGeneratingEndpointDescriptionId] = useState<string | null>(null);
+  const [generatingRegisteredDescriptionId, setGeneratingRegisteredDescriptionId] = useState<string | null>(null);
   const [discoveryPage, setDiscoveryPage] = useState(1);
   const [registeredSyncing, setRegisteredSyncing] = useState(false);
   const [registeredPage, setRegisteredPage] = useState(1);
@@ -236,6 +238,68 @@ export default function RegisterAppPage() {
 
   const setSelectedEndpointDescription = (endpointId: string, description: string) => {
     setSelectedEndpointDescriptions((prev) => ({ ...prev, [endpointId]: description }));
+  };
+
+  const generateEndpointDescription = async (endpoint: DiscoveredEndpoint) => {
+    if (!formData.name.trim()) {
+      setError('Set an application name before generating descriptions.');
+      return;
+    }
+    setGeneratingEndpointDescriptionId(endpoint.id);
+    setError(null);
+    try {
+      const prompt = [
+        `You are helping document an API.`,
+        `App name: ${formData.name.trim()}`,
+        `App description: ${formData.description.trim() || 'N/A'}`,
+        `Endpoint: ${endpoint.method} ${endpoint.path}`,
+        `Summary: ${endpoint.summary || 'N/A'}`,
+        `Description: ${endpoint.description || 'N/A'}`,
+        `Return a concise 1-2 sentence description only.`,
+      ].join('\n');
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        { method: 'GET' }
+      );
+      const payload = await response.json().catch(() => ({}));
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setSelectedEndpointDescription(endpoint.id, text);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate description');
+    } finally {
+      setGeneratingEndpointDescriptionId(null);
+    }
+  };
+
+  const generateRegisteredEndpointDescription = async (endpoint: ModalEndpoint) => {
+    if (!selectedAppName) return;
+    const app = apps.find((item) => item.name === selectedAppName);
+    setGeneratingRegisteredDescriptionId(endpoint.id);
+    setRegisteredEndpointsError(null);
+    try {
+      const prompt = [
+        `You are helping document an API.`,
+        `App name: ${selectedAppName}`,
+        `App description: ${(app?.description || '').trim() || 'N/A'}`,
+        `Endpoint: ${endpoint.method} ${endpoint.path}`,
+        `Return a concise 1-2 sentence description only.`,
+      ].join('\n');
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        { method: 'GET' }
+      );
+      const payload = await response.json().catch(() => ({}));
+      const text = String(payload?.response || '').trim();
+      if (text) {
+        setDraftEndpointDescriptions((prev) => ({ ...prev, [endpoint.id]: text }));
+      }
+    } catch (err) {
+      setRegisteredEndpointsError(err instanceof Error ? err.message : 'Failed to generate description');
+    } finally {
+      setGeneratingRegisteredDescriptionId(null);
+    }
   };
 
   const syncCatalog = async () => {
@@ -428,7 +492,6 @@ export default function RegisterAppPage() {
       setError('Select at least one API endpoint before registration.');
       return;
     }
-
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -676,6 +739,19 @@ export default function RegisterAppPage() {
                         rows={2}
                         placeholder="Description override for registration"
                       />
+                      <div className="mt-2 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void generateEndpointDescription(endpoint);
+                          }}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                          disabled={generatingEndpointDescriptionId === endpoint.id}
+                        >
+                          {generatingEndpointDescriptionId === endpoint.id ? 'Generating...' : 'Generate with LLM'}
+                        </button>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -760,7 +836,6 @@ export default function RegisterAppPage() {
                   {registeredEndpointsError}
                 </div>
               )}
-
               {registeredEndpointsLoading ? (
                 <div className="flex items-center gap-2 text-sm text-slate-600">
                   <span className="h-4 w-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
@@ -867,14 +942,24 @@ export default function RegisterAppPage() {
                             rows={2}
                             placeholder="Endpoint description"
                           />
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => void saveRegisteredEndpointDescription(activeRegisteredEndpoint)}
-                            disabled={savingEndpointDescriptionId === activeRegisteredEndpoint.id || registeredSyncing}
-                          >
-                            {savingEndpointDescriptionId === activeRegisteredEndpoint.id ? 'Saving...' : 'Save Description'}
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void saveRegisteredEndpointDescription(activeRegisteredEndpoint)}
+                              disabled={savingEndpointDescriptionId === activeRegisteredEndpoint.id || registeredSyncing}
+                            >
+                              {savingEndpointDescriptionId === activeRegisteredEndpoint.id ? 'Saving...' : 'Save Description'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={generatingRegisteredDescriptionId === activeRegisteredEndpoint.id}
+                              onClick={() => void generateRegisteredEndpointDescription(activeRegisteredEndpoint)}
+                            >
+                              {generatingRegisteredDescriptionId === activeRegisteredEndpoint.id ? 'Generating...' : 'Generate with LLM'}
+                            </Button>
+                          </div>
                           <details>
                             <summary className="text-xs text-slate-700 cursor-pointer">View request/response config</summary>
                             <div className="mt-2 grid gap-2">

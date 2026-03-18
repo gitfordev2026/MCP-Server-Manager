@@ -40,7 +40,6 @@ interface McpTool {
 
 type AccessMode = 'allow' | 'approval' | 'deny';
 
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -80,8 +79,6 @@ export default function McpEndpointsPage() {
   const [serverToolsLoading, setServerToolsLoading] = useState<Record<string, boolean>>({});
   const [serverToolsError, setServerToolsError] = useState<Record<string, string>>({});
 
-
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
@@ -98,7 +95,6 @@ export default function McpEndpointsPage() {
     }
     return map;
   }, [catalogTools]);
-
   /* --- data fetching --- */
   const fetchData = useCallback(async () => {
     if (!NEXT_PUBLIC_BE_API_URL) {
@@ -119,7 +115,6 @@ export default function McpEndpointsPage() {
         const payload = await serversRes.value.json();
         setServers(Array.isArray(payload?.servers) ? payload.servers : []);
       }
-
       if (catalogRes.status === 'fulfilled' && catalogRes.value.ok) {
         const payload = await catalogRes.value.json();
         setCatalogTools(Array.isArray(payload?.tools) ? payload.tools : []);
