@@ -33,21 +33,25 @@ def resolve_exposable_tools(
     tools_list: list[dict[str, Any]] = []
     mcp_server_tool_list: list[dict[str, Any]] = []
 
-    active_server_ids = {
+    healthy_server_ids = {
         row.id
         for row in db.scalars(
             select(server_model).where(
                 server_model.is_deleted == False,  # noqa: E712
                 server_model.is_enabled == True,  # noqa: E712
+                server_model.admin_allowed == True,  # noqa: E712
+                server_model.health_status.in_(["healthy", "degraded"]),
             )
         ).all()
     }
-    active_base_url_ids = {
+    healthy_base_url_ids = {
         row.id
         for row in db.scalars(
             select(base_url_model).where(
                 base_url_model.is_deleted == False,  # noqa: E712
                 base_url_model.is_enabled == True,  # noqa: E712
+                base_url_model.admin_allowed == True,  # noqa: E712
+                base_url_model.health_status.in_(["healthy", "degraded"]),
             )
         ).all()
     }
@@ -64,9 +68,9 @@ def resolve_exposable_tools(
     ).all()
 
     for row in rows:
-        if row.source_type == "mcp" and row.server_id is not None and row.server_id not in active_server_ids:
+        if row.source_type == "mcp" and row.server_id is not None and row.server_id not in healthy_server_ids:
             continue
-        if row.source_type == "openapi" and row.raw_api_id is not None and row.raw_api_id not in active_base_url_ids:
+        if row.source_type == "openapi" and row.raw_api_id is not None and row.raw_api_id not in healthy_base_url_ids:
             continue
         owner_id = row.owner_id or ""
         owner_name = owner_id.split(":", 1)[1] if ":" in owner_id else owner_id

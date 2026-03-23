@@ -61,3 +61,38 @@ def cache_delete_prefix(prefix: str) -> None:
             client.delete(key)
     except Exception as exc:
         logger.warning(f"[Cache] delete failed for {prefix}: {exc}")
+
+
+def cache_health_status() -> dict[str, Any]:
+    if not ENV.redis_enabled:
+        return {
+            "name": "Redis",
+            "status": "disabled",
+            "ok": False,
+            "detail": "Redis is disabled by configuration",
+        }
+
+    try:
+        client = _get_client()
+        if client is None:
+            return {
+                "name": "Redis",
+                "status": "down",
+                "ok": False,
+                "detail": f"Redis unavailable at {ENV.redis_url}",
+            }
+
+        client.ping()
+        return {
+            "name": "Redis",
+            "status": "up",
+            "ok": True,
+            "detail": f"Connected to {ENV.redis_url}",
+        }
+    except Exception as exc:
+        return {
+            "name": "Redis",
+            "status": "down",
+            "ok": False,
+            "detail": str(exc),
+        }

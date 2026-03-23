@@ -12,6 +12,7 @@ from time import perf_counter, time
 from urllib.parse import quote, urlparse, urlunparse
 import httpx
 import uvicorn
+import warnings
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
@@ -70,8 +71,10 @@ from app.routers.catalog import create_catalog_router
 from app.routers.dashboard import create_dashboard_router
 from app.routers.endpoints import create_endpoints_router
 from app.routers.health import create_health_router
+from app.routers.health_events import create_health_events_router
 from app.routers.servers import create_servers_router
 from app.routers.tools import create_tools_router
+from app.api.v1 import create_api_v1_router
 from app.schemas.registration import BaseURLRegistration, ServerRegistration
 from app.services.agent_runtime import build_agent_with_model
 from app.services.audit import write_audit_log
@@ -85,6 +88,7 @@ from app.services.policy_utils import (
     ensure_tool_access_policy_for_owner,
     resolve_owner_fk_ids,
 )
+from app.services.health_monitor import run_health_monitor
 from app.core.logger import get_logger
 
 
@@ -129,10 +133,23 @@ async def lifespan(_: FastAPI):
             await stack.enter_async_context(run_mcp_asgi_lifespan(mcp_asgi_app))
         if mcp_server is not None:
             await stack.enter_async_context(run_mcp_server_lifespan(mcp_server))
-        yield
+        stop_event = asyncio.Event()
+        monitor_task = asyncio.create_task(
+            run_health_monitor(
+                stop_event=stop_event,
+                interval_sec=ENV.health_monitor_interval_sec,
+                failure_threshold=ENV.health_monitor_failure_threshold,
+                timeout_sec=ENV.health_monitor_timeout_sec,
+            )
+        )
+        try:
+            yield
+        finally:
+            stop_event.set()
+            await asyncio.gather(monitor_task, return_exceptions=True)
 
 
-app = FastAPI(lifespan=lifespan, dependencies=[Depends(global_auth_dependency)])
+app = FastAPI(lifespan=lifespan)
 
 # Add CORS middleware
 app.add_middleware(
@@ -149,6 +166,12 @@ if AUTH_ENABLED:
     logger.info(f"Auth Status :: {AUTH_ENABLED}")
 else:    
     logger.warning(f"Auth Status :: {AUTH_ENABLED}")
+
+
+@app.middleware("http")
+async def auth_http_middleware(request: Request, call_next):
+    global_auth_dependency(request)
+    return await call_next(request)
 
 
 @app.get(
@@ -352,6 +375,10 @@ def ensure_phase2_schema_columns() -> None:
             ("domain_type", "VARCHAR(16)"),
             ("auth_profile_ref", "VARCHAR(64)"),
             ("selected_tools", "JSON"),
+            ("admin_allowed", "BOOLEAN"),
+            ("health_status", "VARCHAR(16)"),
+            ("last_health_check_at", "TIMESTAMP"),
+            ("consecutive_failures", "INTEGER"),
         ],
         BaseURLModel.__tablename__: [
             ("description", "TEXT"),
@@ -360,6 +387,10 @@ def ensure_phase2_schema_columns() -> None:
             ("domain_type", "VARCHAR(16)"),
             ("auth_profile_ref", "VARCHAR(64)"),
             ("selected_endpoints", "JSON"),
+            ("admin_allowed", "BOOLEAN"),
+            ("health_status", "VARCHAR(16)"),
+            ("last_health_check_at", "TIMESTAMP"),
+            ("consecutive_failures", "INTEGER"),
             ("sync_mode", "VARCHAR(24)"),
             ("registry_state", "VARCHAR(24)"),
             ("last_sync_status", "VARCHAR(24)"),
@@ -372,6 +403,7 @@ def ensure_phase2_schema_columns() -> None:
             ("endpoint_id", "INTEGER"),
         ],
         APIEndpointModel.__tablename__: [
+            ("admin_allowed", "BOOLEAN"),
             ("admin_enabled", "BOOLEAN"),
             ("owner_enabled", "BOOLEAN"),
         ],
@@ -401,7 +433,25 @@ def ensure_domain_defaults() -> None:
             f"UPDATE {ServerModel.__tablename__} SET selected_tools = '[]' WHERE selected_tools IS NULL"
         )
         conn.exec_driver_sql(
+            f"UPDATE {ServerModel.__tablename__} SET admin_allowed = TRUE WHERE admin_allowed IS NULL"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {ServerModel.__tablename__} SET health_status = 'unknown' WHERE health_status IS NULL OR health_status = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {ServerModel.__tablename__} SET consecutive_failures = 0 WHERE consecutive_failures IS NULL"
+        )
+        conn.exec_driver_sql(
             f"UPDATE {BaseURLModel.__tablename__} SET selected_endpoints = '[]' WHERE selected_endpoints IS NULL"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET admin_allowed = TRUE WHERE admin_allowed IS NULL"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET health_status = 'unknown' WHERE health_status IS NULL OR health_status = ''"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {BaseURLModel.__tablename__} SET consecutive_failures = 0 WHERE consecutive_failures IS NULL"
         )
         conn.exec_driver_sql(
             f"UPDATE {BaseURLModel.__tablename__} SET sync_mode = 'manual' WHERE sync_mode IS NULL OR sync_mode = ''"
@@ -429,6 +479,9 @@ def ensure_domain_defaults() -> None:
         )
         conn.exec_driver_sql(
             f"UPDATE {APIEndpointModel.__tablename__} SET admin_enabled = COALESCE(admin_enabled, is_enabled, TRUE)"
+        )
+        conn.exec_driver_sql(
+            f"UPDATE {APIEndpointModel.__tablename__} SET admin_allowed = COALESCE(admin_allowed, admin_enabled, TRUE)"
         )
         conn.exec_driver_sql(
             f"UPDATE {APIEndpointModel.__tablename__} SET owner_enabled = COALESCE(owner_enabled, is_enabled, TRUE)"
@@ -538,7 +591,7 @@ def sync_api_server_links_by_host() -> None:
 def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"]) -> None:
     """Upsert OpenAPI-discovered tools into mcp_tools."""
     with SessionLocal() as db:
-        synced_at = datetime.datetime.utcnow()
+        synced_at = datetime.datetime.now(datetime.UTC)
         selected_names_by_owner: dict[str, set[str]] = {}
         for tool in tools.values():
             owner_id = f"app:{tool.app_name}"
@@ -666,7 +719,7 @@ def sync_mcp_tool_registry_from_mcp(
 ) -> None:
     """Upsert MCP-native tools into mcp_tools."""
     with SessionLocal() as db:
-        synced_at = datetime.datetime.utcnow()
+        synced_at = datetime.datetime.now(datetime.UTC)
         selected_names_by_owner: dict[str, set[str]] = {}
         for _, (server_name, tool_name, tool_obj) in discovered.items():
             owner_id = f"mcp:{server_name}"
@@ -1259,7 +1312,7 @@ async def build_openapi_tool_catalog(
                     BaseURLModel.is_enabled == True,  # noqa: E712
                 )
             ).all()
-            sync_started_at = datetime.datetime.utcnow()
+            sync_started_at = datetime.datetime.now(datetime.UTC)
             for row in rows:
                 row.last_sync_status = "running"
                 row.last_sync_started_on = sync_started_at
@@ -1381,7 +1434,7 @@ async def build_openapi_tool_catalog(
             )
 
         with SessionLocal() as db:
-            completed_at = datetime.datetime.utcnow()
+            completed_at = datetime.datetime.now(datetime.UTC)
             by_name = {row.name: row for row in db.scalars(select(BaseURLModel)).all()}
             for diag in app_diagnostics:
                 row = by_name.get(str(diag.get("name", "")))
@@ -1599,6 +1652,49 @@ def _effective_access_mode(policy_map: dict[str, dict[str, str]], owner_id: str,
     # Default-open fallback for owners that do not yet have policy rows.
     return "allow"
 
+def _is_parent_visible(parent: Any, health_required: bool = True) -> bool:
+    if parent is None:
+        return False
+    if bool(getattr(parent, "is_deleted", False)) or not bool(getattr(parent, "is_enabled", True)):
+        return False
+    if not bool(getattr(parent, "admin_allowed", True)):
+        return False
+    if health_required:
+        status = str(getattr(parent, "health_status", "unknown"))
+        if status not in {"healthy", "degraded"}:
+            return False
+    return True
+
+
+def _require_tool_visible(
+    owner_id: str,
+    tool_name: str,
+    source_type: str,
+) -> None:
+    with SessionLocal() as db:
+        tool = db.scalar(
+            select(MCPToolModel).where(
+                MCPToolModel.owner_id == owner_id,
+                MCPToolModel.name == tool_name,
+                MCPToolModel.source_type == source_type,
+                MCPToolModel.is_deleted == False,  # noqa: E712
+                MCPToolModel.admin_enabled == True,  # noqa: E712
+                MCPToolModel.owner_enabled == True,  # noqa: E712
+                MCPToolModel.registration_state.in_(["selected", "active"]),
+                MCPToolModel.exposure_state.notin_(["disabled", "deleted"]),
+            )
+        )
+        if tool is None:
+            raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not registered or not enabled")
+
+        if source_type == "mcp":
+            parent = db.scalar(select(ServerModel).where(ServerModel.name == owner_id.replace("mcp:", "", 1)))
+        else:
+            parent = db.scalar(select(BaseURLModel).where(BaseURLModel.name == owner_id.replace("app:", "", 1)))
+
+        if not _is_parent_visible(parent):
+            raise HTTPException(status_code=409, detail="Parent app/server is disabled or unhealthy")
+
 
 class CombinedAppsOpenAPIMCP(FastMCP[Any]):
     async def list_tools(self) -> list[Any]:
@@ -1706,6 +1802,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             server_name, orig_tool_name = parts[1], parts[2]
 
             _check_access(f"mcp:{server_name}", orig_tool_name)
+            _require_tool_visible(owner_id=f"mcp:{server_name}", tool_name=orig_tool_name, source_type="mcp")
 
             with SessionLocal() as db:
                 server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
@@ -1733,6 +1830,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             raise ValueError(f"Unknown tool '{name}'. Refresh your MCP tool list and try again.")
 
         _check_access(f"app:{tool.app_name}", tool.name)
+        _require_tool_visible(owner_id=f"app:{tool.app_name}", tool_name=tool.name, source_type="openapi")
 
         openapi_result = await invoke_openapi_tool(tool, arguments or {})
         return ToolResult(structured_content=openapi_result)
@@ -1830,6 +1928,7 @@ app.include_router(
     ),
     tags=["Health"],
 )
+app.include_router(create_health_events_router(), tags=["Health"])
 app.include_router(
     create_base_urls_router(
         SessionLocal,
@@ -1944,7 +2043,37 @@ app.include_router(
     tags=["API Endpoints"],
 )
 
+app.include_router(
+    create_api_v1_router(
+        SessionLocal,
+        BaseURLModel,
+        ServerModel,
+        MCPToolModel,
+        APIEndpointModel,
+        ToolVersionModel,
+        EndpointVersionModel,
+        fetch_openapi_spec_from_base_url,
+        build_app_operation_tools,
+        build_openapi_tool_catalog,
+        list_server_tools_runtime,
+        write_audit_log,
+        AuditLogModel,
+        require_permission,
+    ),
+    prefix="/api/v1",
+)
+
 
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8090, reload=True)
+warnings.filterwarnings(
+    "ignore",
+    message=r"Support for class-based `config` is deprecated, use ConfigDict instead\.",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"mcp_use\..* is deprecated\.",
+    category=DeprecationWarning,
+)

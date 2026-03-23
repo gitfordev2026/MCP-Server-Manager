@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
+import { toast } from '@/lib/toast';
 
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
@@ -51,13 +52,30 @@ interface AppHealth {
   error: string | null;
 }
 
+interface SystemStatus {
+  name: string;
+  key: string;
+  status: 'up' | 'down' | 'disabled';
+  ok: boolean;
+  detail: string;
+}
+
+interface BackendHealthResponse {
+  status: 'ok' | 'degraded' | 'down';
+  db_backend: string;
+  auth_enabled: boolean;
+  issuer: string;
+  audience_check: boolean;
+  response_time_ms: number;
+  systems: SystemStatus[];
+}
+
 export default function Home() {
   const [servers, setServers] = useState<Server[]>([]);
   const [apps, setApps] = useState<BaseURL[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isDark, setIsDark] = useState(false);
   const [serverHealth, setServerHealth] = useState<Record<string, ServerHealth>>({});
   const [statusSummary, setStatusSummary] = useState({ total: 0, alive: 0, down: 0 });
   const [appHealth, setAppHealth] = useState<Record<string, AppHealth>>({});
@@ -70,6 +88,24 @@ export default function Home() {
   const pollInFlightRef = useRef(false);
   const serverFailureStreakRef = useRef<Record<string, number>>({});
   const appFailureStreakRef = useRef<Record<string, number>>({});
+  const wsRef = useRef<WebSocket | null>(null);
+  const wsRetryRef = useRef<number | null>(null);
+  const backendToastShownRef = useRef(false);
+  const [systemStatuses, setSystemStatuses] = useState<SystemStatus[]>([]);
+  const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'down' | null>(null);
+  const isDark = useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === 'undefined') {
+        return () => {};
+      }
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = () => onStoreChange();
+      media.addEventListener('change', listener);
+      return () => media.removeEventListener('change', listener);
+    },
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+    () => false
+  );
 
   const aliveLatencies = Object.values(serverHealth)
     .filter((item) => item.status === 'alive')
@@ -77,6 +113,19 @@ export default function Home() {
   const averageLatency = aliveLatencies.length
     ? Math.round(aliveLatencies.reduce((acc, value) => acc + value, 0) / aliveLatencies.length)
     : null;
+  const liveSystems = systemStatuses.filter((system) => system.status !== 'disabled');
+  const liveUpCount = liveSystems.filter((system) => system.status === 'up').length;
+  const liveDownCount = liveSystems.filter((system) => system.status === 'down').length;
+
+  const showBackendOfflineToast = useCallback(() => {
+    if (backendToastShownRef.current) return;
+    backendToastShownRef.current = true;
+    toast.error('Backend is not reachable. Please start the backend service.');
+  }, []);
+
+  const clearBackendOfflineToastFlag = useCallback(() => {
+    backendToastShownRef.current = false;
+  }, []);
 
   const normalizeOpenApiUrl = useCallback((baseUrl: string, openApiPath?: string) => {
     const customPath = (openApiPath || '').trim();
@@ -293,143 +342,232 @@ export default function Home() {
     []
   );
 
-  useEffect(() => {
-    const fetchData = async (silent = false) => {
-      if (silent && pollInFlightRef.current) {
+  const fetchData = useCallback(async (silent = false) => {
+    if (silent && pollInFlightRef.current) {
+      return;
+    }
+
+    pollInFlightRef.current = true;
+    try {
+      if (!NEXT_PUBLIC_BE_API_URL) {
+        setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
+        setServers([]);
+        setApps([]);
         return;
       }
 
-      pollInFlightRef.current = true;
-      try {
-        if (!NEXT_PUBLIC_BE_API_URL) {
-          setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
-          setServers([]);
-          setApps([]);
-          return;
-        }
-
-        if (silent) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
-        const [serversRes, appsRes] = await Promise.allSettled([
-          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-          authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
-        ]);
-
-        let nextServers: Server[] = [];
-        let nextApps: BaseURL[] = [];
-        let hasServersList = false;
-        let hasAppsList = false;
-        const warnings: string[] = [];
-
-        if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
-          const serversData = await serversRes.value.json();
-          nextServers = serversData.servers || [];
-          hasServersList = true;
-        } else {
-          warnings.push('servers');
-        }
-
-        if (appsRes.status === 'fulfilled' && appsRes.value.ok) {
-          const appsData = await appsRes.value.json();
-          nextApps = appsData.base_urls || [];
-          hasAppsList = true;
-        } else {
-          warnings.push('apps');
-        }
-
-        if (hasServersList) {
-          serversRef.current = nextServers;
-          setServers(nextServers);
-        }
-        if (hasAppsList) {
-          appsRef.current = nextApps;
-          setApps(nextApps);
-        }
-
-        const activeServers = hasServersList ? nextServers : serversRef.current;
-        const activeApps = hasAppsList ? nextApps : appsRef.current;
-
-        // Keep last known status/count values visible while revalidating.
-        setStatusSummary(summarizeServers(activeServers, serverHealthRef.current));
-        setAppStatusSummary(summarizeApps(activeApps, appHealthRef.current));
-
-        if (!silent) {
-          setLoading(false);
-        }
-
-        const statusTask = authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`).then(async (res) => {
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-          }
-          return (await res.json()) as ServerStatusResponse;
-        });
-        const appHealthTask = Promise.all(activeApps.map((app) => probeAppHealth(app)));
-        const [statusResult, appHealthResult] = await Promise.allSettled([statusTask, appHealthTask]);
-
-        if (statusResult.status === 'fulfilled') {
-          const mergedServerHealth = mergeServerHealth(
-            serverHealthRef.current,
-            statusResult.value.servers || [],
-            activeServers
-          );
-          serverHealthRef.current = mergedServerHealth;
-          setServerHealth(mergedServerHealth);
-          setStatusSummary(summarizeServers(activeServers, mergedServerHealth));
-        } else {
-          warnings.push('status');
-        }
-
-        if (appHealthResult.status === 'fulfilled') {
-          const mergedAppHealth = mergeAppHealth(appHealthRef.current, appHealthResult.value, activeApps);
-          appHealthRef.current = mergedAppHealth;
-          setAppHealth(mergedAppHealth);
-          setAppStatusSummary(summarizeApps(activeApps, mergedAppHealth));
-        } else {
-          warnings.push('app-health');
-        }
-
-        setLastUpdated(
-          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        );
-
-        const listFetchFailed = warnings.includes('servers') && warnings.includes('apps');
-        if (listFetchFailed) {
-          setError('Failed to load servers and apps');
-        } else {
-          setError(null);
-        }
-      } catch (err) {
-        if (!silent) {
-          setError(err instanceof Error ? err.message : 'Failed to load data');
-        }
-        console.error('Error fetching data:', err);
-      } finally {
-        pollInFlightRef.current = false;
-        if (silent) {
-          setRefreshing(false);
-        } else {
-          setLoading(false);
-        }
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
       }
-    };
+      const [serversRes, appsRes] = await Promise.allSettled([
+        authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
+        authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
+      ]);
 
+      let nextServers: Server[] = [];
+      let nextApps: BaseURL[] = [];
+      let hasServersList = false;
+      let hasAppsList = false;
+      const warnings: string[] = [];
+
+      if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
+        const serversData = await serversRes.value.json();
+        nextServers = serversData.servers || [];
+        hasServersList = true;
+      } else {
+        warnings.push('servers');
+      }
+
+      if (appsRes.status === 'fulfilled' && appsRes.value.ok) {
+        const appsData = await appsRes.value.json();
+        nextApps = appsData.base_urls || [];
+        hasAppsList = true;
+      } else {
+        warnings.push('apps');
+      }
+
+      if (hasServersList) {
+        serversRef.current = nextServers;
+        setServers(nextServers);
+      }
+      if (hasAppsList) {
+        appsRef.current = nextApps;
+        setApps(nextApps);
+      }
+
+      const activeServers = hasServersList ? nextServers : serversRef.current;
+      const activeApps = hasAppsList ? nextApps : appsRef.current;
+
+      // Keep last known status/count values visible while revalidating.
+      setStatusSummary(summarizeServers(activeServers, serverHealthRef.current));
+      setAppStatusSummary(summarizeApps(activeApps, appHealthRef.current));
+
+      if (!silent) {
+        setLoading(false);
+      }
+
+      const statusTask = authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`).then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return (await res.json()) as ServerStatusResponse;
+      });
+      const appHealthTask = Promise.all(activeApps.map((app) => probeAppHealth(app)));
+      const [statusResult, appHealthResult] = await Promise.allSettled([statusTask, appHealthTask]);
+
+      if (statusResult.status === 'fulfilled') {
+        const mergedServerHealth = mergeServerHealth(
+          serverHealthRef.current,
+          statusResult.value.servers || [],
+          activeServers
+        );
+        serverHealthRef.current = mergedServerHealth;
+        setServerHealth(mergedServerHealth);
+        setStatusSummary(summarizeServers(activeServers, mergedServerHealth));
+      } else {
+        warnings.push('status');
+      }
+
+      if (appHealthResult.status === 'fulfilled') {
+        const mergedAppHealth = mergeAppHealth(appHealthRef.current, appHealthResult.value, activeApps);
+        appHealthRef.current = mergedAppHealth;
+        setAppHealth(mergedAppHealth);
+        setAppStatusSummary(summarizeApps(activeApps, mergedAppHealth));
+      } else {
+        warnings.push('app-health');
+      }
+
+      setLastUpdated(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+
+      const listFetchFailed = warnings.includes('servers') && warnings.includes('apps');
+      if (listFetchFailed) {
+        setError('Failed to load servers and apps');
+        showBackendOfflineToast();
+      } else {
+        setError(null);
+        clearBackendOfflineToastFlag();
+      }
+    } catch (err) {
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+      }
+      showBackendOfflineToast();
+      console.error('Error fetching data:', err);
+    } finally {
+      pollInFlightRef.current = false;
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
+    }
+  }, [
+    clearBackendOfflineToastFlag,
+    mergeAppHealth,
+    mergeServerHealth,
+    probeAppHealth,
+    showBackendOfflineToast,
+    summarizeApps,
+    summarizeServers,
+  ]);
+
+  const fetchSystemHealth = useCallback(async (silent = false) => {
+    if (!NEXT_PUBLIC_BE_API_URL) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/health`);
+      const payload = (await response.json()) as BackendHealthResponse;
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      setSystemStatuses(Array.isArray(payload.systems) ? payload.systems : []);
+      setHealthStatus(payload.status);
+      clearBackendOfflineToastFlag();
+    } catch (err) {
+      setHealthStatus('down');
+      setSystemStatuses([
+        {
+          name: 'Backend API',
+          key: 'backend',
+          status: 'down',
+          ok: false,
+          detail: err instanceof Error ? err.message : 'Backend is unreachable',
+        },
+      ]);
+      if (!silent) {
+        showBackendOfflineToast();
+      }
+    }
+  }, [clearBackendOfflineToastFlag, showBackendOfflineToast]);
+
+  useEffect(() => {
     void fetchData();
+    void fetchSystemHealth();
     const intervalId = window.setInterval(() => {
       void fetchData(true);
+      void fetchSystemHealth(true);
     }, STATUS_POLL_MS);
-
-    // Check system preference
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setIsDark(true);
-    }
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [mergeAppHealth, mergeServerHealth, probeAppHealth, summarizeApps, summarizeServers]);
+  }, [fetchData, fetchSystemHealth]);
+
+  useEffect(() => {
+    if (!NEXT_PUBLIC_BE_API_URL) return;
+    const wsUrl = NEXT_PUBLIC_BE_API_URL.replace(/^http/i, 'ws').replace(/\/+$/, '') + '/ws/health';
+
+    const connect = () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = () => {
+        void fetchData(true);
+        void fetchSystemHealth(true);
+      };
+
+      ws.onclose = () => {
+        if (wsRetryRef.current) {
+          window.clearTimeout(wsRetryRef.current);
+        }
+        wsRetryRef.current = window.setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+    return () => {
+      if (wsRetryRef.current) {
+        window.clearTimeout(wsRetryRef.current);
+      }
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
+  }, [fetchData, fetchSystemHealth]);
+
+  const getSystemIndicatorClasses = (status: SystemStatus['status']) => {
+    if (status === 'up') {
+      return 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.75)]';
+    }
+    if (status === 'down') {
+      return 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.75)]';
+    }
+    return 'bg-slate-400 shadow-[0_0_12px_rgba(148,163,184,0.55)]';
+  };
+
+  const getSystemStatusLabel = (status: SystemStatus['status']) => {
+    if (status === 'up') return 'Online';
+    if (status === 'down') return 'Offline';
+    return 'Disabled';
+  };
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900' : 'bg-gradient-to-br from-white via-slate-50 to-slate-100'} overflow-hidden transition-colors duration-500`}>
@@ -541,6 +679,70 @@ export default function Home() {
                   <p className="text-sm">Average live latency</p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="animate-slideInUp mb-16" style={{ animationDelay: '0.35s' }}>
+            <div className={`relative border rounded-2xl p-6 shadow-sm ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200/80'}`}>
+              <div className="flex items-start justify-between gap-4 mb-6">
+                <div>
+                  <h2 className={`text-2xl font-bold transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                    Backend Systems
+                  </h2>
+                  <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Live status for core backend dependencies
+                  </p>
+                </div>
+                <div className={`px-4 py-2 rounded-full text-sm font-semibold border ${
+                  healthStatus === 'down'
+                    ? isDark
+                      ? 'bg-red-900/30 text-red-300 border-red-500/30'
+                      : 'bg-red-50 text-red-700 border-red-200'
+                    : healthStatus === 'degraded'
+                      ? isDark
+                        ? 'bg-amber-900/30 text-amber-300 border-amber-500/30'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                      : isDark
+                        ? 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}>
+                  {healthStatus === 'down' ? 'System Issues' : healthStatus === 'degraded' ? 'Partially Available' : 'All Core Systems Healthy'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+                {systemStatuses.map((system) => (
+                  <div
+                    key={system.key}
+                    className={`rounded-xl border p-4 transition-colors duration-300 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`w-3 h-3 rounded-full shrink-0 ${getSystemIndicatorClasses(system.status)}`}></span>
+                        <span className={`font-semibold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                          {system.name}
+                        </span>
+                      </div>
+                      <span className={`text-xs font-bold uppercase tracking-wide ${
+                        system.status === 'up'
+                          ? isDark ? 'text-emerald-300' : 'text-emerald-700'
+                          : system.status === 'down'
+                            ? isDark ? 'text-red-300' : 'text-red-700'
+                            : isDark ? 'text-slate-400' : 'text-slate-500'
+                      }`}>
+                        {getSystemStatusLabel(system.status)}
+                      </span>
+                    </div>
+                    <p className={`text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      {system.detail}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                {liveUpCount} online / {liveDownCount} offline / {systemStatuses.filter((system) => system.status === 'disabled').length} disabled
+              </p>
             </div>
           </div>
 
@@ -746,4 +948,3 @@ export default function Home() {
     </div>
   );
 }
-

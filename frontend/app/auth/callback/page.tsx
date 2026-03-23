@@ -50,7 +50,7 @@ export default function AuthCallbackPage() {
         setError(message);
       }
     })();
-  }, [code, router]);
+  }, [code, router, state]);
 
   if (errorParam) {
     return (

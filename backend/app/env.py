@@ -53,6 +53,9 @@ class BackendEnv:
     agent_ollama_base_url: str
     agent_ollama_temperature: float
     agent_debug_callbacks: bool
+    health_monitor_interval_sec: int
+    health_monitor_failure_threshold: int
+    health_monitor_timeout_sec: float
     log_level: str
     adm_keycloak_server_url: str
     adm_keycloak_realm: str
@@ -97,6 +100,9 @@ def load_backend_env() -> BackendEnv:
         agent_ollama_base_url=os.getenv("AGENT_OLLAMA_BASE_URL", "http://localhost:11434").strip(),
         agent_ollama_temperature=float(os.getenv("AGENT_OLLAMA_TEMPERATURE", "0.7").strip()),
         agent_debug_callbacks=os.getenv("AGENT_DEBUG_CALLBACKS", "true").strip().lower() == "true",
+        health_monitor_interval_sec=int(os.getenv("HEALTH_MONITOR_INTERVAL_SEC", "30").strip()),
+        health_monitor_failure_threshold=int(os.getenv("HEALTH_MONITOR_FAILURE_THRESHOLD", "3").strip()),
+        health_monitor_timeout_sec=float(os.getenv("HEALTH_MONITOR_TIMEOUT_SEC", "8").strip()),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         adm_keycloak_server_url=os.getenv("ADM_KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
         adm_keycloak_realm=os.getenv("ADM_KEYCLOAK_REALM", "").strip(),

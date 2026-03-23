@@ -70,6 +70,8 @@ def create_tools_router(
                     select(server_model).where(
                         server_model.is_deleted == False,  # noqa: E712
                         server_model.is_enabled == True,  # noqa: E712
+                        server_model.admin_allowed == True,  # noqa: E712
+                        server_model.health_status.in_(["healthy", "degraded"]),
                     )
                 ).all()
             }
@@ -79,15 +81,27 @@ def create_tools_router(
                     select(base_url_model).where(
                         base_url_model.is_deleted == False,  # noqa: E712
                         base_url_model.is_enabled == True,  # noqa: E712
+                        base_url_model.admin_allowed == True,  # noqa: E712
+                        base_url_model.health_status.in_(["healthy", "degraded"]),
                     )
                 ).all()
             }
             server_states = {
-                row.id: {"is_enabled": bool(row.is_enabled), "is_deleted": bool(row.is_deleted)}
+                row.id: {
+                    "is_enabled": bool(row.is_enabled),
+                    "is_deleted": bool(row.is_deleted),
+                    "admin_allowed": bool(getattr(row, "admin_allowed", True)),
+                    "health_status": str(getattr(row, "health_status", "unknown")),
+                }
                 for row in db.scalars(select(server_model)).all()
             }
             base_url_states = {
-                row.id: {"is_enabled": bool(row.is_enabled), "is_deleted": bool(row.is_deleted)}
+                row.id: {
+                    "is_enabled": bool(row.is_enabled),
+                    "is_deleted": bool(row.is_deleted),
+                    "admin_allowed": bool(getattr(row, "admin_allowed", True)),
+                    "health_status": str(getattr(row, "health_status", "unknown")),
+                }
                 for row in db.scalars(select(base_url_model)).all()
             }
             stmt = select(mcp_tool_model)
@@ -138,6 +152,20 @@ def create_tools_router(
                         else base_url_states.get(row.raw_api_id, {}).get("is_deleted")
                         if row.source_type == "openapi" and row.raw_api_id is not None
                         else False
+                    ),
+                    "parent_admin_allowed": (
+                        server_states.get(row.server_id, {}).get("admin_allowed")
+                        if row.source_type == "mcp" and row.server_id is not None
+                        else base_url_states.get(row.raw_api_id, {}).get("admin_allowed")
+                        if row.source_type == "openapi" and row.raw_api_id is not None
+                        else True
+                    ),
+                    "parent_health_status": (
+                        server_states.get(row.server_id, {}).get("health_status")
+                        if row.source_type == "mcp" and row.server_id is not None
+                        else base_url_states.get(row.raw_api_id, {}).get("health_status")
+                        if row.source_type == "openapi" and row.raw_api_id is not None
+                        else "unknown"
                     ),
                 }
                 for row in visible_rows

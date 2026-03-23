@@ -26,6 +26,9 @@ export default function ChatPage() {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState('');
+  const [modelError, setModelError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -35,6 +38,29 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/models`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+        const modelList = Array.isArray(payload.models) ? payload.models : [];
+        setModels(modelList);
+        setModel(payload.default_model || modelList[0] || '');
+        setModelError(null);
+      } catch (err) {
+        console.error('Failed to load models:', err);
+        setModelError(err instanceof Error ? err.message : 'Failed to load models');
+      }
+    };
+
+    if (NEXT_PUBLIC_BE_API_URL) {
+      void loadModels();
+    }
+  }, []);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,11 +79,17 @@ export default function ChatPage() {
     setLoading(true);
 
     try {
+      if (!model) {
+        throw new Error('No model selected. Please select a model and try again.');
+      }
       // Send to backend API
-      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(input)}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await authenticatedFetch(
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(input)}&model=${encodeURIComponent(model)}`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
 
       const data = await response.json();
 
@@ -75,7 +107,7 @@ export default function ChatPage() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Oops! I encountered an error. Please make sure the backend server is running.',
+        content: error instanceof Error ? error.message : 'Oops! I encountered an error. Please make sure the backend server is running.',
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -110,14 +142,14 @@ export default function ChatPage() {
                 >
                   <div className={`flex gap-3 max-w-xs sm:max-w-sm lg:max-w-xl`}>
                     {message.role === 'assistant' && (
-                      <div className="w-8 h-8 rounded-full bg-gradient from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30">
                         <span className="text-white text-sm font-bold">AI</span>
                       </div>
                     )}
                     <div
                       className={`px-5 py-4 rounded-2xl transition-all duration-300 hover:scale-105 ${
                         message.role === 'user'
-                          ? 'bg-gradient from-blue-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-blue-500/30'
+                          ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-blue-500/30'
                           : 'bg-slate-800/70 text-slate-100 rounded-bl-none border border-amber-500/30 shadow-lg'
                       }`}
                     >
@@ -127,7 +159,7 @@ export default function ChatPage() {
                       </span>
                     </div>
                     {message.role === 'user' && (
-                      <div className="w-8 h-8 rounded-full bg-gradient from-blue-600 to-blue-700 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-600 to-blue-700 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30">
                         <span className="text-white text-sm font-bold">U</span>
                       </div>
                     )}
@@ -137,7 +169,7 @@ export default function ChatPage() {
               {loading && (
                 <div className="flex justify-start animate-slideInLeft">
                   <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/40">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/40">
                       <span className="text-white text-sm font-bold">AI</span>
                     </div>
                     <div className="bg-slate-100 text-slate-800 px-5 py-4 rounded-2xl rounded-bl-none border border-amber-300/50 shadow-md">
@@ -154,7 +186,25 @@ export default function ChatPage() {
             </div>
 
             {/* Input Area */}
-            <div className="border-t border-amber-300/50 bg-white/70 backdrop-blur-xl p-4 sm:p-6 shadow-lg">
+            <div className="border-t border-amber-300/50 bg-white/70 backdrop-blur-xl p-4 sm:p-6 shadow-lg space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                <label className="text-xs font-semibold text-slate-600">Model</label>
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="min-w-[220px] px-3 py-2 rounded-xl border border-amber-300/50 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  {models.length === 0 && <option value="">No models found</option>}
+                  {models.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                {modelError && (
+                  <span className="text-xs text-red-600">{modelError}</span>
+                )}
+              </div>
               <form onSubmit={handleSendMessage} className="flex gap-3">
                 <input
                   type="text"
@@ -167,7 +217,7 @@ export default function ChatPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="cursor-pointer bg-gradient from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/50 hover:scale-105 shadow-md active:scale-95"
+                  className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/50 hover:scale-105 shadow-md active:scale-95"
                 >
                   {loading ? (
                     <span className="inline-block animate-spin-slow">⚙️</span>

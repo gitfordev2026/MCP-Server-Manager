@@ -8,7 +8,7 @@ DOMAIN_OPS = "OPS"
 
 
 def utc_now() -> datetime.datetime:
-    return datetime.datetime.utcnow()
+    return datetime.datetime.now(datetime.UTC)
 
 
 class Base(DeclarativeBase):
@@ -25,6 +25,10 @@ class ServerModel(Base):
     domain_type: Mapped[str] = mapped_column(String(16), nullable=False, default=DOMAIN_ADM)
     auth_profile_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
     selected_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
+    admin_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    health_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    last_health_check_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     sync_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="manual")
     last_sync_status: Mapped[str] = mapped_column(String(24), nullable=False, default="never")
     last_sync_started_on: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
@@ -48,6 +52,10 @@ class BaseURLModel(Base):
     selected_endpoints: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
     openapi_path: Mapped[str] = mapped_column(String, nullable=False, default="")
     include_unreachable_tools: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    admin_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    health_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    last_health_check_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Registry lifecycle and sync controls (single-source-of-truth owner state)
     sync_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="manual")
     registry_state: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
@@ -155,6 +163,7 @@ class APIEndpointModel(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     mcp_tool_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("mcp_tools.id"), nullable=True)
     current_version: Mapped[str] = mapped_column(String, nullable=False, default="1.0.0")
+    admin_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     admin_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     owner_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -343,6 +343,10 @@ def create_servers_router(
                         "selected_tools": row.selected_tools or [],
                         "is_enabled": bool(row.is_enabled),
                         "is_deleted": bool(row.is_deleted),
+                        "admin_allowed": bool(getattr(row, "admin_allowed", True)),
+                        "health_status": str(getattr(row, "health_status", "unknown")),
+                        "last_health_check_at": getattr(row, "last_health_check_at", None),
+                        "consecutive_failures": int(getattr(row, "consecutive_failures", 0) or 0),
                     }
                     for row in rows
                 ]
@@ -583,7 +587,7 @@ def create_servers_router(
                 if not server or server.is_deleted or not server.is_enabled:
                     raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-                server.last_sync_started_on = datetime.datetime.utcnow()
+                server.last_sync_started_on = datetime.datetime.now(datetime.UTC)
                 server.last_sync_status = "in_progress"
                 db.commit()
 
@@ -623,7 +627,7 @@ def create_servers_router(
                     selected_tool_names=server.selected_tools
                 )
                 
-                server.last_sync_completed_on = datetime.datetime.utcnow()
+                server.last_sync_completed_on = datetime.datetime.now(datetime.UTC)
                 server.last_sync_status = "success" if snapshot.is_alive else "failed"
                 server.last_sync_error = snapshot.error
                 db.commit()
@@ -640,7 +644,7 @@ def create_servers_router(
             with session_local_factory() as db:
                 server = db.scalar(select(server_model).where(server_model.name == server_name))
                 if server:
-                    server.last_sync_completed_on = datetime.datetime.utcnow()
+                    server.last_sync_completed_on = datetime.datetime.now(datetime.UTC)
                     server.last_sync_status = "failed"
                     server.last_sync_error = str(exc)
                     db.commit()

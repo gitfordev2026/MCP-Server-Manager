@@ -1,0 +1,44 @@
+services:
+  backend-mcp:
+    container_name: backend-mcp-dev
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8099:8099"
+    env_file:
+      - ./backend/app/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend-mcp:
+    container_name: frontend-mcp-dev
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - NODE_OPTIONS=--max-old-space-size=512
+    depends_on:
+      - backend-mcp
+
+  mock-mcp-server:
+    container_name: mock-mcp-server-dev
+    build:
+      context: ./mock-mcp-server
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./mock-mcp-server:/app
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONUNBUFFERED=1

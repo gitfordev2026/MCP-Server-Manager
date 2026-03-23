@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   fetchAuthConfig,
@@ -20,10 +20,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [bypassAuth, setBypassAuth] = useState(false);
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
   const isPublicPath = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-  const hasToken = Boolean(getStoredToken());
+  const hasToken = hydrated && Boolean(getStoredToken());
 
   useEffect(() => {
+    if (!hydrated || isPublicPath) return;
     if (isPublicPath) return;
     if (hasToken) return;
 
@@ -69,9 +75,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [hasToken, isPublicPath, pathname, attempt]);
+  }, [hasToken, hydrated, isPublicPath, pathname, attempt]);
 
-  if (isPublicPath || hasToken || readyPath === pathname || bypassAuth) {
+  if (isPublicPath || (hydrated && (hasToken || readyPath === pathname || bypassAuth))) {
     return <>{children}</>;
   }
 
@@ -103,7 +109,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (readyPath !== pathname) {
+  if (!hydrated || readyPath !== pathname) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">

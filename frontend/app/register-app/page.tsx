@@ -120,6 +120,9 @@ export default function RegisterAppPage() {
   const [selectedEndpointDescriptions, setSelectedEndpointDescriptions] = useState<Record<string, string>>({});
   const [generatingEndpointDescriptionId, setGeneratingEndpointDescriptionId] = useState<string | null>(null);
   const [generatingRegisteredDescriptionId, setGeneratingRegisteredDescriptionId] = useState<string | null>(null);
+  const [llmModels, setLlmModels] = useState<string[]>([]);
+  const [llmModel, setLlmModel] = useState<string>('');
+  const [llmModelError, setLlmModelError] = useState<string | null>(null);
   const [discoveryPage, setDiscoveryPage] = useState(1);
   const [registeredSyncing, setRegisteredSyncing] = useState(false);
   const [registeredPage, setRegisteredPage] = useState(1);
@@ -156,6 +159,29 @@ export default function RegisterAppPage() {
 
   useEffect(() => {
     void fetchApps();
+  }, []);
+
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/models`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+        const modelList = Array.isArray(payload.models) ? payload.models : [];
+        setLlmModels(modelList);
+        setLlmModel(payload.default_model || modelList[0] || '');
+        setLlmModelError(null);
+      } catch (err) {
+        console.error('Failed to load LLM models:', err);
+        setLlmModelError(err instanceof Error ? err.message : 'Failed to load models');
+      }
+    };
+
+    if (NEXT_PUBLIC_BE_API_URL) {
+      void loadModels();
+    }
   }, []);
 
   const onChangeInput = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -248,17 +274,22 @@ export default function RegisterAppPage() {
     setGeneratingEndpointDescriptionId(endpoint.id);
     setError(null);
     try {
+      if (!llmModel) {
+        throw new Error('Select a model before generating descriptions.');
+      }
       const prompt = [
         `You are helping document an API.`,
         `App name: ${formData.name.trim()}`,
         `App description: ${formData.description.trim() || 'N/A'}`,
         `Endpoint: ${endpoint.method} ${endpoint.path}`,
         `Summary: ${endpoint.summary || 'N/A'}`,
-        `Description: ${endpoint.description || 'N/A'}`,
-        `Return a concise 1-2 sentence description only.`,
+        `Current description: ${(selectedEndpointDescriptions[endpoint.id] ?? endpoint.description) || 'N/A'}`,
+        `Generate a precise description for this endpoint that will be used as an MCP tool description.`,
+        `It should help an LLM choose and call the tool correctly (include intent, inputs, and outcome).`,
+        `Return 1-2 sentences only.`,
       ].join('\n');
       const response = await authenticatedFetch(
-        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}&model=${encodeURIComponent(llmModel)}`,
         { method: 'GET' }
       );
       const payload = await response.json().catch(() => ({}));
@@ -279,15 +310,21 @@ export default function RegisterAppPage() {
     setGeneratingRegisteredDescriptionId(endpoint.id);
     setRegisteredEndpointsError(null);
     try {
+      if (!llmModel) {
+        throw new Error('Select a model before generating descriptions.');
+      }
       const prompt = [
         `You are helping document an API.`,
         `App name: ${selectedAppName}`,
         `App description: ${(app?.description || '').trim() || 'N/A'}`,
         `Endpoint: ${endpoint.method} ${endpoint.path}`,
-        `Return a concise 1-2 sentence description only.`,
+        `Current description: ${(draftEndpointDescriptions[endpoint.id] ?? endpoint.description) || 'N/A'}`,
+        `Generate a precise description for this endpoint that will be used as an MCP tool description.`,
+        `It should help an LLM choose and call the tool correctly (include intent, inputs, and outcome).`,
+        `Return 1-2 sentences only.`,
       ].join('\n');
       const response = await authenticatedFetch(
-        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}`,
+        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}&model=${encodeURIComponent(llmModel)}`,
         { method: 'GET' }
       );
       const payload = await response.json().catch(() => ({}));
@@ -688,7 +725,25 @@ export default function RegisterAppPage() {
                 <h3 className="text-lg font-semibold text-slate-900">Select API Endpoints</h3>
                 <p className="text-xs text-slate-600 mt-1">Choose endpoints to register for {formData.name || 'this application'}.</p>
               </div>
-              <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Close</Button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-slate-600">Model</label>
+                  <select
+                    value={llmModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                    className="min-w-[200px] px-2 py-1 rounded-lg border border-slate-300 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {llmModels.length === 0 && <option value="">No models found</option>}
+                    {llmModels.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  {llmModelError && <span className="text-xs text-red-600">{llmModelError}</span>}
+                </div>
+                <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Close</Button>
+              </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-0">
@@ -709,11 +764,18 @@ export default function RegisterAppPage() {
                 )}
                 <div className="space-y-2">
                   {discoveryPageItems.map((endpoint) => (
-                    <button
+                    <div
                       key={endpoint.id}
-                      type="button"
                       onClick={() => setActiveEndpointId(endpoint.id)}
-                      className={`w-full text-left p-3 rounded-lg border ${activeEndpointId === endpoint.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                      className={`w-full text-left p-3 rounded-lg border cursor-pointer ${activeEndpointId === endpoint.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setActiveEndpointId(endpoint.id);
+                        }
+                      }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-medium text-slate-900">{endpoint.method} {endpoint.path}</p>
@@ -752,7 +814,7 @@ export default function RegisterAppPage() {
                           {generatingEndpointDescriptionId === endpoint.id ? 'Generating...' : 'Generate with LLM'}
                         </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
                 {discoveredEndpoints.length > DISCOVERY_PAGE_SIZE && (

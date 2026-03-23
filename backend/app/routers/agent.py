@@ -1,5 +1,6 @@
-﻿from typing import Any, Callable
+from __future__ import annotations
 
+from typing import Any, Callable, Optional, List, Dict, Tuple
 from fastapi import APIRouter, HTTPException
 import httpx
 from mcp_use import MCPClient
@@ -7,38 +8,76 @@ from pydantic import BaseModel
 
 from app.core.db import SessionLocal
 from app.env import ENV
-from app.models.db_models import AccessPolicyModel, BaseURLModel, MCPToolModel, ServerModel
+from app.models.db_models import (
+    AccessPolicyModel,
+    BaseURLModel,
+    MCPToolModel,
+    ServerModel,
+)
 from app.services.registry.exposure_service import resolve_exposable_tools
+from app.services.agent_runtime import generate_direct_response
 
+
+# =========================================================
+# Request Models
+# =========================================================
 
 class PlaygroundQueryRequest(BaseModel):
     prompt: str
-    app_name: str | None = None
-    selected_tools: list[str] | None = None
-    model: str | None = None
+    app_name: Optional[str] = None
+    selected_tools: Optional[List[str]] = None
+    model: Optional[str] = None
 
+
+# =========================================================
+# MCP Client Utilities
+# =========================================================
 
 def _build_mcp_client() -> MCPClient:
-    config = {
-        "mcpServers": {
-            ENV.agent_mcp_server_name: {
-                "url": ENV.agent_mcp_server_url,
+    return MCPClient(
+        {
+            "mcpServers": {
+                ENV.agent_mcp_server_name: {
+                    "url": ENV.agent_mcp_server_url,
+                }
             }
         }
-    }
-    return MCPClient(config)
+    )
 
 
-async def _list_combined_tool_names() -> list[str]:
+async def _list_combined_tool_names() -> List[str]:
     client = _build_mcp_client()
-    await client.create_all_sessions(auto_initialize=True)
-    session = client.get_session(ENV.agent_mcp_server_name)
-    tools = await session.list_tools()
-    return sorted({tool.name for tool in tools})
+
+    try:
+        await client.create_all_sessions(auto_initialize=True)
+
+        session = client.get_session(ENV.agent_mcp_server_name)
+        if session is None:
+            raise RuntimeError("MCP session was not created")
+
+        tools = await session.list_tools()
+        return sorted({tool.name for tool in tools})
+
+    finally:
+        # safe shutdown across MCP versions
+        if hasattr(client, "aclose"):
+            await client.aclose()
+        elif hasattr(client, "close"):
+            close_fn = getattr(client, "close")
+            if callable(close_fn):
+                close_fn()
 
 
-def _list_exposed_tool_catalog() -> list[dict[str, Any]]:
-    with SessionLocal() as db:
+# =========================================================
+# Database Utilities
+# =========================================================
+
+def _list_exposed_tool_catalog() -> List[Dict[str, Any]]:
+    """
+    Returns tool metadata grouped by application from DB.
+    """
+    db = SessionLocal()
+    try:
         tools_list, _ = resolve_exposable_tools(
             db,
             MCPToolModel,
@@ -47,178 +86,323 @@ def _list_exposed_tool_catalog() -> list[dict[str, Any]]:
             BaseURLModel,
             public_only=True,
         )
-    return tools_list
+        return tools_list
+    finally:
+        db.close()
 
 
-def _build_tool_only_instructions(selected_tools: list[str]) -> str:
-    tools_list = ", ".join(selected_tools)
+def _group_tools_by_app(catalog: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    grouped: Dict[str, List[str]] = {}
+    for tool in catalog:
+        app = str(tool.get("app", "unknown"))
+        name = str(tool.get("name", ""))
+        if name:
+            grouped.setdefault(app, []).append(name)
+    return grouped
+
+
+# =========================================================
+# Tool Retrieval Layer (context-window safe)
+# =========================================================
+
+def _tokenize(text: str) -> List[str]:
+    return [t for t in text.lower().replace("-", "_").split() if t]
+
+
+def _score_tool(prompt_tokens: set[str], tool_name: str) -> int:
+    parts = tool_name.lower().split("_")
+    return sum(1 for p in parts if p in prompt_tokens)
+
+
+def _select_relevant_tools(
+    prompt: str,
+    tools: List[str],
+    max_tools: int = 12,
+) -> List[str]:
+    """
+    Lightweight keyword-based tool retrieval.
+    Prevents context overflow by limiting tools sent to LLM.
+    """
+    tokens = set(_tokenize(prompt))
+    if not tokens:
+        return tools[:max_tools]
+
+    scored: List[Tuple[int, str]] = []
+    for tool in tools:
+        score = _score_tool(tokens, tool)
+        if score > 0:
+            scored.append((score, tool))
+
+    scored.sort(reverse=True)
+
+    selected = [tool for _, tool in scored[:max_tools]]
+
+    if not selected:
+        # fallback to deterministic subset
+        selected = tools[:max_tools]
+
+    return selected
+
+
+# =========================================================
+# Prompt & Model Utilities
+# =========================================================
+
+def _normalize_model(model: Optional[str]) -> Optional[str]:
+    if model and model.strip():
+        return model.strip()
+    return None
+
+
+def _build_tool_only_instructions(selected_tools: List[str]) -> str:
+    """
+    Bullet list format tokenizes better than comma-separated lists.
+    """
+    if not selected_tools:
+        return (
+            "You have no tools available. "
+            "Answer directly using your knowledge."
+        )
+
+    lines = "\n".join(f"- {tool}" for tool in selected_tools)
+
     return (
-        "You are a MCP tool-testing agent. "
-        "Use tools for actionable requests when a relevant tool is available. "
-        "Do not answer from your own knowledge. "
-        "Only use these tools: "
-        f"{tools_list}. "
-        "If the user asks for the list of tools, respond with the available tools grouped by application. "
-        "If no tool applies, respond with: 'No suitable tool available with the current tool set.' "
-        "After a tool call, provide a final answer using the tool result and stop. Do not loop."
+        "You are an MCP tool-using agent.\n"
+        "Use tools whenever they are relevant.\n"
+        "Only the following tools are available:\n"
+        f"{lines}\n"
+        "If none of these tools apply, say: "
+        "'No suitable tool available with the current tool set.'"
     )
 
 
-def create_agent_router(build_agent_with_model: Callable[..., Any]) -> APIRouter:
+def _should_bypass_mcp_agent(prompt: str) -> bool:
+    """
+    Detect documentation generation or meta prompts
+    that should bypass tool usage.
+    """
+    normalized = " ".join((prompt or "").lower().split())
+
+    bypass_signals = [
+        "api documentation",
+        "tool description",
+        "generate description",
+        "endpoint description",
+        "1-2 sentences only",
+    ]
+
+    return any(s in normalized for s in bypass_signals)
+
+
+def _is_recursion_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "recursion" in msg and "stop condition" in msg
+
+
+# =========================================================
+# Router Factory
+# =========================================================
+
+def create_agent_router(
+    build_agent_with_model: Callable[..., Any]
+) -> APIRouter:
     router = APIRouter()
 
-    @router.get(
-        "/agent/query",
-        summary="Run Agent Query",
-        description="Execute a prompt using configured agent runtime. Source: backend/app/routers/agent.py",
-    )
-    async def query(
-        prompt: str,
-        model: str
-    ) -> dict[str, Any]:
+    # -----------------------------------------------------
+    # Standard Query Endpoint
+    # -----------------------------------------------------
+
+    @router.post("/agent/query")
+    async def query(request: PlaygroundQueryRequest) -> Dict[str, Any]:
+        model = _normalize_model(request.model)
+
         try:
+            # bypass tool agent for documentation-like prompts
+            if _should_bypass_mcp_agent(request.prompt):
+                result = await generate_direct_response(
+                    request.prompt,
+                    model=model,
+                    additional_instructions="Answer directly without tools.",
+                )
+                return {"response": result, "mode": "direct_llm"}
+
             all_tools = await _list_combined_tool_names()
+
             if not all_tools:
-                raise HTTPException(status_code=502, detail="No tools available from combined MCP endpoint")
-            instructions = _build_tool_only_instructions(all_tools)
-            model_agent = build_agent_with_model(
+                raise HTTPException(
+                    status_code=502,
+                    detail="No tools available from MCP server",
+                )
+
+            selected_tools = _select_relevant_tools(
+                request.prompt,
+                all_tools,
+                max_tools=12,
+            )
+
+            instructions = _build_tool_only_instructions(selected_tools)
+
+            agent = build_agent_with_model(
                 model,
-                disallowed_tools=[],
+                disallowed_tools=[
+                    t for t in all_tools if t not in selected_tools
+                ],
                 additional_instructions=instructions,
                 max_steps=8,
                 retry_on_error=False,
                 memory_enabled=False,
             )
-            model_agent.tools_used_names = []
-            result = await model_agent.run(prompt)
-            return {"response": result}
+
+            if hasattr(agent, "tools_used_names"):
+                agent.tools_used_names.clear()
+
+            try:
+                result = await agent.run(request.prompt)
+            except Exception as exc:
+                if not _is_recursion_limit_error(exc):
+                    raise
+
+                result = await generate_direct_response(
+                    request.prompt,
+                    model=model,
+                    additional_instructions="Answer directly.",
+                )
+
+            return {"response": result, "mode": "mcp_agent"}
+
         except HTTPException:
             raise
         except Exception as exc:
             raise HTTPException(
                 status_code=502,
-                detail=(
-                    f"Agent backend unavailable. Check MCP server URL ({ENV.agent_mcp_server_url}) and ensure it is running. "
-                    f"Error: {exc}"
-                ),
+                detail=f"Agent execution failed: {exc}",
             ) from exc
 
-    @router.get(
-        "/agent/models",
-        summary="List Ollama Models",
-        description="List available Ollama models for playground selection.",
-    )
-    async def list_models() -> dict[str, Any]:
+    # -----------------------------------------------------
+    # Models Endpoint
+    # -----------------------------------------------------
+
+    @router.get("/agent/models")
+    async def list_models() -> Dict[str, Any]:
         base_url = (ENV.agent_ollama_base_url or "").rstrip("/")
+
         if not base_url:
-            raise HTTPException(status_code=500, detail="Ollama base URL is not configured")
+            raise HTTPException(
+                status_code=500,
+                detail="Ollama base URL not configured",
+            )
+
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                res = await client.get(f"{base_url}/api/tags")
+            async with httpx.AsyncClient(
+                base_url=base_url,
+                timeout=httpx.Timeout(5.0),
+            ) as client:
+                res = await client.get("/api/tags")
+
             if not res.is_success:
-                raise HTTPException(status_code=res.status_code, detail="Failed to fetch Ollama models")
+                raise HTTPException(
+                    status_code=res.status_code,
+                    detail="Failed to fetch Ollama models",
+                )
+
             payload = res.json()
-            models = [m.get("name") for m in payload.get("models", []) if m.get("name")]
-            return {"models": models, "default_model": ENV.agent_ollama_model}
+            models = [
+                m.get("name")
+                for m in payload.get("models", [])
+                if m.get("name")
+            ]
+
+            return {
+                "models": models,
+                "default_model": ENV.agent_ollama_model,
+            }
+
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Failed to reach Ollama server: {exc}") from exc
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to reach Ollama server: {exc}",
+            ) from exc
 
-    @router.post(
-        "/agent/playground/query",
-        summary="Run Agent Playground Query",
-        description="Execute a prompt with forced instructions to only use the specified tools for a given app. Source: backend/app/routers/agent.py",
-    )
+    # -----------------------------------------------------
+    # Playground Query Endpoint
+    # -----------------------------------------------------
+
+    @router.post("/agent/playground/query")
     async def playground_query(
         request: PlaygroundQueryRequest,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
+        model = _normalize_model(request.model)
+
         try:
+            if _should_bypass_mcp_agent(request.prompt):
+                result = await generate_direct_response(
+                    request.prompt,
+                    model=model,
+                    additional_instructions="Answer directly.",
+                )
+                return {"response": result, "mode": "direct_llm"}
+
             all_tools = await _list_combined_tool_names()
+
             if not all_tools:
-                raise HTTPException(status_code=502, detail="No tools available from combined MCP endpoint")
+                raise HTTPException(
+                    status_code=502,
+                    detail="No tools available from MCP server",
+                )
 
-            normalized_prompt = " ".join((request.prompt or "").strip().lower().split())
-            if request.selected_tools is not None and len(request.selected_tools) == 0:
-                raise HTTPException(status_code=400, detail="No tools selected for playground request")
-
+            # validate user tool selection
             if request.selected_tools:
-                unknown = [tool for tool in request.selected_tools if tool not in all_tools]
+                unknown = [
+                    t for t in request.selected_tools
+                    if t not in all_tools
+                ]
                 if unknown:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Unknown tools requested: {', '.join(sorted(unknown))}",
+                        detail=f"Unknown tools requested: {unknown}",
                     )
                 selected_tools = request.selected_tools
             else:
-                selected_tools = all_tools
+                selected_tools = _select_relevant_tools(
+                    request.prompt,
+                    all_tools,
+                    max_tools=12,
+                )
 
-            # Fast-path: tool inventory request should return the allowed tool list directly.
-            if (
-                normalized_prompt in {
-                    "list tools",
-                    "list all tools",
-                    "show tools",
-                    "show all tools",
-                    "available tools",
-                    "what tools are available",
-                    "tools",
-                }
-                or ("tool" in normalized_prompt and ("list" in normalized_prompt or "show" in normalized_prompt))
-            ):
-                catalog = _list_exposed_tool_catalog()
-                allowed_set = set(selected_tools)
-                combined_set = set(all_tools)
-                grouped: dict[str, list[dict[str, Any]]] = {}
-                for item in catalog:
-                    name = str(item.get("name", ""))
-                    app = str(item.get("app", "unknown"))
-                    if name not in allowed_set or name not in combined_set:
-                        continue
-                    grouped.setdefault(app, []).append(item)
-
-                response_lines: list[str] = []
-                for app in sorted(grouped.keys()):
-                    response_lines.append(f"{app}:")
-                    for tool in sorted(grouped[app], key=lambda t: str(t.get("name", ""))):
-                        desc = (tool.get("description") or "").strip()
-                        if desc:
-                            response_lines.append(f"- {tool.get('name')}: {desc}")
-                        else:
-                            response_lines.append(f"- {tool.get('name')}")
-                    response_lines.append("")
-
-                if not response_lines:
-                    response_lines = ["No tools available for the current selection."]
-
-                return {
-                    "response": "\n".join(response_lines).strip(),
-                    "tools_by_app": grouped,
-                }
-
-            disallowed_tools = [tool for tool in all_tools if tool not in selected_tools]
             instructions = _build_tool_only_instructions(selected_tools)
 
-            model_agent = build_agent_with_model(
-                request.model.strip() if request.model and request.model.strip() else None,
-                disallowed_tools=disallowed_tools,
+            agent = build_agent_with_model(
+                model,
+                disallowed_tools=[
+                    t for t in all_tools if t not in selected_tools
+                ],
                 additional_instructions=instructions,
                 max_steps=8,
                 retry_on_error=False,
                 memory_enabled=False,
             )
-            model_agent.tools_used_names = []
-            result = await model_agent.run(request.prompt)
-            return {"response": result}
+
+            try:
+                result = await agent.run(request.prompt)
+            except Exception as exc:
+                if not _is_recursion_limit_error(exc):
+                    raise
+                result = await generate_direct_response(
+                    request.prompt,
+                    model=model,
+                    additional_instructions="Answer directly.",
+                )
+
+            return {"response": result, "mode": "mcp_agent"}
+
         except HTTPException:
             raise
         except Exception as exc:
             raise HTTPException(
                 status_code=502,
-                detail=(
-                    f"Agent backend unavailable. Check MCP server URL ({ENV.agent_mcp_server_url}) and ensure it is running. "
-                    f"Error: {exc}"
-                ),
+                detail=f"Playground agent failed: {exc}",
             ) from exc
 
     return router

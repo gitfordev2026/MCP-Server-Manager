@@ -1,6 +1,8 @@
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import AIMessage
 from langchain_ollama import ChatOllama
-from mcp_use import MCPAgent, MCPClient
+from mcp_use.agents.mcpagent import MCPAgent
+from mcp_use.client import MCPClient
 
 from app.env import ENV
 
@@ -92,3 +94,40 @@ def build_agent_with_model(
         retry_on_error=True if retry_on_error is None else retry_on_error,
         memory_enabled=True if memory_enabled is None else memory_enabled,
     )
+
+
+async def generate_direct_response(
+    prompt: str,
+    model: str | None = None,
+    additional_instructions: str | None = None,
+) -> str:
+    callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
+    resolved_model = model or ENV.agent_ollama_model
+    llm = ChatOllama(
+        model=resolved_model,
+        base_url=ENV.agent_ollama_base_url,
+        temperature=ENV.agent_ollama_temperature,
+        callbacks=callbacks,
+    )
+
+    full_prompt = prompt.strip()
+    if additional_instructions:
+        full_prompt = f"{additional_instructions.strip()}\n\n{full_prompt}"
+
+    response = await llm.ainvoke(full_prompt)
+    if isinstance(response, AIMessage):
+        content = response.content
+    else:
+        content = getattr(response, "content", response)
+
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            else:
+                parts.append(str(item))
+        return "".join(parts).strip()
+    return str(content).strip()

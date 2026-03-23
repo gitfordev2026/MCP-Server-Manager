@@ -242,6 +242,10 @@ def create_base_urls_router(
                         "include_unreachable_tools": bool(row.include_unreachable_tools),
                         "is_enabled": bool(row.is_enabled),
                         "is_deleted": bool(row.is_deleted),
+                        "admin_allowed": bool(getattr(row, "admin_allowed", True)),
+                        "health_status": str(getattr(row, "health_status", "unknown")),
+                        "last_health_check_at": getattr(row, "last_health_check_at", None),
+                        "consecutive_failures": int(getattr(row, "consecutive_failures", 0) or 0),
                     }
                     for row in rows
                 ]
@@ -448,7 +452,7 @@ def create_base_urls_router(
                 if not row or row.is_deleted or not row.is_enabled:
                     raise HTTPException(status_code=404, detail=f"Application '{name}' not found")
 
-                row.last_sync_started_on = datetime.datetime.utcnow()
+                row.last_sync_started_on = datetime.datetime.now(datetime.UTC)
                 row.last_sync_status = "in_progress"
                 db.commit()
 
@@ -460,7 +464,7 @@ def create_base_urls_router(
             with session_local_factory() as db:
                 row = db.scalar(select(base_url_model).where(base_url_model.name == name))
                 if row:
-                    row.last_sync_completed_on = datetime.datetime.utcnow()
+                    row.last_sync_completed_on = datetime.datetime.now(datetime.UTC)
                     row.last_sync_status = "success" 
                     row.last_sync_error = None
                     db.commit()
@@ -476,7 +480,7 @@ def create_base_urls_router(
             with session_local_factory() as db:
                 row = db.scalar(select(base_url_model).where(base_url_model.name == name))
                 if row:
-                    row.last_sync_completed_on = datetime.datetime.utcnow()
+                    row.last_sync_completed_on = datetime.datetime.now(datetime.UTC)
                     row.last_sync_status = "failed"
                     row.last_sync_error = str(exc)
                     db.commit()

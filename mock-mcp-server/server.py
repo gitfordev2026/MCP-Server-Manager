@@ -56,7 +56,7 @@ def add(a: float, b: float) -> float:
 @mcp.tool
 def get_current_time() -> str:
     """Return the current UTC timestamp as an ISO-8601 string."""
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    return datetime.datetime.now(datetime.UTC).isoformat() + "Z"
 
 @mcp.tool
 def random_number(low: int = 1, high: int = 100) -> int:
@@ -137,7 +137,7 @@ def resource_server_info() -> dict:
     return {
         "name":      "MockDevServer",
         "version":   "1.0.0",
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
         "tools":     ["add", "get_current_time", "random_number", "reverse_string",
                       "word_count", "get_user", "create_note", "transform_case", "calculate"],
         "resources": ["data://users/all", "data://notes/all",
@@ -259,7 +259,7 @@ def root():
 
 @app.get("/health", tags=["Health"])
 def health():
-    return {"status": "healthy", "timestamp": datetime.datetime.utcnow().isoformat() + "Z"}
+    return {"status": "healthy", "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z"}
 
 @app.get("/info", tags=["Health"])
 def info():
@@ -340,7 +340,7 @@ def random_endpoint(low: int = 1, high: int = 100):
 
 @app.get("/time", tags=["Utilities"])
 def current_time():
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
     return {
         "utc":       now.isoformat() + "Z",
         "date":      now.date().isoformat(),

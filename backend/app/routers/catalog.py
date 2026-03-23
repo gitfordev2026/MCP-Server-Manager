@@ -62,11 +62,10 @@ def create_catalog_router(
         app_count = len(active_apps)
         healthy_count = sum(
             1 for app in active_apps
-            if str(getattr(app, "registry_state", "active")) == "active"
-            and str(getattr(app, "last_sync_status", "never")) != "failed"
+            if str(getattr(app, "health_status", "unknown")) in {"healthy", "degraded"}
         )
         unreachable_count = sum(
-            1 for app in active_apps if str(getattr(app, "last_sync_status", "never")) == "failed"
+            1 for app in active_apps if str(getattr(app, "health_status", "unknown")) == "down"
         )
         
         zero_count = 0  # Simplified calculation for isolated service architecture
@@ -75,12 +74,12 @@ def create_catalog_router(
             {
                 "name": app.name,
                 "url": app.url,
-                "status": "unreachable"
-                if str(getattr(app, "last_sync_status", "never")) == "failed"
-                else "healthy",
+                "status": str(getattr(app, "health_status", "unknown")),
                 "tool_count": 0, # Could aggregate from tools_list
                 "last_sync_status": getattr(app, "last_sync_status", "never"),
                 "registry_state": getattr(app, "registry_state", "active"),
+                "last_health_check_at": getattr(app, "last_health_check_at", None),
+                "consecutive_failures": int(getattr(app, "consecutive_failures", 0) or 0),
             }
             for app in active_apps
         ]

@@ -24,7 +24,6 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
   const [hasToken, setHasToken] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(true);
   const showLogout = hasToken || authEnabled === false;
   const inactiveButtonClasses = isDark
     ? 'bg-slate-800/70 text-slate-200 hover:bg-slate-700/80 border border-slate-600/50'
@@ -101,16 +100,6 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
     setHasToken(Boolean(getStoredToken()));
   }, [pathname]);
 
-  useEffect(() => {
-    const update = () => {
-      if (typeof window === 'undefined') return;
-      setIsDesktop(window.innerWidth >= 768);
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
-
   return (
     <>
       <nav
@@ -139,7 +128,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
           </Link>
 
           {/* Desktop nav */}
-          <div className={`${isDesktop ? 'flex' : 'hidden'} flex-1 items-center gap-2`}>
+          <div className="hidden flex-1 items-center gap-2 md:flex">
             <div className="flex-1 overflow-x-auto">
               <div className="flex gap-2 items-center justify-end flex-nowrap pr-2">
               <Link href="/"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : inactiveButtonClasses}`}>Dashboard</Button></Link>
@@ -170,7 +159,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
           </div>
 
           {/* Mobile toggle */}
-          <div className={`${isDesktop ? 'hidden' : 'flex'} flex-1 justify-end`}>
+          <div className="flex flex-1 justify-end md:hidden">
             <button
               type="button"
               aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
@@ -210,7 +199,7 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
         </div>
 
         {/* Mobile menu */}
-        {!isDesktop && mobileOpen && (
+        {mobileOpen && (
           <div className={`border-t ${isDark ? 'border-slate-700/60' : 'border-amber-200/60'}`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 grid gap-2">
               <Link href="/" onClick={() => setMobileOpen(false)}>

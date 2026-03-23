@@ -13,7 +13,7 @@ def sync_tools_from_discovery(
     """
     Reconciles the latest discovery snapshot into the canonical mcp_tools table.
     """
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.UTC)
     
     # 1. Fetch existing tool records for this owner
     existing_records = db.scalars(

@@ -17,6 +17,7 @@ class EndpointCreate(BaseModel):
     version: str = "1.0.0"
     mcp_tool_id: int | None = None
     is_enabled: bool = True
+    admin_allowed: bool | None = None
     admin_enabled: bool | None = None
     owner_enabled: bool | None = None
     exposed_to_mcp: bool = False
@@ -33,6 +34,7 @@ class EndpointUpdate(BaseModel):
     version: str | None = None
     mcp_tool_id: int | None = None
     is_enabled: bool | None = None
+    admin_allowed: bool | None = None
     admin_enabled: bool | None = None
     owner_enabled: bool | None = None
     exposed_to_mcp: bool | None = None
@@ -71,6 +73,8 @@ def create_endpoints_router(
                     select(server_model).where(
                         server_model.is_deleted == False,  # noqa: E712
                         server_model.is_enabled == True,  # noqa: E712
+                        server_model.admin_allowed == True,  # noqa: E712
+                        server_model.health_status.in_(["healthy", "degraded"]),
                     )
                 ).all()
             }
@@ -80,15 +84,27 @@ def create_endpoints_router(
                     select(base_url_model).where(
                         base_url_model.is_deleted == False,  # noqa: E712
                         base_url_model.is_enabled == True,  # noqa: E712
+                        base_url_model.admin_allowed == True,  # noqa: E712
+                        base_url_model.health_status.in_(["healthy", "degraded"]),
                     )
                 ).all()
             }
             server_states = {
-                row.name: {"is_enabled": bool(row.is_enabled), "is_deleted": bool(row.is_deleted)}
+                row.name: {
+                    "is_enabled": bool(row.is_enabled),
+                    "is_deleted": bool(row.is_deleted),
+                    "admin_allowed": bool(getattr(row, "admin_allowed", True)),
+                    "health_status": str(getattr(row, "health_status", "unknown")),
+                }
                 for row in db.scalars(select(server_model)).all()
             }
             base_url_states = {
-                row.name: {"is_enabled": bool(row.is_enabled), "is_deleted": bool(row.is_deleted)}
+                row.name: {
+                    "is_enabled": bool(row.is_enabled),
+                    "is_deleted": bool(row.is_deleted),
+                    "admin_allowed": bool(getattr(row, "admin_allowed", True)),
+                    "health_status": str(getattr(row, "health_status", "unknown")),
+                }
                 for row in db.scalars(select(base_url_model)).all()
             }
             stmt = select(api_endpoint_model)
@@ -127,6 +143,7 @@ def create_endpoints_router(
                     "mcp_tool_id": row.mcp_tool_id,
                     "current_version": row.current_version,
                     "is_enabled": bool(row.admin_enabled and row.owner_enabled),
+                    "admin_allowed": bool(getattr(row, "admin_allowed", row.admin_enabled)),
                     "admin_enabled": row.admin_enabled,
                     "owner_enabled": row.owner_enabled,
                     "is_deleted": row.is_deleted,
@@ -145,6 +162,20 @@ def create_endpoints_router(
                         else base_url_states.get(row.owner_id[4:], {}).get("is_deleted")
                         if (row.owner_id or "").startswith("app:")
                         else False
+                    ),
+                    "parent_admin_allowed": (
+                        server_states.get(row.owner_id[4:], {}).get("admin_allowed")
+                        if (row.owner_id or "").startswith("mcp:")
+                        else base_url_states.get(row.owner_id[4:], {}).get("admin_allowed")
+                        if (row.owner_id or "").startswith("app:")
+                        else True
+                    ),
+                    "parent_health_status": (
+                        server_states.get(row.owner_id[4:], {}).get("health_status")
+                        if (row.owner_id or "").startswith("mcp:")
+                        else base_url_states.get(row.owner_id[4:], {}).get("health_status")
+                        if (row.owner_id or "").startswith("app:")
+                        else "unknown"
                     ),
                 }
                 for row in visible_rows
@@ -182,7 +213,14 @@ def create_endpoints_router(
             if existing:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Endpoint already exists")
 
-            admin_enabled = payload.admin_enabled if payload.admin_enabled is not None else payload.is_enabled
+            admin_allowed = (
+                payload.admin_allowed
+                if payload.admin_allowed is not None
+                else payload.admin_enabled
+                if payload.admin_enabled is not None
+                else payload.is_enabled
+            )
+            admin_enabled = admin_allowed
             owner_enabled = payload.owner_enabled if payload.owner_enabled is not None else True
             effective_enabled = bool(admin_enabled and owner_enabled)
             endpoint = api_endpoint_model(
@@ -192,6 +230,7 @@ def create_endpoints_router(
                 description=payload.description.strip(),
                 mcp_tool_id=payload.mcp_tool_id,
                 current_version=payload.version,
+                admin_allowed=admin_allowed,
                 admin_enabled=admin_enabled,
                 owner_enabled=owner_enabled,
                 is_enabled=effective_enabled,
@@ -296,6 +335,9 @@ def create_endpoints_router(
                 endpoint.description = payload.description.strip()
             if payload.mcp_tool_id is not None:
                 endpoint.mcp_tool_id = payload.mcp_tool_id
+            if payload.admin_allowed is not None:
+                endpoint.admin_allowed = payload.admin_allowed
+                endpoint.admin_enabled = payload.admin_allowed
             if payload.admin_enabled is not None:
                 endpoint.admin_enabled = payload.admin_enabled
             if payload.owner_enabled is not None:
