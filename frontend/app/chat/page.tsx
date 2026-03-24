@@ -83,15 +83,16 @@ export default function ChatPage() {
         throw new Error('No model selected. Please select a model and try again.');
       }
       // Send to backend API
-      const response = await authenticatedFetch(
-        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(input)}&model=${encodeURIComponent(model)}`,
-        {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: input, model }),
+      });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.detail || `HTTP ${response.status}`);
+      }
 
       // Add assistant response
       const assistantMessage: Message = {

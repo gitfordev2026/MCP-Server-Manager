@@ -424,9 +424,10 @@ export default function AdminPanelPage() {
         `Path: ${tool.path || 'N/A'}`,
         'Return a concise 1-2 sentence description only.',
       ].join('\n');
-      const payload = await http<{ response?: string }>(
-        `/agent/query?prompt=${encodeURIComponent(prompt)}`
-      );
+      const payload = await http<{ response?: string }>('/agent/query', {
+        method: 'POST',
+        body: JSON.stringify({ prompt }),
+      });
       const text = String(payload?.response || '').trim();
       if (text) {
         setToolDescEdits((prev) => ({ ...prev, [tool.id]: text }));
@@ -490,9 +491,10 @@ export default function AdminPanelPage() {
         `Endpoint: ${ep.method} ${ep.path}`,
         'Return a concise 1-2 sentence description only.',
       ].join('\n');
-      const payload = await http<{ response?: string }>(
-        `/agent/query?prompt=${encodeURIComponent(prompt)}`
-      );
+      const payload = await http<{ response?: string }>('/agent/query', {
+        method: 'POST',
+        body: JSON.stringify({ prompt }),
+      });
       const text = String(payload?.response || '').trim();
       if (text) {
         setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: text }));

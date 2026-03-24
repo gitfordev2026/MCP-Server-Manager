@@ -288,11 +288,15 @@ export default function RegisterAppPage() {
         `It should help an LLM choose and call the tool correctly (include intent, inputs, and outcome).`,
         `Return 1-2 sentences only.`,
       ].join('\n');
-      const response = await authenticatedFetch(
-        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}&model=${encodeURIComponent(llmModel)}`,
-        { method: 'GET' }
-      );
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, model: llmModel }),
+      });
       const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.detail || `HTTP ${response.status}`);
+      }
       const text = String(payload?.response || '').trim();
       if (text) {
         setSelectedEndpointDescription(endpoint.id, text);
@@ -323,11 +327,15 @@ export default function RegisterAppPage() {
         `It should help an LLM choose and call the tool correctly (include intent, inputs, and outcome).`,
         `Return 1-2 sentences only.`,
       ].join('\n');
-      const response = await authenticatedFetch(
-        `${NEXT_PUBLIC_BE_API_URL}/agent/query?prompt=${encodeURIComponent(prompt)}&model=${encodeURIComponent(llmModel)}`,
-        { method: 'GET' }
-      );
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, model: llmModel }),
+      });
       const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.detail || `HTTP ${response.status}`);
+      }
       const text = String(payload?.response || '').trim();
       if (text) {
         setDraftEndpointDescriptions((prev) => ({ ...prev, [endpoint.id]: text }));
@@ -384,7 +392,7 @@ export default function RegisterAppPage() {
         is_enabled: boolean;
       }>
     }>('/tools?include_inactive=true');
-    const dbByEndpointKey = new Map(
+    const dbByEndpointKey = new Map<string, (typeof dbPayload.tools)[number]>(
       (dbPayload.tools || [])
         .filter((tool) => tool.owner_id === `app:${appName}` && tool.source_type === 'openapi')
         .map((tool) => [`${(tool.method || '').toUpperCase()} ${tool.path || ''}`, tool] as const)
