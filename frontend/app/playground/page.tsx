@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState, useRef } from 'react';
+import MessageContent from '@/components/MessageContent';
 import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
+import { streamAgentResponse } from '@/lib/agentStream';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
@@ -32,6 +34,20 @@ interface PlaygroundPayload {
     app_name?: string;
     selected_tools?: string[];
     model?: string;
+    history?: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+    }>;
+}
+
+function buildHistory(messages: Message[]) {
+    return messages
+        .filter((message) => message.content.trim())
+        .slice(-8)
+        .map((message) => ({
+            role: message.role,
+            content: message.content,
+        }));
 }
 
 export default function PlaygroundPage() {
@@ -179,21 +195,36 @@ export default function PlaygroundPage() {
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim()) return;
+        const prompt = input.trim();
 
         const userMessage: Message = {
             id: Date.now().toString(),
             role: 'user',
-            content: input,
+            content: prompt,
             timestamp: new Date(),
         };
+        const assistantMessageId = `${Date.now()}-assistant`;
+        const assistantTimestamp = new Date();
 
-        setMessages((prev) => [...prev, userMessage]);
+        const nextMessages: Message[] = [
+            ...messages,
+            userMessage,
+            {
+                id: assistantMessageId,
+                role: 'assistant',
+                content: '',
+                timestamp: assistantTimestamp,
+            },
+        ];
+
+        setMessages(nextMessages);
         setInput('');
         setChatLoading(true);
 
         try {
             const payload: PlaygroundPayload = {
-                prompt: input,
+                prompt,
+                history: buildHistory(messages),
             };
 
             if (selectedModel) {
@@ -205,35 +236,48 @@ export default function PlaygroundPage() {
                 payload.selected_tools = Array.from(selectedToolNames);
             }
 
-            const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/playground/query`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+            await streamAgentResponse({
+                url: `${NEXT_PUBLIC_BE_API_URL}/agent/playground/query/stream`,
+                body: payload,
+                onMeta: (event) => {
+                    if (event.status === 'thinking') {
+                        setMessages((prev) =>
+                            prev.map((message) =>
+                                message.id === assistantMessageId && !message.content
+                                    ? { ...message, content: 'Thinking...' }
+                                    : message
+                            )
+                        );
+                    }
+                },
+                onChunk: (chunk) => {
+                    setMessages((prev) =>
+                        prev.map((message) =>
+                            message.id === assistantMessageId
+                                ? {
+                                    ...message,
+                                    content: message.content === 'Thinking...' ? chunk : `${message.content}${chunk}`,
+                                }
+                                : message
+                        )
+                    );
+                },
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP Error ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            const assistantMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: data.response || "I couldn't process your request. Please try again.",
-                timestamp: new Date(),
-            };
-
-            setMessages((prev) => [...prev, assistantMessage]);
         } catch (error) {
             console.error('Error:', error);
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: 'Oops! I encountered an error. Please make sure the backend server is running.',
-                timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
+            setMessages((prev) =>
+                prev.map((message) =>
+                    message.id === assistantMessageId
+                        ? {
+                            ...message,
+                            content:
+                                error instanceof Error
+                                    ? error.message
+                                    : 'Oops! I encountered an error. Please make sure the backend server is running.',
+                        }
+                        : message
+                )
+            );
         } finally {
             setChatLoading(false);
         }
@@ -338,10 +382,15 @@ export default function PlaygroundPage() {
                                                 }`}
                                         >
                                             <div className="text-sm sm:text-base leading-relaxed prose prose-sm max-w-none">
-                                                {/* We use basic text rendering here, but a markdown component could be added */}
-                                                {message.content.split('\n').map((line, i) => (
-                                                    <p key={i} className="m-0 min-h-[1em]">{line}</p>
-                                                ))}
+                                                {message.content ? (
+                                                    <MessageContent content={message.content} />
+                                                ) : (
+                                                    <div className="flex gap-2 py-1">
+                                                        <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce"></div>
+                                                        <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                                                        <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                                    </div>
+                                                )}
                                             </div>
                                             <span className={`text-xs mt-2 block opacity-60 ${message.role === 'user' ? 'text-slate-300' : 'text-slate-500'}`}>
                                                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -350,7 +399,7 @@ export default function PlaygroundPage() {
                                     </div>
                                 </div>
                             ))}
-                            {chatLoading && (
+                            {chatLoading && messages[messages.length - 1]?.role !== 'assistant' && (
                                 <div className="flex justify-start animate-slideInLeft">
                                     <div className="flex gap-3">
                                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-rose-400/30">

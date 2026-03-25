@@ -103,8 +103,10 @@ PUBLIC_PATHS = {
     "/docs",
     "/openapi.json",
     "/agent/query",
+    "/agent/query/stream",
     "/agent/models",
     "/agent/playground/query",
+    "/agent/playground/query/stream",
 }
 
 

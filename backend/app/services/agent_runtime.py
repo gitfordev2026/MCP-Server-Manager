@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from typing import Any
+
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage
 from langchain_ollama import ChatOllama
@@ -18,6 +21,20 @@ class LLMDebugCallback(BaseCallbackHandler):
         print("\n=================== RAW LLM RESPONSE ===================")
         print(response)
         print("=======================================================\n")
+
+
+def _normalize_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            else:
+                parts.append(str(item))
+        return "".join(parts)
+    return str(content)
 
 
 def build_default_agent(
@@ -120,14 +137,29 @@ async def generate_direct_response(
     else:
         content = getattr(response, "content", response)
 
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                parts.append(str(item.get("text") or ""))
-            else:
-                parts.append(str(item))
-        return "".join(parts).strip()
-    return str(content).strip()
+    return _normalize_content(content).strip()
+
+
+async def stream_direct_response_chunks(
+    prompt: str,
+    model: str | None = None,
+    additional_instructions: str | None = None,
+) -> AsyncIterator[str]:
+    callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
+    resolved_model = model or ENV.agent_ollama_model
+    llm = ChatOllama(
+        model=resolved_model,
+        base_url=ENV.agent_ollama_base_url,
+        temperature=ENV.agent_ollama_temperature,
+        callbacks=callbacks,
+    )
+
+    full_prompt = prompt.strip()
+    if additional_instructions:
+        full_prompt = f"{additional_instructions.strip()}\n\n{full_prompt}"
+
+    async for chunk in llm.astream(full_prompt):
+        content = getattr(chunk, "content", chunk)
+        text = _normalize_content(content)
+        if text:
+            yield text

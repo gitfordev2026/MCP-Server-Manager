@@ -2,8 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Navigation from '@/components/Navigation';
+import MessageContent from '@/components/MessageContent';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
+import { streamAgentResponse } from '@/lib/agentStream';
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 
@@ -13,6 +15,16 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+}
+
+function buildHistory(messages: Message[]) {
+  return messages
+    .filter((message) => message.content.trim())
+    .slice(-8)
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
 }
 
 export default function ChatPage() {
@@ -65,16 +77,30 @@ export default function ChatPage() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
+    const prompt = input.trim();
 
     // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: prompt,
       timestamp: new Date(),
     };
+    const assistantMessageId = `${Date.now()}-assistant`;
+    const assistantTimestamp = new Date();
 
-    setMessages((prev) => [...prev, userMessage]);
+    const nextMessages = [
+      ...messages,
+      userMessage,
+      {
+        id: assistantMessageId,
+        role: 'assistant' as const,
+        content: '',
+        timestamp: assistantTimestamp,
+      },
+    ];
+
+    setMessages(nextMessages);
     setInput('');
     setLoading(true);
 
@@ -82,36 +108,52 @@ export default function ChatPage() {
       if (!model) {
         throw new Error('No model selected. Please select a model and try again.');
       }
-      // Send to backend API
-      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: input, model }),
+      await streamAgentResponse({
+        url: `${NEXT_PUBLIC_BE_API_URL}/agent/query/stream`,
+        body: {
+          prompt,
+          model,
+          history: buildHistory(messages),
+        },
+        onMeta: (event) => {
+          if (event.status === 'thinking') {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId && !message.content
+                  ? { ...message, content: 'Thinking...' }
+                  : message
+              )
+            );
+          }
+        },
+        onChunk: (chunk) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    content: message.content === 'Thinking...' ? chunk : `${message.content}${chunk}`,
+                  }
+                : message
+            )
+          );
+        },
       });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.detail || `HTTP ${response.status}`);
-      }
-
-      // Add assistant response
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.response || 'I couldn\'t process your request. Please try again.',
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error:', error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: error instanceof Error ? error.message : 'Oops! I encountered an error. Please make sure the backend server is running.',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                content:
+                  error instanceof Error
+                    ? error.message
+                    : 'Oops! I encountered an error. Please make sure the backend server is running.',
+              }
+            : message
+        )
+      );
     } finally {
       setLoading(false);
     }
@@ -154,7 +196,17 @@ export default function ChatPage() {
                           : 'bg-slate-800/70 text-slate-100 rounded-bl-none border border-amber-500/30 shadow-lg'
                       }`}
                     >
-                      <p className="text-sm sm:text-base leading-relaxed font-medium">{message.content}</p>
+                      {message.content ? (
+                        <div className="text-sm sm:text-base leading-relaxed font-medium">
+                          <MessageContent content={message.content} />
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 py-1">
+                          <div className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce"></div>
+                          <div className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                          <div className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                        </div>
+                      )}
                       <span className={`text-xs mt-2 block opacity-70 ${message.role === 'user' ? 'text-blue-100' : 'text-slate-400'}`}>
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -167,7 +219,7 @@ export default function ChatPage() {
                   </div>
                 </div>
               ))}
-              {loading && (
+              {loading && messages[messages.length - 1]?.role !== 'assistant' && (
                 <div className="flex justify-start animate-slideInLeft">
                   <div className="flex gap-3">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/40">
