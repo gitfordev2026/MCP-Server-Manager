@@ -115,6 +115,43 @@ def _group_tools_by_app(catalog: List[Dict[str, Any]]) -> Dict[str, List[str]]:
     return grouped
 
 
+def _raw_tool_name(tool_name: str) -> str:
+    value = str(tool_name or "").strip()
+    if value.startswith("mcp__") and "__" in value:
+        return value.rsplit("__", 1)[-1]
+    return value
+
+
+def _tool_name_in_allowed(tool_name: str, allowed: set[str]) -> bool:
+    value = str(tool_name or "").strip()
+    return value in allowed or _raw_tool_name(value) in allowed
+
+
+def _normalize_selected_tools(
+    requested_tools: Optional[List[str]],
+    all_tools: List[str],
+) -> Tuple[List[str], List[str]]:
+    if not requested_tools:
+        return [], []
+
+    available = set(all_tools)
+    normalized: List[str] = []
+    unknown: List[str] = []
+
+    for tool_name in requested_tools:
+        candidate = str(tool_name or "").strip()
+        raw_candidate = _raw_tool_name(candidate)
+        if candidate in available:
+            normalized.append(candidate)
+        elif raw_candidate in available:
+            normalized.append(raw_candidate)
+        else:
+            unknown.append(candidate)
+
+    deduped = list(dict.fromkeys(normalized))
+    return deduped, unknown
+
+
 # =========================================================
 # Tool Retrieval Layer (context-window safe)
 # =========================================================
@@ -240,6 +277,23 @@ def _build_greeting_directive(request: PlaygroundQueryRequest) -> Optional[str]:
     return None
 
 
+def _is_capability_prompt(prompt: str) -> bool:
+    normalized = " ".join((prompt or "").strip().lower().split())
+    if not normalized:
+        return False
+
+    capability_signals = [
+        "what can you do",
+        "what do you do",
+        "how can you help",
+        "help me",
+        "capabilities",
+        "available functions",
+        "available commands",
+    ]
+    return any(signal in normalized for signal in capability_signals)
+
+
 def _is_recursion_limit_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "recursion" in msg and "stop condition" in msg
@@ -335,13 +389,18 @@ def _build_tool_inventory_response_from_catalog(
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for item in catalog:
         name = str(item.get("name", "")).strip()
-        if not name or name not in allowed_set:
+        if not name or not _tool_name_in_allowed(name, allowed_set):
             continue
         app = str(item.get("app", "unknown")).strip() or "unknown"
         grouped.setdefault(app, []).append(item)
 
     if not grouped:
-        return "No tools available for the current selection."
+        if not allowed_tool_names:
+            return "No tools available for the current selection."
+        lines.append(f"Available tools for the current selection ({len(allowed_tool_names)}):")
+        for name in sorted(dict.fromkeys(allowed_tool_names)):
+            lines.append(f"- {name}")
+        return "\n".join(lines)
 
     total = sum(len(items) for items in grouped.values())
     lines.append(f"Available tools for the current selection ({total}):")
@@ -355,6 +414,46 @@ def _build_tool_inventory_response_from_catalog(
                 lines.append(f"- {name}: {description}")
             else:
                 lines.append(f"- {name}")
+
+    return "\n".join(lines)
+
+
+def _build_capability_summary_from_catalog(
+    catalog: List[Dict[str, Any]],
+    allowed_tool_names: List[str],
+) -> str:
+    allowed_set = set(allowed_tool_names)
+    matched_items = [
+        item for item in catalog
+        if _tool_name_in_allowed(str(item.get("name", "")).strip(), allowed_set)
+    ]
+
+    if not matched_items:
+        if not allowed_tool_names:
+            return "I can chat, answer questions, and use tools when they are available."
+        sample = ", ".join(sorted(dict.fromkeys(allowed_tool_names))[:6])
+        return (
+            "I can help by using the tools available in this context. "
+            f"For example: {sample}."
+        )
+
+    descriptions = []
+    for item in matched_items[:6]:
+        title = str(item.get("title") or item.get("name") or "").strip()
+        description = str(item.get("description") or "").strip()
+        if title and description:
+            descriptions.append(f"- {title}: {description}")
+        elif title:
+            descriptions.append(f"- {title}")
+
+    lines = [
+        "I can help with the tools available in this context. Here are some examples:",
+        *descriptions,
+    ]
+
+    total = len({str(item.get('name') or '').strip() for item in matched_items if str(item.get('name') or '').strip()})
+    if total > len(descriptions):
+        lines.append(f"And {total - len(descriptions)} more tool(s) are also available.")
 
     return "\n".join(lines)
 
@@ -475,6 +574,14 @@ async def _run_agent_query(
     model = _normalize_model(request.model)
     effective_prompt = _effective_prompt(request)
 
+    if _is_capability_prompt(request.prompt):
+        all_tools = await _list_combined_tool_names()
+        catalog = _list_exposed_tool_catalog()
+        return {
+            "response": _build_capability_summary_from_catalog(catalog, all_tools),
+            "mode": "capability_summary",
+        }
+
     greeting_directive = _build_greeting_directive(request)
     if greeting_directive:
         result = await generate_direct_response(
@@ -561,6 +668,34 @@ async def _run_playground_query(
 
     effective_prompt = _effective_prompt(request)
 
+    all_tools = await _list_combined_tool_names()
+
+    if not all_tools:
+        raise HTTPException(
+            status_code=502,
+            detail="No tools available from MCP server",
+        )
+
+    if request.selected_tools:
+        selected_tools, unknown = _normalize_selected_tools(
+            request.selected_tools,
+            all_tools,
+        )
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown tools requested: {unknown}",
+            )
+    else:
+        selected_tools = all_tools
+
+    if _is_capability_prompt(request.prompt):
+        catalog = _list_exposed_tool_catalog()
+        return {
+            "response": _build_capability_summary_from_catalog(catalog, selected_tools),
+            "mode": "capability_summary",
+        }
+
     greeting_directive = _build_greeting_directive(request)
     if greeting_directive:
         result = await generate_direct_response(
@@ -577,28 +712,6 @@ async def _run_playground_query(
             additional_instructions="Answer directly.",
         )
         return {"response": result, "mode": "direct_llm"}
-
-    all_tools = await _list_combined_tool_names()
-
-    if not all_tools:
-        raise HTTPException(
-            status_code=502,
-            detail="No tools available from MCP server",
-        )
-
-    if request.selected_tools:
-        unknown = [
-            t for t in request.selected_tools
-            if t not in all_tools
-        ]
-        if unknown:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown tools requested: {unknown}",
-            )
-        selected_tools = request.selected_tools
-    else:
-        selected_tools = all_tools
 
     if _is_tool_inventory_prompt(request.prompt) or _wants_descriptions(request):
         catalog = _list_exposed_tool_catalog()

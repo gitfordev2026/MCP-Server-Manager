@@ -42,7 +42,15 @@ interface PlaygroundPayload {
 
 function buildHistory(messages: Message[]) {
     return messages
-        .filter((message) => message.content.trim())
+        .filter((message) => {
+            const content = message.content.trim();
+            if (!content) return false;
+            if (message.role !== 'assistant') return true;
+            if (content.startsWith('You are now testing')) return false;
+            if (content.startsWith('Unknown tools requested:')) return false;
+            if (content.startsWith('No tools available for the current selection.')) return false;
+            return true;
+        })
         .slice(-8)
         .map((message) => ({
             role: message.role,
