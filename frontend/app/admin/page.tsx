@@ -566,7 +566,7 @@ export default function AdminPanelPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/40 to-amber-50/60">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {confirm && (
         <ConfirmDialog
           message={confirm.message}
@@ -577,27 +577,27 @@ export default function AdminPanelPage() {
 
       <Navigation pageTitle="Admin Panel" />
 
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-6">
+      <main className="pt-8 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold bg-gradient from-cyan-700 to-amber-700 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-rose-600 to-amber-600 bg-clip-text text-transparent">
               Admin Control Panel
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-slate-700 dark:text-slate-300 mt-1 font-medium">
               Governance for Applications, MCP Servers, Tools, and Endpoints
               {' · '}
-              <span className={`font-semibold ${actorRole === 'super_admin' ? 'text-violet-600' : actorRole === 'admin' ? 'text-cyan-600' : 'text-slate-600'}`}>
+              <span className={`font-semibold ${actorRole === 'super_admin' ? 'text-violet-600 dark:text-violet-400' : actorRole === 'admin' ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-700 dark:text-slate-300'}`}>
                 {actorRole}
               </span>
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
               <span className="uppercase tracking-wide">Role</span>
               <select
-                className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 bg-white"
+                className="border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800"
                 value={actorRole}
                 onChange={(e) => handleRoleChange(e.target.value as Role)}
               >
@@ -607,9 +607,6 @@ export default function AdminPanelPage() {
                 <option value="read_only">Read Only</option>
               </select>
             </div>
-            <Button variant="primary" onClick={() => void fetchAll()} disabled={loading}>
-              {loading ? 'Refreshing…' : 'Refresh'}
-            </Button>
           </div>
         </div>
 
@@ -625,20 +622,26 @@ export default function AdminPanelPage() {
         )}
 
         {/* Tab bar */}
-        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+        <div className="flex flex-wrap gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-3">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors ${
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
                 activeTab === tab.id
-                  ? 'bg-white border border-b-white border-slate-200 text-cyan-700 -mb-px relative z-10'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
               {tab.label}
               {tab.count !== undefined && (
-                <span className="ml-1.5 text-xs bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5">{tab.count}</span>
+                <span className={`ml-2 text-xs rounded-full px-2 py-0.5 font-bold ${
+                  activeTab === tab.id
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`}>
+                  {tab.count}
+                </span>
               )}
             </button>
           ))}
@@ -649,13 +652,13 @@ export default function AdminPanelPage() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {statCards.map((card) => (
-                <div key={card.label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{card.label}</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-1">{card.total}</p>
+                <div key={card.label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{card.label}</p>
+                  <p className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{card.total}</p>
                   {card.alive !== undefined && (
                     <div className="flex gap-3 mt-2 text-xs">
-                      <span className="text-emerald-600 font-medium">▲ {card.alive} alive</span>
-                      {(card.down ?? 0) > 0 && <span className="text-red-500 font-medium">▼ {card.down} down</span>}
+                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">▲ {card.alive} alive</span>
+                      {(card.down ?? 0) > 0 && <span className="text-rose-600 dark:text-rose-400 font-medium">▼ {card.down} down</span>}
                     </div>
                   )}
                 </div>
@@ -663,8 +666,8 @@ export default function AdminPanelPage() {
             </div>
 
             {/* Quick health summary */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Health Summary</h2>
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Health Summary</h2>
               <div className="space-y-3">
                 {[
                   { label: 'Applications', alive: stats?.applications_alive ?? 0, total: stats?.total_applications ?? 0 },
@@ -674,14 +677,14 @@ export default function AdminPanelPage() {
                   return (
                     <div key={label}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-slate-600">{label}</span>
-                        <span className={pct === 100 ? 'text-emerald-600 font-medium' : pct > 60 ? 'text-amber-600 font-medium' : 'text-red-600 font-medium'}>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{label}</span>
+                        <span className={pct === 100 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : pct > 60 ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
                           {alive}/{total} ({pct}%)
                         </span>
                       </div>
-                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : pct > 60 ? 'bg-amber-400' : 'bg-red-400'}`}
+                          className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : pct > 60 ? 'bg-amber-400' : 'bg-rose-500'}`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -692,88 +695,88 @@ export default function AdminPanelPage() {
             </div>
 
             {/* Registry sync health */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Registry Sync Health</h2>
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Registry Sync Health</h2>
               <div className="grid sm:grid-cols-5 gap-3 mb-4">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Apps Tracked</p>
-                  <p className="text-xl font-bold text-slate-900">{syncHealth?.summary.apps_total ?? 0}</p>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 p-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Apps Tracked</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">{syncHealth?.summary.apps_total ?? 0}</p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Mini Servers</p>
-                  <p className="text-xl font-bold text-slate-900">{syncHealth?.summary.servers_total ?? 0}</p>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 p-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Mini Servers</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">{syncHealth?.summary.servers_total ?? 0}</p>
                 </div>
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-                  <p className="text-xs text-red-600">Failed Sync Apps</p>
-                  <p className="text-xl font-bold text-red-700">{syncHealth?.summary.failed_sync_apps ?? 0}</p>
+                <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-3">
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">Failed Sync Apps</p>
+                  <p className="text-xl font-bold text-rose-700 dark:text-rose-300">{syncHealth?.summary.failed_sync_apps ?? 0}</p>
                 </div>
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-xs text-amber-700">Stale Tools</p>
-                  <p className="text-xl font-bold text-amber-700">{syncHealth?.summary.stale_tools_total ?? 0}</p>
+                <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Stale Tools</p>
+                  <p className="text-xl font-bold text-amber-700 dark:text-amber-300">{syncHealth?.summary.stale_tools_total ?? 0}</p>
                 </div>
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-xs text-amber-700">Stale MCP Tools</p>
-                  <p className="text-xl font-bold text-amber-700">{syncHealth?.summary.stale_mcp_tools_total ?? 0}</p>
+                <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Stale MCP Tools</p>
+                  <p className="text-xl font-bold text-amber-700 dark:text-amber-300">{syncHealth?.summary.stale_mcp_tools_total ?? 0}</p>
                 </div>
               </div>
               <div className="space-y-2 max-h-72 overflow-auto pr-1">
                 {(syncHealth?.apps || []).length === 0 ? (
-                  <p className="text-sm text-slate-500">No app sync records found.</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">No app sync records found.</p>
                 ) : (
                   (syncHealth?.apps || []).map((app) => (
-                    <div key={app.owner_id} className="rounded-lg border border-slate-200 p-3">
+                    <div key={app.owner_id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-900">{app.name}</p>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{app.name}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           app.last_sync_status === 'failed'
-                            ? 'bg-red-100 text-red-700'
+                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
                             : app.last_sync_status === 'success'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-600'
+                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                         }`}>
                           {app.last_sync_status}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">{app.owner_id}</p>
-                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{app.owner_id}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-700 dark:text-slate-300 font-medium">
                         <span>mode: {app.sync_mode}</span>
                         <span>state: {app.registry_state}</span>
                         <span>tools: {app.registered_tools_total}</span>
-                        <span className={app.stale_tools_total > 0 ? 'text-amber-700 font-medium' : ''}>
+                        <span className={app.stale_tools_total > 0 ? 'text-amber-700 dark:text-amber-400 font-medium' : ''}>
                           stale: {app.stale_tools_total}
                         </span>
                       </div>
                       {app.last_sync_error && (
-                        <p className="mt-2 text-xs text-red-600 break-all">{app.last_sync_error}</p>
+                        <p className="mt-2 text-xs text-rose-600 dark:text-rose-400 break-all">{app.last_sync_error}</p>
                       )}
                     </div>
                   ))
                 )}
               </div>
               <div className="mt-4">
-                <h3 className="text-sm font-semibold text-slate-800 mb-2">MCP Mini Server Registry Health</h3>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">MCP Mini Server Registry Health</h3>
                 <div className="space-y-2 max-h-64 overflow-auto pr-1">
                   {(syncHealth?.servers || []).length === 0 ? (
-                    <p className="text-sm text-slate-500">No mini servers tracked.</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">No mini servers tracked.</p>
                   ) : (
                     (syncHealth?.servers || []).map((server) => (
-                      <div key={server.owner_id} className="rounded-lg border border-slate-200 p-3">
+                      <div key={server.owner_id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 p-3">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-slate-900">{server.name}</p>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{server.name}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             server.registry_state === 'active'
-                              ? 'bg-emerald-100 text-emerald-700'
+                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                               : server.registry_state === 'disabled'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-red-100 text-red-700'
+                                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                                : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
                           }`}>
                             {server.registry_state}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">{server.owner_id}</p>
-                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{server.owner_id}</p>
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-700 dark:text-slate-300 font-medium">
                           <span>tools: {server.registered_tools_total}</span>
-                          <span className={server.stale_tools_total > 0 ? 'text-amber-700 font-medium' : ''}>
+                          <span className={server.stale_tools_total > 0 ? 'text-amber-700 dark:text-amber-400 font-medium' : ''}>
                             stale: {server.stale_tools_total}
                           </span>
                         </div>
@@ -788,35 +791,35 @@ export default function AdminPanelPage() {
 
         {/* ── APPLICATIONS TAB ─────────────────────────────────────────────── */}
         {activeTab === 'applications' && (
-          <section className="rounded-2xl border border-cyan-200 bg-white p-6 shadow-sm space-y-5">
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-5">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <h2 className="text-xl font-semibold text-slate-900">Applications</h2>
-              {!canManageApps && <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Read-only</span>}
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Applications</h2>
+              {!canManageApps && <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-full font-medium">Read-only</span>}
             </div>
 
             {/* Create form */}
             {canManageApps && (
-              <details className="group rounded-xl border border-dashed border-cyan-300 bg-cyan-50/50 p-4">
-                <summary className="cursor-pointer text-sm font-medium text-cyan-700 group-open:mb-4 list-none flex items-center gap-2">
+              <details className="group rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-cyan-600 dark:text-cyan-400 group-open:mb-4 list-none flex items-center gap-2">
                   <span className="text-lg leading-none">＋</span> Register New Application
                 </summary>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Name *" value={appForm.name} onChange={(e) => setAppForm({ ...appForm, name: e.target.value })} />
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Base URL *" value={appForm.url} onChange={(e) => setAppForm({ ...appForm, url: e.target.value })} />
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Description" value={appForm.description} onChange={(e) => setAppForm({ ...appForm, description: e.target.value })} />
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="OpenAPI path" value={appForm.openapi_path} onChange={(e) => setAppForm({ ...appForm, openapi_path: e.target.value })} />
-                  <label className="flex items-center gap-2 text-sm text-slate-600 px-2">
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Name *" value={appForm.name} onChange={(e) => setAppForm({ ...appForm, name: e.target.value })} />
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Base URL *" value={appForm.url} onChange={(e) => setAppForm({ ...appForm, url: e.target.value })} />
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Description" value={appForm.description} onChange={(e) => setAppForm({ ...appForm, description: e.target.value })} />
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="OpenAPI path" value={appForm.openapi_path} onChange={(e) => setAppForm({ ...appForm, openapi_path: e.target.value })} />
+                  <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 font-medium px-2">
                     <input type="checkbox" checked={appForm.include_unreachable_tools} onChange={(e) => setAppForm({ ...appForm, include_unreachable_tools: e.target.checked })} />
                     Include unreachable tools
                   </label>
-                  <Button disabled={!appForm.name || !appForm.url} onClick={() => void createApp()}>Register App</Button>
+                  <Button disabled={!appForm.name || !appForm.url} onClick={() => void createApp()} className="bg-cyan-600 hover:bg-cyan-700 text-white">Register App</Button>
                 </div>
               </details>
             )}
 
             {/* Search */}
             <input
-              className="w-full max-w-xs border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              className="w-full max-w-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               placeholder="Search applications…"
               value={appSearch}
               onChange={(e) => setAppSearch(e.target.value)}
@@ -825,12 +828,12 @@ export default function AdminPanelPage() {
             {/* List */}
             <div className="space-y-2">
               {filteredApps.length === 0 ? <EmptyState message="No applications found" /> : filteredApps.map((app) => (
-                <div key={app.name} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2">
+                <div key={app.name} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2">
                   {editingApp?.name === app.name ? (
                     <div className="grid sm:grid-cols-3 gap-2">
-                      <input className="border rounded-lg px-3 py-2 text-sm" value={editingApp.url} onChange={(e) => setEditingApp({ ...editingApp, url: e.target.value })} placeholder="URL" />
-                      <input className="border rounded-lg px-3 py-2 text-sm" value={editingApp.description ?? ''} onChange={(e) => setEditingApp({ ...editingApp, description: e.target.value })} placeholder="Description" />
-                      <input className="border rounded-lg px-3 py-2 text-sm" value={editingApp.openapi_path} onChange={(e) => setEditingApp({ ...editingApp, openapi_path: e.target.value })} placeholder="OpenAPI path" />
+                      <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-2 text-sm" value={editingApp.url} onChange={(e) => setEditingApp({ ...editingApp, url: e.target.value })} placeholder="URL" />
+                      <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-2 text-sm" value={editingApp.description ?? ''} onChange={(e) => setEditingApp({ ...editingApp, description: e.target.value })} placeholder="Description" />
+                      <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-2 text-sm" value={editingApp.openapi_path} onChange={(e) => setEditingApp({ ...editingApp, openapi_path: e.target.value })} placeholder="OpenAPI path" />
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => void saveEditApp(editingApp)}>Save</Button>
                         <Button size="sm" variant="ghost" onClick={() => setEditingApp(null)}>Cancel</Button>
@@ -839,12 +842,12 @@ export default function AdminPanelPage() {
                   ) : (
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
-                        <p className="font-semibold text-sm text-slate-900">{app.name}</p>
-                        <p className="text-xs text-slate-500 truncate">{app.url} · <span className="font-mono">{app.openapi_path}</span></p>
-                        {app.description && <p className="text-xs text-slate-400 mt-0.5">{app.description}</p>}
+                        <p className="font-semibold text-sm text-slate-900 dark:text-white">{app.name}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{app.url} · <span className="font-mono">{app.openapi_path}</span></p>
+                        {app.description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{app.description}</p>}
                         {app.is_deleted && (
                           <span
-                            className="text-xs text-red-500 mt-0.5 inline-block"
+                            className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-0.5 inline-block"
                             title="Soft-deleted (is_deleted=true). Use Restore to bring it back."
                           >
                             ⚠ soft-deleted
@@ -853,7 +856,7 @@ export default function AdminPanelPage() {
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
-                          className={`text-xs px-2 py-1 rounded-full ${(app.is_enabled ?? true) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${(app.is_enabled ?? true) ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                           title={(app.is_enabled ?? true) ? 'Enabled (is_enabled=true)' : 'Disabled (is_enabled=false)'}
                         >
                           {(app.is_enabled ?? true) ? 'enabled' : 'disabled'}
@@ -894,35 +897,35 @@ export default function AdminPanelPage() {
 
         {/* ── SERVERS TAB ──────────────────────────────────────────────────── */}
         {activeTab === 'servers' && (
-          <section className="rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm space-y-5">
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-5">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <h2 className="text-xl font-semibold text-slate-900">MCP Servers</h2>
-              {!canManageServers && <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Read-only</span>}
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">MCP Servers</h2>
+              {!canManageServers && <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-full font-medium">Read-only</span>}
             </div>
 
             {canManageServers && (
-              <details className="group rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 p-4">
-                <summary className="cursor-pointer text-sm font-medium text-emerald-700 group-open:mb-4 list-none flex items-center gap-2">
+              <details className="group rounded-xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-emerald-600 dark:text-emerald-400 group-open:mb-4 list-none flex items-center gap-2">
                   <span className="text-lg leading-none">＋</span> Register New MCP Server
                 </summary>
                 <div className="grid sm:grid-cols-3 gap-3">
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Name *" value={serverForm.name} onChange={(e) => setServerForm({ ...serverForm, name: e.target.value })} />
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="URL *" value={serverForm.url} onChange={(e) => setServerForm({ ...serverForm, url: e.target.value })} />
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Description" value={serverForm.description} onChange={(e) => setServerForm({ ...serverForm, description: e.target.value })} />
-                  <Button disabled={!serverForm.name || !serverForm.url} onClick={() => void createServer()}>Register Server</Button>
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Name *" value={serverForm.name} onChange={(e) => setServerForm({ ...serverForm, name: e.target.value })} />
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="URL *" value={serverForm.url} onChange={(e) => setServerForm({ ...serverForm, url: e.target.value })} />
+                  <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Description" value={serverForm.description} onChange={(e) => setServerForm({ ...serverForm, description: e.target.value })} />
+                  <Button disabled={!serverForm.name || !serverForm.url} onClick={() => void createServer()} className="bg-emerald-600 hover:bg-emerald-700 text-white">Register Server</Button>
                 </div>
               </details>
             )}
 
-            <input className="w-full max-w-xs border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Search servers…" value={serverSearch} onChange={(e) => setServerSearch(e.target.value)} />
+            <input className="w-full max-w-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Search servers…" value={serverSearch} onChange={(e) => setServerSearch(e.target.value)} />
 
             <div className="space-y-2">
               {filteredServers.length === 0 ? <EmptyState message="No servers found" /> : filteredServers.map((server) => (
-                <div key={server.name} className="rounded-xl border border-slate-200 px-4 py-3">
+                <div key={server.name} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2">
                   {editingServer?.name === server.name ? (
                     <div className="grid sm:grid-cols-3 gap-2">
-                      <input className="border rounded-lg px-3 py-2 text-sm" value={editingServer.url} onChange={(e) => setEditingServer({ ...editingServer, url: e.target.value })} placeholder="URL" />
-                      <input className="border rounded-lg px-3 py-2 text-sm" value={editingServer.description ?? ''} onChange={(e) => setEditingServer({ ...editingServer, description: e.target.value })} placeholder="Description" />
+                      <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-2 text-sm" value={editingServer.url} onChange={(e) => setEditingServer({ ...editingServer, url: e.target.value })} placeholder="URL" />
+                      <input className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-2 text-sm" value={editingServer.description ?? ''} onChange={(e) => setEditingServer({ ...editingServer, description: e.target.value })} placeholder="Description" />
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => void saveEditServer(editingServer)}>Save</Button>
                         <Button size="sm" variant="ghost" onClick={() => setEditingServer(null)}>Cancel</Button>
@@ -931,12 +934,12 @@ export default function AdminPanelPage() {
                   ) : (
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
-                        <p className="font-semibold text-sm text-slate-900">{server.name}</p>
-                        <p className="text-xs text-slate-500 truncate">{server.url}</p>
-                        {server.description && <p className="text-xs text-slate-400 mt-0.5">{server.description}</p>}
+                        <p className="font-semibold text-sm text-slate-900 dark:text-white">{server.name}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{server.url}</p>
+                        {server.description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{server.description}</p>}
                         {server.is_deleted && (
                           <span
-                            className="text-xs text-red-500 mt-0.5 inline-block"
+                            className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-0.5 inline-block"
                             title="Soft-deleted (is_deleted=true). Use Restore to bring it back."
                           >
                             ⚠ soft-deleted
@@ -945,7 +948,7 @@ export default function AdminPanelPage() {
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
-                          className={`text-xs px-2 py-1 rounded-full ${(server.is_enabled ?? true) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${(server.is_enabled ?? true) ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
                           title={(server.is_enabled ?? true) ? 'Enabled (is_enabled=true)' : 'Disabled (is_enabled=false)'}
                         >
                           {(server.is_enabled ?? true) ? 'enabled' : 'disabled'}
@@ -986,28 +989,13 @@ export default function AdminPanelPage() {
 
         {/* ── TOOLS TAB ────────────────────────────────────────────────────── */}
         {activeTab === 'tools' && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-5">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <h2 className="text-xl font-semibold text-slate-900">Tools</h2>
-              {!canManageTools && <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Read-only</span>}
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Tools</h2>
+              {!canManageTools && <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-full font-medium">Read-only</span>}
             </div>
 
-            {/* Create Tool form — commented out, not needed right now
-            {canManageTools && (
-              <details className="group rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-4">
-                <summary className="cursor-pointer text-sm font-medium text-slate-700 group-open:mb-4 list-none flex items-center gap-2">
-                  <span className="text-lg leading-none">＋</span> Create Tool
-                </summary>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="owner_id" value={toolForm.owner_id} ... />
-                  <input className="border rounded-lg px-3 py-2 text-sm" placeholder="Tool name *" ... />
-                  ...
-                </div>
-              </details>
-            )}
-            */}
-
-            <input className="w-full max-w-xs border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Search tools…" value={toolSearch} onChange={(e) => setToolSearch(e.target.value)} />
+            <input className="w-full max-w-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Search tools…" value={toolSearch} onChange={(e) => setToolSearch(e.target.value)} />
 
             <div className="space-y-2">
               {filteredTools.length === 0 ? <EmptyState message="No tools found" /> : filteredTools.map((tool) => {
@@ -1017,44 +1005,44 @@ export default function AdminPanelPage() {
                 const ownerDisabled = tool.owner_enabled === false;
                 const effectiveEnabled = !adminDisabled && !ownerDisabled;
                 return (
-                  <div key={tool.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
+                  <div key={tool.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
                     {/* Top row: identity + toggle */}
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-sm text-slate-900">{tool.name}</p>
-                          <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{tool.source_type}</span>
-                          <span className="text-xs text-slate-400 font-mono">v{tool.current_version}</span>
+                          <p className="font-semibold text-sm text-slate-900 dark:text-white">{tool.name}</p>
+                          <span className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">{tool.source_type}</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">v{tool.current_version}</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{tool.owner_id}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{tool.owner_id}</p>
                         {tool.method && tool.path && (
                           <p className="text-xs mt-1 flex items-center gap-1">
-                            <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[tool.method] ?? 'bg-slate-100 text-slate-600'}`}>{tool.method}</span>
-                            <span className="text-slate-500 font-mono">{tool.path}</span>
+                            <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[tool.method] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{tool.method}</span>
+                            <span className="text-slate-600 dark:text-slate-400 font-mono">{tool.path}</span>
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded-full ${effectiveEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
                           {effectiveEnabled ? 'enabled' : 'disabled'}
                         </span>
                         {adminDisabled && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700" title="Disabled by admin (admin_enabled=false)">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
                             admin disabled
                           </span>
                         )}
                         {!adminDisabled && ownerDisabled && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700" title="Disabled by owner (owner_enabled=false)">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
                             owner disabled
                           </span>
                         )}
                         {tool.is_deleted && (
-                          <span className="text-xs text-red-500" title="Soft-deleted (is_deleted=true)">
+                          <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
                             ⚠ deleted
                           </span>
                         )}
                         {(tool.parent_is_deleted || tool.parent_is_enabled === false) && (
-                          <span className="text-xs text-amber-600" title="Parent is disabled or deleted">
+                          <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
                             ⛔ parent inactive
                           </span>
                         )}
@@ -1095,7 +1083,7 @@ export default function AdminPanelPage() {
                         <>
                           <textarea
                             rows={2}
-                            className="flex-1 border border-cyan-300 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                            className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
                             value={draftDesc}
                             onChange={(e) => setToolDescEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
                             placeholder="Enter description…"
@@ -1116,7 +1104,7 @@ export default function AdminPanelPage() {
                         </>
                       ) : (
                         <div
-                          className={`flex-1 text-xs rounded-lg px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors group' : ''} ${tool.description ? 'text-slate-500' : 'text-slate-300 italic'}`}
+                          className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${tool.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
                           onClick={() => canManageTools && setToolDescEdits((prev) => ({ ...prev, [tool.id]: tool.description }))}
                           title={canManageTools ? 'Click to edit description' : undefined}
                         >
@@ -1134,33 +1122,13 @@ export default function AdminPanelPage() {
 
         {/* ── ENDPOINTS TAB ────────────────────────────────────────────────── */}
         {activeTab === 'endpoints' && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-5">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <h2 className="text-xl font-semibold text-slate-900">API Endpoints</h2>
-              {!canManageEndpoints && <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">Read-only</span>}
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">API Endpoints</h2>
+              {!canManageEndpoints && <span className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-full font-medium">Read-only</span>}
             </div>
 
-            {/* Register Endpoint form — commented out, not needed right now
-            {canManageEndpoints && (
-              <details className="group rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-4">
-                <summary className="cursor-pointer text-sm font-medium text-slate-700 group-open:mb-4 list-none flex items-center gap-2">
-                  <span className="text-lg leading-none">＋</span> Register Endpoint
-                </summary>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <input placeholder="owner_id" ... />
-                  <select placeholder="method" ... />
-                  <input placeholder="/path *" ... />
-                  <input placeholder="Description" ... />
-                  <input placeholder="Version" ... />
-                  <label>Expose to MCP ...</label>
-                  <label>Pre-approve exposure ...</label>
-                  <Button>Register</Button>
-                </div>
-              </details>
-            )}
-            */}
-
-            <input className="w-full max-w-xs border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Search endpoints…" value={endpointSearch} onChange={(e) => setEndpointSearch(e.target.value)} />
+            <input className="w-full max-w-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Search endpoints…" value={endpointSearch} onChange={(e) => setEndpointSearch(e.target.value)} />
 
             <div className="space-y-2">
               {filteredEndpoints.length === 0 ? <EmptyState message="No endpoints found" /> : filteredEndpoints.map((ep) => {
@@ -1170,49 +1138,49 @@ export default function AdminPanelPage() {
                 const ownerDisabled = ep.owner_enabled === false;
                 const effectiveEnabled = !adminDisabled && !ownerDisabled;
                 return (
-                  <div key={ep.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
+                  <div key={ep.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
                     {/* Top row: identity + exposure controls */}
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`font-mono text-xs px-2 py-0.5 rounded font-semibold ${METHOD_COLORS[ep.method] ?? 'bg-slate-100 text-slate-600'}`}>{ep.method}</span>
-                          <span className="font-mono text-sm text-slate-900">{ep.path}</span>
-                          <span className="text-xs text-slate-400">v{ep.current_version}</span>
+                          <span className={`font-mono text-xs px-2 py-0.5 rounded font-semibold ${METHOD_COLORS[ep.method] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{ep.method}</span>
+                          <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white">{ep.path}</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">v{ep.current_version}</span>
                           {ep.mcp_tool_id && (
-                            <span className="text-xs bg-violet-50 text-violet-600 px-1.5 py-0.5 rounded font-mono">tool #{ep.mcp_tool_id}</span>
+                            <span className="text-xs bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 px-1.5 py-0.5 rounded font-mono">tool #{ep.mcp_tool_id}</span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{ep.owner_id}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{ep.owner_id}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2 py-1 rounded-full ${effectiveEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
                           {effectiveEnabled ? 'enabled' : 'disabled'}
                         </span>
                         {adminDisabled && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700" title="Disabled by admin (admin_enabled=false)">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
                             admin disabled
                           </span>
                         )}
                         {!adminDisabled && ownerDisabled && (
-                          <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700" title="Disabled by owner (owner_enabled=false)">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
                             owner disabled
                           </span>
                         )}
-                        <span className={`text-xs px-2 py-1 rounded-full ${ep.exposed_to_mcp ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ep.exposed_to_mcp ? 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
                           {ep.exposed_to_mcp ? 'exposed' : 'hidden'}
                         </span>
                         {ep.exposed_to_mcp && (
-                          <span className={`text-xs px-2 py-1 rounded-full ${ep.exposure_approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ep.exposure_approved ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'}`}>
                             {ep.exposure_approved ? 'approved' : 'pending'}
                           </span>
                         )}
                         {ep.is_deleted && (
-                          <span className="text-xs text-red-500" title="Soft-deleted (is_deleted=true)">
+                          <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
                             ⚠ deleted
                           </span>
                         )}
                         {(ep.parent_is_deleted || ep.parent_is_enabled === false) && (
-                          <span className="text-xs text-amber-600" title="Parent is disabled or deleted">
+                          <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
                             ⛔ parent inactive
                           </span>
                         )}
@@ -1259,7 +1227,7 @@ export default function AdminPanelPage() {
                         <>
                           <textarea
                             rows={2}
-                            className="flex-1 border border-cyan-300 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                            className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
                             value={draftDesc}
                             onChange={(e) => setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: e.target.value }))}
                             placeholder="Enter description…"
@@ -1280,7 +1248,7 @@ export default function AdminPanelPage() {
                         </>
                       ) : (
                         <div
-                          className={`flex-1 text-xs rounded-lg px-3 py-2 min-h-[2rem] ${canManageEndpoints ? 'cursor-pointer hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors group' : ''} ${ep.description ? 'text-slate-500' : 'text-slate-300 italic'}`}
+                          className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageEndpoints ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${ep.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
                           onClick={() => canManageEndpoints && setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: ep.description }))}
                           title={canManageEndpoints ? 'Click to edit description' : undefined}
                         >
@@ -1294,8 +1262,8 @@ export default function AdminPanelPage() {
               })}
             </div>
 
-            <div className="pt-4 border-t border-slate-200">
-              <h3 className="text-base font-semibold text-slate-900 mb-3">Raw API Tools (from registry)</h3>
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Raw API Tools (from registry)</h3>
               <div className="space-y-2">
                 {rawApiTools.length === 0 ? <EmptyState message="No raw API tools found" /> : rawApiTools.map((tool) => {
                   const isEditingDesc = tool.id in toolDescEdits;
@@ -1304,43 +1272,43 @@ export default function AdminPanelPage() {
                   const ownerDisabled = tool.owner_enabled === false;
                   const effectiveEnabled = !adminDisabled && !ownerDisabled;
                   return (
-                    <div key={tool.id} className="rounded-xl border border-slate-200 px-4 py-3 space-y-2.5">
+                    <div key={tool.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-sm text-slate-900">{tool.name}</p>
-                            <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{tool.source_type}</span>
-                            <span className="text-xs text-slate-400 font-mono">v{tool.current_version}</span>
+                            <p className="font-semibold text-sm text-slate-900 dark:text-white">{tool.name}</p>
+                            <span className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">{tool.source_type}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">v{tool.current_version}</span>
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">{tool.owner_id}</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{tool.owner_id}</p>
                           {tool.method && tool.path && (
                             <p className="text-xs mt-1 flex items-center gap-1">
-                              <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[String(tool.method).toUpperCase()] ?? 'bg-slate-100 text-slate-600'}`}>{tool.method}</span>
-                              <span className="text-slate-500 font-mono">{tool.path}</span>
+                              <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[String(tool.method).toUpperCase()] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{tool.method}</span>
+                              <span className="text-slate-600 dark:text-slate-400 font-mono">{tool.path}</span>
                             </p>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-1 rounded-full ${effectiveEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
                             {effectiveEnabled ? 'enabled' : 'disabled'}
                           </span>
                           {adminDisabled && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-rose-100 text-rose-700" title="Disabled by admin (admin_enabled=false)">
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
                               admin disabled
                             </span>
                           )}
                           {!adminDisabled && ownerDisabled && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700" title="Disabled by owner (owner_enabled=false)">
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
                               owner disabled
                             </span>
                           )}
                           {tool.is_deleted && (
-                            <span className="text-xs text-red-500" title="Soft-deleted (is_deleted=true)">
+                            <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
                               ⚠ deleted
                             </span>
                           )}
                           {(tool.parent_is_deleted || tool.parent_is_enabled === false) && (
-                            <span className="text-xs text-amber-600" title="Parent is disabled or deleted">
+                            <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
                               ⛔ parent inactive
                             </span>
                           )}
@@ -1380,7 +1348,7 @@ export default function AdminPanelPage() {
                           <>
                             <textarea
                               rows={2}
-                              className="flex-1 border border-cyan-300 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
                               value={draftDesc}
                               onChange={(e) => setToolDescEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
                               placeholder="Enter description..."
@@ -1401,7 +1369,7 @@ export default function AdminPanelPage() {
                           </>
                         ) : (
                           <div
-                            className={`flex-1 text-xs rounded-lg px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors group' : ''} ${tool.description ? 'text-slate-500' : 'text-slate-300 italic'}`}
+                            className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${tool.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
                             onClick={() => canManageTools && setToolDescEdits((prev) => ({ ...prev, [tool.id]: tool.description }))}
                             title={canManageTools ? 'Click to edit description' : undefined}
                           >
@@ -1420,22 +1388,22 @@ export default function AdminPanelPage() {
 
         {/* ── AUDIT LOGS TAB ───────────────────────────────────────────────── */}
         {activeTab === 'audit' && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-            <h2 className="text-xl font-semibold text-slate-900">Audit Logs</h2>
+          <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Audit Logs</h2>
 
             <div className="flex items-center gap-3 flex-wrap">
               <input
-                className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 placeholder="Filter by actor, action, resource…"
                 value={auditSearch}
                 onChange={(e) => { setAuditSearch(e.target.value); setAuditPage(1); }}
               />
-              <span className="text-xs text-slate-400">{filteredAuditLogs.total} entries</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">{filteredAuditLogs.total} entries</span>
             </div>
 
-            <div className="rounded-xl border border-slate-100 overflow-x-auto">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wide border-b border-slate-200 dark:border-slate-800">
                   <tr>
                     <th className="text-left px-4 py-2.5">When</th>
                     <th className="text-left px-4 py-2.5">Actor</th>
@@ -1443,22 +1411,22 @@ export default function AdminPanelPage() {
                     <th className="text-left px-4 py-2.5">Resource</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {filteredAuditLogs.page.length === 0 ? (
-                    <tr><td colSpan={4} className="text-center py-10 text-slate-400">No logs found</td></tr>
+                    <tr><td colSpan={4} className="text-center py-10 text-slate-500 dark:text-slate-400">No logs found</td></tr>
                   ) : filteredAuditLogs.page.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{log.created_on ?? '—'}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-700">{log.actor}</td>
+                    <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 whitespace-nowrap">{log.created_on ?? '—'}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-800 dark:text-slate-200">{log.actor}</td>
                       <td className="px-4 py-2.5">
-                        <span className={`text-xs font-mono px-2 py-0.5 rounded ${
-                          log.action.includes('delete') ? 'bg-red-100 text-red-700' :
-                          log.action.includes('create') ? 'bg-emerald-100 text-emerald-700' :
-                          log.action.includes('update') || log.action.includes('patch') ? 'bg-blue-100 text-blue-700' :
-                          'bg-slate-100 text-slate-600'
+                        <span className={`text-xs font-mono px-2 py-0.5 rounded font-semibold ${
+                          log.action.includes('delete') ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300' :
+                          log.action.includes('create') ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' :
+                          log.action.includes('update') || log.action.includes('patch') ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' :
+                          'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                         }`}>{log.action}</span>
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{log.resource_type}:{log.resource_id}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-400">{log.resource_type}:{log.resource_id}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1468,7 +1436,7 @@ export default function AdminPanelPage() {
             {/* Pagination */}
             {filteredAuditLogs.total > AUDIT_PAGE_SIZE && (
               <div className="flex items-center justify-between text-sm pt-1">
-                <span className="text-slate-500">
+                <span className="text-slate-600 dark:text-slate-400 font-medium">
                   Page {auditPage} of {Math.ceil(filteredAuditLogs.total / AUDIT_PAGE_SIZE)}
                 </span>
                 <div className="flex gap-2">

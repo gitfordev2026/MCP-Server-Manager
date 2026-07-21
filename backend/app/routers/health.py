@@ -55,10 +55,12 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
         redis_status["key"] = "redis"
         systems.append(redis_status)
 
-        if auth_enabled and issuer:
-            discovery_url = f"{issuer}/.well-known/openid-configuration"
+        if auth_enabled:
+            server_url = ENV.keycloak_server_url or (issuer.rsplit('/realms/', 1)[0] if '/realms/' in issuer else issuer)
+            realm = ENV.keycloak_realm
+            discovery_url = f"{server_url}/realms/{realm}/.well-known/openid-configuration" if realm else f"{issuer}/.well-known/openid-configuration"
             try:
-                async with httpx.AsyncClient(timeout=5.0, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=5.0, follow_redirects=True, verify=ENV.keycloak_verify_ssl) as client:
                     response = await client.get(discovery_url)
                 if response.is_success:
                     systems.append(
@@ -132,7 +134,7 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
         description="Public endpoint returning Keycloak OIDC configuration for the frontend.",
     )
     def auth_config() -> dict[str, object]:
-        keycloak_url = ENV.keycloak_server_url
+        keycloak_url = ENV.keycloak_frontend_url or ENV.keycloak_server_url
         realm = ENV.keycloak_realm
         oidc_base = f"{keycloak_url}/realms/{realm}/protocol/openid-connect" if keycloak_url and realm else ""
 

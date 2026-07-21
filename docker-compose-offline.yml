@@ -1,24 +1,28 @@
 services:
   backend:
     image: new-docker-img-mcp-07-04-26-backend:latest
+    network_mode: host
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./backend/app:/app
-    ports:
-      - "8000:8099"
     environment:
       - ENV=development
 
-  # frontend:
-  #   image: new-docker-img-mcp-07-04-26-frontend:latest
-  #   volumes:
-  #     - ./frontend:/app
-  #     # This prevents your local empty/different node_modules 
-  #     # from overwriting the ones we installed in the image
-  #     - /app/node_modules
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NODE_ENV=development
+  frontend:
+    image: new-docker-img-mcp-07-04-26-frontend:latest
+    volumes:
+      - ./frontend:/app
+      # This prevents your local empty/different node_modules
+      # from overwriting the ones we installed in the image
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
 
   # mock-server:
   #   image: mock-mcp-server:070426
@@ -26,3 +30,12 @@ services:
   #     - ./mock-mcp-server:/app
   #   ports:
   #     - "8001:8001"
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+networks:
+  default:
+    driver: bridge
+  external-services:
+    external: true
+    name: chatbot-2-git_default

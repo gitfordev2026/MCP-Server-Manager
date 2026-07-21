@@ -68,36 +68,78 @@ export async function fetchAuthConfig(apiBase: string): Promise<AuthConfig> {
 
 // ---------- Token storage ----------
 
+// ---------- Cookie Storage Helpers ----------
+
+export function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, "\\$1") + "=([^;]*)"));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function setCookie(name: string, value: string, maxAgeSec: number): void {
+  if (typeof document === "undefined") return;
+  const secureFlag = typeof window !== "undefined" && window.location.protocol === "https:" ? "Secure;" : "";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax; ${secureFlag}`;
+}
+
+export function deleteCookie(name: string): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax;`;
+}
+
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
 
-  const token = localStorage.getItem(TOKEN_KEY);
-  const expiryStr = localStorage.getItem(EXPIRY_KEY);
+  // 1. Try Cookie first
+  let token = getCookie(TOKEN_KEY);
+  let expiryStr = getCookie(EXPIRY_KEY);
 
-  if (!token || !expiryStr) return null;
+  // 2. Fallback to localStorage
+  if (!token) {
+    token = localStorage.getItem(TOKEN_KEY);
+    expiryStr = localStorage.getItem(EXPIRY_KEY);
+  }
 
-  const expiry = parseInt(expiryStr, 10);
-  // Consider expired 30 s early to avoid edge-case failures.
-  if (Date.now() >= expiry - 30_000) return null;
+  if (!token) return null;
+
+  if (expiryStr) {
+    const expiry = parseInt(expiryStr, 10);
+    // Consider expired 30 s early to avoid edge-case failures.
+    if (Date.now() >= expiry - 30_000) return null;
+  }
 
   return token;
 }
 
 export function storeTokens(response: TokenResponse): void {
-  localStorage.setItem(TOKEN_KEY, response.access_token);
+  const maxAge = response.expires_in || 3600;
+  setCookie(TOKEN_KEY, response.access_token, maxAge);
   if (response.refresh_token) {
-    localStorage.setItem(REFRESH_KEY, response.refresh_token);
+    setCookie(REFRESH_KEY, response.refresh_token, 30 * 24 * 3600);
   }
-  const expiryMs = Date.now() + response.expires_in * 1000;
-  localStorage.setItem(EXPIRY_KEY, expiryMs.toString());
+  const expiryMs = Date.now() + maxAge * 1000;
+  setCookie(EXPIRY_KEY, expiryMs.toString(), maxAge);
+
+  try {
+    localStorage.setItem(TOKEN_KEY, response.access_token);
+    if (response.refresh_token) {
+      localStorage.setItem(REFRESH_KEY, response.refresh_token);
+    }
+    localStorage.setItem(EXPIRY_KEY, expiryMs.toString());
+  } catch (_) {}
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  localStorage.removeItem(EXPIRY_KEY);
-  // Remove legacy header-based auth data.
-  LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+  deleteCookie(TOKEN_KEY);
+  deleteCookie(REFRESH_KEY);
+  deleteCookie(EXPIRY_KEY);
+
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(EXPIRY_KEY);
+    LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+  } catch (_) {}
 }
 
 function normalizeRedirectPath(path: string): string {

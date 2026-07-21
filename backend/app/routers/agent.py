@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 import httpx
 from mcp_use import MCPClient
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.env import ENV
@@ -47,12 +48,19 @@ class PlaygroundQueryRequest(BaseModel):
 # MCP Client Utilities
 # =========================================================
 
+def _normalize_mcp_url(url: str) -> str:
+    val = (url or "").strip()
+    if val and not val.endswith("/"):
+        return f"{val}/"
+    return val
+
+
 def _build_mcp_client() -> MCPClient:
     return MCPClient(
         {
             "mcpServers": {
                 ENV.agent_mcp_server_name: {
-                    "url": ENV.agent_mcp_server_url,
+                    "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
                 }
             }
         }
@@ -60,20 +68,26 @@ def _build_mcp_client() -> MCPClient:
 
 
 async def _list_combined_tool_names() -> List[str]:
-    client = _build_mcp_client()
+    try:
+        catalog = _list_exposed_tool_catalog()
+        tool_names = sorted({str(item.get("name", "")).strip() for item in catalog if str(item.get("name", "")).strip()})
+        if tool_names:
+            return tool_names
+    except Exception as exc:
+        logger.warning(f"Could not fetch catalog tools from DB: {exc}")
 
+    client = _build_mcp_client()
     try:
         await client.create_all_sessions(auto_initialize=True)
-
         session = client.get_session(ENV.agent_mcp_server_name)
         if session is None:
-            raise RuntimeError("MCP session was not created")
-
+            return []
         tools = await session.list_tools()
         return sorted({tool.name for tool in tools})
-
+    except Exception as exc:
+        logger.warning(f"Fallback MCPClient tool list failed: {exc}")
+        return []
     finally:
-        # safe shutdown across MCP versions
         if hasattr(client, "aclose"):
             await client.aclose()
         elif hasattr(client, "close"):
@@ -98,9 +112,27 @@ def _list_exposed_tool_catalog() -> List[Dict[str, Any]]:
             AccessPolicyModel,
             ServerModel,
             BaseURLModel,
-            public_only=True,
+            public_only=False,
         )
+        if not tools_list:
+            tools = db.scalars(
+                select(MCPToolModel).where(
+                    MCPToolModel.is_deleted == False,
+                    MCPToolModel.admin_enabled == True,
+                    MCPToolModel.owner_enabled == True,
+                )
+            ).all()
+            for t in tools:
+                tools_list.append({
+                    "name": t.name,
+                    "title": t.display_name or t.name,
+                    "description": t.description or "",
+                    "app": t.owner_id or "default",
+                })
         return tools_list
+    except Exception as exc:
+        logger.warning(f"Error querying tool catalog from DB: {exc}")
+        return []
     finally:
         db.close()
 
@@ -199,10 +231,10 @@ def _select_relevant_tools(
 # Prompt & Model Utilities
 # =========================================================
 
-def _normalize_model(model: Optional[str]) -> Optional[str]:
+def _normalize_model(model: Optional[str]) -> str:
     if model and model.strip():
         return model.strip()
-    return None
+    return ENV.agent_ollama_model or "gemma4:31b-cloud"
 
 
 def _build_tool_only_instructions(selected_tools: List[str]) -> str:
@@ -216,7 +248,7 @@ def _build_tool_only_instructions(selected_tools: List[str]) -> str:
         )
 
     lines = "\n".join(f"- {tool}" for tool in selected_tools)
-    logger.warning("List of available tools", lines)
+    logger.warning("List of available tools: %s", lines)
 
     return (
         "You are an MCP tool-using agent.\n"
@@ -495,25 +527,87 @@ def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
         return None
 
     candidate = text.strip()
-    if not candidate.startswith("{") or not candidate.endswith("}"):
-        return None
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()
+        if len(lines) >= 3 and lines[-1].startswith("```"):
+            candidate = "\n".join(lines[1:-1]).strip()
 
-    try:
-        payload = json.loads(candidate)
-    except json.JSONDecodeError:
-        return None
+    if candidate.startswith("{") and candidate.endswith("}"):
+        try:
+            payload = json.loads(candidate)
+            if isinstance(payload, dict) and "name" in payload:
+                name = str(payload.get("name") or "").strip()
+                args = payload.get("parameters") or payload.get("arguments") or {}
+                if name and isinstance(args, dict):
+                    return name, args
+        except Exception:
+            pass
 
-    if not isinstance(payload, dict):
-        return None
+    match = re.search(r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*\}', candidate, re.DOTALL)
+    if match:
+        try:
+            payload = json.loads(match.group(0))
+            name = str(payload.get("name") or "").strip()
+            args = payload.get("parameters") or payload.get("arguments") or {}
+            if name and isinstance(args, dict):
+                return name, args
+        except Exception:
+            pass
 
-    name = payload.get("name")
-    arguments = payload.get("parameters", {})
-    if not isinstance(name, str) or not name.strip():
-        return None
-    if not isinstance(arguments, dict):
-        arguments = {}
+    return None
 
-    return name.strip(), arguments
+
+def _format_tool_result_human_readable(tool_name: str, arguments: Dict[str, Any], tool_result: Any) -> str:
+    data = tool_result
+    if isinstance(tool_result, dict):
+        if "body" in tool_result:
+            data = tool_result["body"]
+        elif "structuredContent" in tool_result:
+            data = tool_result["structuredContent"]
+
+    lines: List[str] = []
+    lines.append(f"Tool used: {tool_name}")
+    lines.append(f"Arguments: {json.dumps(arguments, ensure_ascii=True)}")
+    lines.append("\n### 📋 Summary & Details")
+
+    def format_node(val: Any, depth: int = 0) -> List[str]:
+        indent = "  " * depth
+        out: List[str] = []
+        if isinstance(val, dict):
+            for k, v in val.items():
+                label = k.replace("_", " ").title()
+                if isinstance(v, (dict, list)) and v:
+                    out.append(f"{indent}- **{label}**:")
+                    out.extend(format_node(v, depth + 1))
+                else:
+                    v_str = "None" if v is None or v == "" else str(v)
+                    out.append(f"{indent}- **{label}**: {v_str}")
+        elif isinstance(val, list):
+            if not val:
+                out.append(f"{indent}_None_")
+            else:
+                for idx, item in enumerate(val, 1):
+                    if isinstance(item, dict):
+                        out.append(f"{indent}**Item {idx}**:")
+                        out.extend(format_node(item, depth + 1))
+                    else:
+                        out.append(f"{indent}- {item}")
+        else:
+            out.append(f"{indent}{val}")
+        return out
+
+    if isinstance(data, (dict, list)):
+        lines.append("\n".join(format_node(data)))
+    elif isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+            lines.append("\n".join(format_node(parsed)))
+        except Exception:
+            lines.append(data.strip())
+    else:
+        lines.append(str(data))
+
+    return "\n".join(lines)
 
 
 async def _maybe_execute_raw_tool_call(
@@ -528,27 +622,24 @@ async def _maybe_execute_raw_tool_call(
     if tool_name not in set(allowed_tools):
         return None
 
-    tool_result = await call_server_tool(
-        ENV.agent_mcp_server_name,
-        ENV.agent_mcp_server_url,
-        tool_name,
-        arguments,
-        timeout_sec=30.0,
-    )
-
-    readable = _extract_text_from_tool_result(tool_result)
-    if readable:
-        return (
-            f"Tool used: {tool_name}\n"
-            f"Arguments: {json.dumps(arguments, ensure_ascii=True)}\n"
-            f"Result: {readable}"
+    try:
+        tool_result = await call_server_tool(
+            ENV.agent_mcp_server_name,
+            ENV.agent_mcp_server_url,
+            tool_name,
+            arguments,
+            timeout_sec=30.0,
         )
+    except Exception as exc:
+        logger.warning(f"call_server_tool failed ({exc}), attempting direct combined_apps_mcp call")
+        try:
+            from app.main import combined_apps_mcp
+            res = await combined_apps_mcp.call_tool(tool_name, arguments)
+            tool_result = getattr(res, "structured_content", res)
+        except Exception as inner_exc:
+            return f"Error executing tool '{tool_name}': {inner_exc}"
 
-    return (
-        f"Tool used: {tool_name}\n"
-        f"Arguments: {json.dumps(arguments, ensure_ascii=True)}\n"
-        f"Result: Tool '{tool_name}' executed successfully."
-    )
+    return _format_tool_result_human_readable(tool_name, arguments, tool_result)
 
 
 def _append_tool_usage_note(response_text: Any, agent: Any) -> str:
@@ -602,10 +693,12 @@ async def _run_agent_query(
     all_tools = await _list_combined_tool_names()
 
     if not all_tools:
-        raise HTTPException(
-            status_code=502,
-            detail="No tools available from MCP server",
+        result = await generate_direct_response(
+            effective_prompt,
+            model=model,
+            additional_instructions="Answer directly and naturally. Note: No active tools are registered in the MCP manager yet.",
         )
+        return {"response": result, "mode": "direct_llm"}
 
     if _is_tool_inventory_prompt(request.prompt):
         catalog = _list_exposed_tool_catalog()
@@ -648,13 +741,11 @@ async def _run_agent_query(
         else:
             result = _append_tool_usage_note(result, agent)
     except Exception as exc:
-        if not _is_recursion_limit_error(exc):
-            raise
-
+        logger.warning(f"MCPAgent execution failed ({exc}), falling back to direct LLM response")
         result = await generate_direct_response(
             effective_prompt,
             model=model,
-            additional_instructions="Answer directly.",
+            additional_instructions=instructions,
         )
 
     return {"response": result, "mode": "mcp_agent"}
@@ -671,10 +762,12 @@ async def _run_playground_query(
     all_tools = await _list_combined_tool_names()
 
     if not all_tools:
-        raise HTTPException(
-            status_code=502,
-            detail="No tools available from MCP server",
+        result = await generate_direct_response(
+            effective_prompt,
+            model=model,
+            additional_instructions="Answer directly and naturally. Note: No active tools are registered in the MCP manager yet.",
         )
+        return {"response": result, "mode": "direct_llm"}
 
     if request.selected_tools:
         selected_tools, unknown = _normalize_selected_tools(
@@ -745,13 +838,14 @@ async def _run_playground_query(
         else:
             result = _append_tool_usage_note(result, agent)
     except Exception as exc:
-        if not _is_recursion_limit_error(exc):
-            raise
-        result = await generate_direct_response(
+        logger.warning(f"MCPAgent execution failed ({exc}), falling back to direct LLM response")
+        raw_direct = await generate_direct_response(
             effective_prompt,
             model=model,
-            additional_instructions="Answer directly.",
+            additional_instructions=instructions,
         )
+        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools)
+        result = rescued if rescued is not None else raw_direct
 
     return {"response": result, "mode": "mcp_agent"}
 

@@ -36,9 +36,11 @@ class BackendEnv:
     mcp_manager_name: str
     auth_enabled: bool
     keycloak_server_url: str
+    keycloak_frontend_url: str
     keycloak_realm: str
     keycloak_client_id: str
     keycloak_verify_aud: bool
+    keycloak_verify_ssl: bool
     database_url: str
     db_fallback_sqlite: bool
     openapi_mcp_cache_ttl_sec: int
@@ -83,9 +85,11 @@ def load_backend_env() -> BackendEnv:
         mcp_manager_name=os.getenv("MCP_MANAGER_NAME", "COMBINED MCP MANAGER").strip(),
         auth_enabled=os.getenv("AUTH_ENABLED", "true").strip().lower() == "true",
         keycloak_server_url=os.getenv("KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
+        keycloak_frontend_url=os.getenv("KEYCLOAK_FRONTEND_URL", "").strip().rstrip("/") or os.getenv("KEYCLOAK_SERVER_URL", "").strip().rstrip("/").replace("host.docker.internal", "localhost"),
         keycloak_realm=os.getenv("KEYCLOAK_REALM", "").strip(),
         keycloak_client_id=os.getenv("KEYCLOAK_CLIENT_ID", "").strip(),
         keycloak_verify_aud=os.getenv("KEYCLOAK_VERIFY_AUD", "true").strip().lower() == "true",
+        keycloak_verify_ssl=os.getenv("KEYCLOAK_VERIFY_SSL", "true").strip().lower() == "true",
         database_url=os.getenv("DATABASE_URL", "").strip(),
         db_fallback_sqlite=os.getenv("DB_FALLBACK_SQLITE", "true").strip().lower() == "true",
         openapi_mcp_cache_ttl_sec=int(os.getenv("OPENAPI_MCP_CACHE_TTL_SEC", "30").strip()),
@@ -95,8 +99,10 @@ def load_backend_env() -> BackendEnv:
         redis_status_ttl_sec=int(os.getenv("REDIS_STATUS_TTL_SEC", "5").strip()),
         redis_list_ttl_sec=int(os.getenv("REDIS_LIST_TTL_SEC", "5").strip()),
         agent_mcp_server_name=os.getenv("AGENT_MCP_SERVER_NAME", "http_server").strip() or "http_server",
-        agent_mcp_server_url=os.getenv("AGENT_MCP_SERVER_URL", "http://localhost:8005/mcp").strip(),
-        agent_ollama_model=os.getenv("AGENT_OLLAMA_MODEL", "").strip(),
+        agent_mcp_server_url=(
+            os.getenv("AGENT_MCP_SERVER_URL", "http://127.0.0.1:8000/mcp/apps/").strip().rstrip("/") + "/"
+        ),
+        agent_ollama_model=os.getenv("AGENT_OLLAMA_MODEL", "gemma4:31b-cloud").strip() or "gemma4:31b-cloud",
         agent_ollama_base_url=os.getenv("AGENT_OLLAMA_BASE_URL", "http://localhost:11434").strip(),
         agent_ollama_temperature=float(os.getenv("AGENT_OLLAMA_TEMPERATURE", "0.7").strip()),
         agent_debug_callbacks=os.getenv("AGENT_DEBUG_CALLBACKS", "true").strip().lower() == "true",

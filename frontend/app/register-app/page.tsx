@@ -89,6 +89,23 @@ function buildEndpointsFromOpenApi(spec: Record<string, unknown>): DiscoveredEnd
   return items.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+function getMethodBadgeClass(method: string) {
+  const m = (method || '').toUpperCase();
+  switch (m) {
+    case 'GET':
+      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700/50';
+    case 'POST':
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-700/50';
+    case 'PUT':
+    case 'PATCH':
+      return 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700/50';
+    case 'DELETE':
+      return 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-700/50';
+    default:
+      return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700';
+  }
+}
+
 export default function RegisterAppPage() {
   const DISCOVERY_PAGE_SIZE = 10;
   const REGISTERED_PAGE_SIZE = 10;
@@ -612,37 +629,37 @@ export default function RegisterAppPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       <Navigation pageTitle="Fetch APIs" />
 
-      <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
+      <main className="pt-8 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
         <div className="grid md:grid-cols-2 gap-8">
           <section>
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent mb-2">Fetch APIs</h2>
-            <p className="text-slate-600 mb-6">Discover API endpoints, inspect operation details, and register selected endpoints.</p>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 dark:from-blue-400 dark:to-blue-300 bg-clip-text text-transparent mb-2">Fetch APIs</h2>
+            <p className="text-slate-700 dark:text-slate-300 mb-6 font-medium">Discover API endpoints, inspect operation details, and register selected endpoints.</p>
 
-            {success && <div className="mb-4 p-3 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700">{success}</div>}
-            {error && <div className="mb-4 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700">{error}</div>}
+            {success && <div className="mb-4 p-3 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">{success}</div>}
+            {error && <div className="mb-4 p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300">{error}</div>}
 
-            <div className="space-y-4 bg-white/85 border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="space-y-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Application Name</label>
-                <input name="name" value={formData.name} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" placeholder="e.g. billing-api" />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Application Name</label>
+                <input name="name" value={formData.name} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/40 outline-none" placeholder="e.g. billing-api" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Base URL</label>
-                <input name="url" value={formData.url} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" placeholder="http://127.0.0.1:8000" />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Base URL</label>
+                <input name="url" value={formData.url} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/40 outline-none" placeholder="http://127.0.0.1:8000" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea name="description" value={formData.description} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" rows={3} />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Description</label>
+                <textarea name="description" value={formData.description} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/40 outline-none" rows={3} />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Custom OpenAPI Path (optional)</label>
-                <input name="openapi_path" value={formData.openapi_path} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" placeholder="/openapi.json" />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Custom OpenAPI Path (optional)</label>
+                <input name="openapi_path" value={formData.openapi_path} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/40 outline-none" placeholder="/openapi.json" />
               </div>
 
               <div className="flex items-center gap-2">
@@ -652,41 +669,42 @@ export default function RegisterAppPage() {
                   name="include_unreachable_tools"
                   checked={formData.include_unreachable_tools}
                   onChange={onChangeInput}
+                  className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="include_unreachable_tools" className="text-sm text-slate-700">Include placeholder when API is unreachable/empty</label>
+                <label htmlFor="include_unreachable_tools" className="text-sm font-medium text-slate-700 dark:text-slate-300">Include placeholder when API is unreachable/empty</label>
               </div>
 
               <div>
-                <p className="text-sm font-medium text-slate-700 mb-2">Domain Type</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Domain Type</p>
                 <div className="flex gap-4">
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input type="radio" checked={formData.domain_type === 'ADM'} onChange={() => onChangeDomain('ADM')} />
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input type="radio" checked={formData.domain_type === 'ADM'} onChange={() => onChangeDomain('ADM')} className="text-blue-600 focus:ring-blue-500" />
                     ADM
                   </label>
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input type="radio" checked={formData.domain_type === 'OPS'} onChange={() => onChangeDomain('OPS')} />
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input type="radio" checked={formData.domain_type === 'OPS'} onChange={() => onChangeDomain('OPS')} className="text-blue-600 focus:ring-blue-500" />
                     OPS
                   </label>
                 </div>
               </div>
 
-              <Button onClick={fetchApis} disabled={discovering || loading} className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+              <Button onClick={fetchApis} disabled={discovering || loading} className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md">
                 {discovering ? 'Fetching APIs...' : 'Fetch APIs'}
               </Button>
             </div>
           </section>
 
           <section>
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-cyan-600 to-blue-500 bg-clip-text text-transparent mb-2">Registered Applications</h2>
-            <p className="text-slate-600 mb-6">Includes active and inactive applications for status tracking.</p>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-cyan-600 to-blue-500 dark:from-cyan-400 dark:to-blue-400 bg-clip-text text-transparent mb-2">Registered Applications</h2>
+            <p className="text-slate-700 dark:text-slate-300 mb-6 font-medium">Includes active and inactive applications for status tracking.</p>
 
             <div className="space-y-3">
-              {apps.length === 0 && <div className="p-6 rounded-xl border border-slate-200 bg-white">No applications found.</div>}
+              {apps.length === 0 && <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium">No applications found.</div>}
               {apps.map((app) => (
                 <div
                   key={app.name}
                   onClick={() => void loadRegisteredEndpoints(app.name)}
-                  className="p-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 hover:border-blue-400 transition-colors cursor-pointer shadow-sm"
+                  className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer shadow-xs"
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
@@ -698,22 +716,22 @@ export default function RegisterAppPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{app.name}</p>
-                      <p className="text-sm text-slate-600 break-all">{app.url}</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{app.name}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 break-all">{app.url}</p>
                       <Link
                         href={
                           `/api-explorer?url=${encodeURIComponent(app.url)}&name=${encodeURIComponent(app.name)}` +
                           (app.openapi_path ? `&openapi_path=${encodeURIComponent(app.openapi_path)}` : '')
                         }
-                        className="text-xs text-blue-600 underline mt-1 inline-block"
+                        className="text-xs text-blue-600 dark:text-blue-400 font-semibold underline mt-1 inline-block"
                         onClick={(e) => e.stopPropagation()}
                       >
                         Open API Explorer
                       </Link>
                     </div>
                     <div className="text-right text-xs">
-                      <p className="text-slate-700">{app.domain_type || 'ADM'}</p>
-                      <p className={app.is_deleted ? 'text-red-600' : app.is_enabled ? 'text-emerald-600' : 'text-amber-600'}>
+                      <p className="text-slate-700 dark:text-slate-300 font-medium">{app.domain_type || 'ADM'}</p>
+                      <p className={app.is_deleted ? 'text-rose-600 dark:text-rose-400 font-semibold' : app.is_enabled ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-amber-600 dark:text-amber-400 font-semibold'}>
                         {app.is_deleted ? 'Deleted' : app.is_enabled ? 'Enabled' : 'Disabled'}
                       </p>
                     </div>
@@ -726,20 +744,24 @@ export default function RegisterAppPage() {
       </main>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-[120] bg-black/50 p-4 md:p-8 overflow-auto">
-          <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-[120] bg-black/70 p-4 md:p-8 overflow-auto backdrop-blur-xs flex items-center justify-center">
+          <div className="w-full max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden text-slate-900 dark:text-slate-100 flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Select API Endpoints</h3>
-                <p className="text-xs text-slate-600 mt-1">Choose endpoints to register for {formData.name || 'this application'}.</p>
+                <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-500 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
+                  Select API Endpoints
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                  Choose endpoints to register for <span className="font-semibold text-slate-800 dark:text-slate-200">{formData.name || 'this application'}</span>.
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs font-semibold text-slate-600">Model</label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Model</label>
                   <select
                     value={llmModel}
                     onChange={(e) => setLlmModel(e.target.value)}
-                    className="min-w-[200px] px-2 py-1 rounded-lg border border-slate-300 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="min-w-[180px] px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   >
                     {llmModels.length === 0 && <option value="">No models found</option>}
                     {llmModels.map((name) => (
@@ -748,17 +770,17 @@ export default function RegisterAppPage() {
                       </option>
                     ))}
                   </select>
-                  {llmModelError && <span className="text-xs text-red-600">{llmModelError}</span>}
+                  {llmModelError && <span className="text-xs text-rose-500">{llmModelError}</span>}
                 </div>
                 <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Close</Button>
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-0">
-              <div className="p-4 border-r border-slate-200 max-h-[70vh] overflow-auto">
-                {discoveredEndpoints.length === 0 && <p className="text-sm text-slate-600">No endpoints discovered.</p>}
+            <div className="grid md:grid-cols-2 gap-0 divide-x divide-slate-200 dark:divide-slate-800 overflow-hidden flex-1">
+              <div className="p-4 overflow-auto max-h-[65vh] space-y-3 bg-slate-50/30 dark:bg-slate-950/20">
+                {discoveredEndpoints.length === 0 && <p className="text-sm text-slate-600 dark:text-slate-400">No endpoints discovered.</p>}
                 {discoveredEndpoints.length > 0 && (
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
                     <div className="flex gap-2">
                       <Button size="sm" variant="secondary" onClick={() => setSelectedEndpoints(new Set(discoveredEndpoints.map((endpoint) => endpoint.id)))}>
                         Select All
@@ -767,66 +789,80 @@ export default function RegisterAppPage() {
                         Unselect All
                       </Button>
                     </div>
-                    <p className="text-xs text-slate-600">Page {discoveryPage} / {discoveryTotalPages}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Page {discoveryPage} / {discoveryTotalPages}</p>
                   </div>
                 )}
-                <div className="space-y-2">
-                  {discoveryPageItems.map((endpoint) => (
-                    <div
-                      key={endpoint.id}
-                      onClick={() => setActiveEndpointId(endpoint.id)}
-                      className={`w-full text-left p-3 rounded-lg border cursor-pointer ${activeEndpointId === endpoint.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setActiveEndpointId(endpoint.id);
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-slate-900">{endpoint.method} {endpoint.path}</p>
-                        <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={selectedEndpoints.has(endpoint.id)}
-                            onChange={(e) => {
+                <div className="space-y-2.5">
+                  {discoveryPageItems.map((endpoint) => {
+                    const isActive = activeEndpointId === endpoint.id;
+                    const isSelected = selectedEndpoints.has(endpoint.id);
+                    return (
+                      <div
+                        key={endpoint.id}
+                        onClick={() => setActiveEndpointId(endpoint.id)}
+                        className={`w-full text-left p-3.5 rounded-xl border transition-all cursor-pointer shadow-xs ${
+                          isActive
+                            ? 'border-blue-500 dark:border-blue-500/80 bg-blue-50/80 dark:bg-blue-950/40 ring-1 ring-blue-500/30'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setActiveEndpointId(endpoint.id);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2 py-0.5 text-[11px] font-bold rounded-md border uppercase ${getMethodBadgeClass(endpoint.method)}`}>
+                              {endpoint.method}
+                            </span>
+                            <span className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100 break-all">{endpoint.path}</span>
+                          </div>
+                          <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                toggleEndpoint(endpoint.id);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
+                            />
+                            Selected
+                          </label>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 line-clamp-2">{endpoint.summary || endpoint.description || endpoint.operationId}</p>
+                        <textarea
+                          value={selectedEndpointDescriptions[endpoint.id] ?? ''}
+                          onChange={(e) => setSelectedEndpointDescription(endpoint.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-2.5 w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/30 outline-none"
+                          rows={2}
+                          placeholder="Description override for registration"
+                        />
+                        <div className="mt-2 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={(e) => {
                               e.stopPropagation();
-                              toggleEndpoint(endpoint.id);
+                              void generateEndpointDescription(endpoint);
                             }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          Selected
-                        </label>
+                            className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                            disabled={generatingEndpointDescriptionId === endpoint.id}
+                          >
+                            {generatingEndpointDescriptionId === endpoint.id ? 'Generating...' : 'Generate with LLM'}
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs text-slate-600 mt-1 line-clamp-2">{endpoint.summary || endpoint.description || endpoint.operationId}</p>
-                      <textarea
-                        value={selectedEndpointDescriptions[endpoint.id] ?? ''}
-                        onChange={(e) => setSelectedEndpointDescription(endpoint.id, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-2 w-full px-2 py-1 text-xs rounded border border-slate-300"
-                        rows={2}
-                        placeholder="Description override for registration"
-                      />
-                      <div className="mt-2 flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void generateEndpointDescription(endpoint);
-                          }}
-                          className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                          disabled={generatingEndpointDescriptionId === endpoint.id}
-                        >
-                          {generatingEndpointDescriptionId === endpoint.id ? 'Generating...' : 'Generate with LLM'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {discoveredEndpoints.length > DISCOVERY_PAGE_SIZE && (
-                  <div className="mt-3 flex items-center justify-between">
+                  <div className="mt-3 flex items-center justify-between pt-2">
                     <Button
                       size="sm"
                       variant="secondary"
@@ -847,35 +883,40 @@ export default function RegisterAppPage() {
                 )}
               </div>
 
-              <div className="p-4 max-h-[70vh] overflow-auto">
-                {!activeEndpoint && <p className="text-sm text-slate-600">Select an endpoint to view its configuration.</p>}
+              <div className="p-5 overflow-auto max-h-[65vh] bg-white dark:bg-slate-900">
+                {!activeEndpoint && <p className="text-sm text-slate-600 dark:text-slate-400">Select an endpoint to view its configuration.</p>}
                 {activeEndpoint && (
-                  <div className="space-y-3">
-                    <h4 className="text-base font-semibold text-slate-900">{activeEndpoint.method} {activeEndpoint.path}</h4>
-                    <p className="text-sm text-slate-700">{activeEndpoint.summary || activeEndpoint.description || 'No description'}</p>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-slate-200 dark:border-slate-800">
+                      <span className={`px-2.5 py-1 text-xs font-bold rounded-md border uppercase ${getMethodBadgeClass(activeEndpoint.method)}`}>
+                        {activeEndpoint.method}
+                      </span>
+                      <h4 className="text-base font-mono font-bold text-slate-900 dark:text-white">{activeEndpoint.path}</h4>
+                    </div>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">{activeEndpoint.summary || activeEndpoint.description || 'No description'}</p>
 
                     <div>
-                      <p className="text-xs font-semibold text-slate-700 mb-1">Required Parameters</p>
-                      <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeEndpoint.parameters)}</pre>
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Required Parameters</p>
+                      <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3.5 overflow-auto font-mono">{formatJson(activeEndpoint.parameters)}</pre>
                     </div>
 
                     <div>
-                      <p className="text-xs font-semibold text-slate-700 mb-1">Request Format</p>
-                      <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeEndpoint.requestBody)}</pre>
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Request Format</p>
+                      <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3.5 overflow-auto font-mono">{formatJson(activeEndpoint.requestBody)}</pre>
                     </div>
 
                     <div>
-                      <p className="text-xs font-semibold text-slate-700 mb-1">Response Format</p>
-                      <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeEndpoint.responses)}</pre>
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Response Format</p>
+                      <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3.5 overflow-auto font-mono">{formatJson(activeEndpoint.responses)}</pre>
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
-              <p className="text-sm text-slate-700">Selected: {selectedEndpoints.size} / {discoveredEndpoints.length}</p>
-              <Button onClick={registerSelected} disabled={loading || selectedEndpoints.size === 0} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Selected: {selectedEndpoints.size} / {discoveredEndpoints.length}</p>
+              <Button onClick={registerSelected} disabled={loading || selectedEndpoints.size === 0} className="bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md">
                 {loading ? 'Registering...' : 'Register Selected Endpoints'}
               </Button>
             </div>
@@ -884,35 +925,37 @@ export default function RegisterAppPage() {
       )}
 
       {selectedAppName && (
-        <div className="fixed inset-0 z-[120] bg-black/50 p-4 md:p-8 overflow-auto">
-          <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-[120] bg-black/70 p-4 md:p-8 overflow-auto backdrop-blur-xs flex items-center justify-center">
+          <div className="w-full max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden text-slate-900 dark:text-slate-100 flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Registered API Endpoints</h3>
-                <p className="text-xs text-slate-600 mt-1">Application: {selectedAppName} (database-backed controls)</p>
+                <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-500 dark:from-blue-400 dark:to-indigo-400 bg-clip-text text-transparent">
+                  Registered API Endpoints
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Application: <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedAppName}</span> (database-backed controls)</p>
               </div>
               <Button variant="secondary" onClick={() => setSelectedAppName(null)}>Close</Button>
             </div>
 
-            <div className="p-4">
+            <div className="p-4 flex-1 overflow-auto">
               {registeredSyncing && (
-                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="h-4 w-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
                   Syncing latest state...
                 </div>
               )}
               {registeredEndpointsError && (
-                <div className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm">
+                <div className="mb-3 p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 text-sm">
                   {registeredEndpointsError}
                 </div>
               )}
               {registeredEndpointsLoading ? (
-                <div className="flex items-center gap-2 text-sm text-slate-600">
+                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="h-4 w-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
                   Loading endpoints...
                 </div>
               ) : registeredEndpoints.length === 0 ? (
-                <p className="text-sm text-slate-600">No endpoints discovered for this application.</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">No endpoints discovered for this application.</p>
               ) : (
                 <>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -921,7 +964,6 @@ export default function RegisterAppPage() {
                         size="sm"
                         variant="secondary"
                         onClick={() => setRegisteredSelectedEndpoints(new Set(registeredEndpoints.map((row) => row.id)))}
-                        className="bg-blue-50 border-blue-300 text-blue-700"
                       >
                         Select All
                       </Button>
@@ -929,51 +971,64 @@ export default function RegisterAppPage() {
                         size="sm"
                         variant="secondary"
                         onClick={() => setRegisteredSelectedEndpoints(new Set())}
-                        className="bg-rose-50 border-rose-300 text-rose-700"
                       >
                         Unselect All
                       </Button>
                     </div>
-                    <p className="text-xs text-slate-600">Page {registeredPage} / {registeredTotalPages}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Page {registeredPage} / {registeredTotalPages}</p>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-0 border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="p-4 border-r border-slate-200 max-h-[60vh] overflow-auto bg-slate-50/60">
+                  <div className="grid md:grid-cols-2 gap-0 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-x divide-slate-200 dark:divide-slate-800">
+                    <div className="p-4 max-h-[55vh] overflow-auto bg-slate-50/40 dark:bg-slate-950/30">
                       <div className="space-y-2">
-                        {registeredPageItems.map((endpoint) => (
-                          <button
-                            key={endpoint.id}
-                            type="button"
-                            onClick={() => setActiveEndpointId(endpoint.id)}
-                            className={`w-full text-left p-3 rounded-lg border ${activeEndpointId === endpoint.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-white'}`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="font-medium text-slate-900">{endpoint.method} {endpoint.path}</p>
-                              <label className="inline-flex items-center gap-2 text-xs text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  checked={registeredSelectedEndpoints.has(endpoint.id)}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    setRegisteredSelectedEndpoints((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(endpoint.id)) next.delete(endpoint.id);
-                                      else next.add(endpoint.id);
-                                      return next;
-                                    });
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                                Enabled
-                              </label>
-                            </div>
-                            <p className="text-xs text-slate-600 mt-1 line-clamp-2">{endpoint.description || 'No description'}</p>
-                          </button>
-                        ))}
+                        {registeredPageItems.map((endpoint) => {
+                          const isActive = activeEndpointId === endpoint.id;
+                          const isEnabled = registeredSelectedEndpoints.has(endpoint.id);
+                          return (
+                            <button
+                              key={endpoint.id}
+                              type="button"
+                              onClick={() => setActiveEndpointId(endpoint.id)}
+                              className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                                isActive
+                                  ? 'border-blue-500 dark:border-blue-500/80 bg-blue-50/80 dark:bg-blue-950/40 ring-1 ring-blue-500/30'
+                                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`px-2 py-0.5 text-[11px] font-bold rounded-md border uppercase ${getMethodBadgeClass(endpoint.method)}`}>
+                                    {endpoint.method}
+                                  </span>
+                                  <span className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100 break-all">{endpoint.path}</span>
+                                </div>
+                                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isEnabled}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      setRegisteredSelectedEndpoints((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(endpoint.id)) next.delete(endpoint.id);
+                                        else next.add(endpoint.id);
+                                        return next;
+                                      });
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  Enabled
+                                </label>
+                              </div>
+                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 line-clamp-2">{endpoint.description || 'No description'}</p>
+                            </button>
+                          );
+                        })}
                       </div>
 
                       {registeredEndpoints.length > REGISTERED_PAGE_SIZE && (
-                        <div className="mt-3 flex items-center justify-between">
+                        <div className="mt-3 flex items-center justify-between pt-2">
                           <Button
                             size="sm"
                             variant="secondary"
@@ -994,21 +1049,26 @@ export default function RegisterAppPage() {
                       )}
                     </div>
 
-                    <div className="p-4 max-h-[60vh] overflow-auto bg-white">
+                    <div className="p-5 max-h-[55vh] overflow-auto bg-white dark:bg-slate-900">
                       {!activeRegisteredEndpoint ? (
-                        <p className="text-sm text-slate-600">Select an endpoint to view configuration.</p>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">Select an endpoint to view configuration.</p>
                       ) : (
-                        <div className="space-y-3">
-                          <h4 className="text-base font-semibold text-slate-900">{activeRegisteredEndpoint.method} {activeRegisteredEndpoint.path}</h4>
-                          <p className="text-xs text-slate-600">
-                            Current state: {registeredSelectedEndpoints.has(activeRegisteredEndpoint.id) ? 'Enabled' : 'Disabled'}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-slate-200 dark:border-slate-800">
+                            <span className={`px-2.5 py-1 text-xs font-bold rounded-md border uppercase ${getMethodBadgeClass(activeRegisteredEndpoint.method)}`}>
+                              {activeRegisteredEndpoint.method}
+                            </span>
+                            <h4 className="text-base font-mono font-bold text-slate-900 dark:text-white">{activeRegisteredEndpoint.path}</h4>
+                          </div>
+                          <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                            Current state: <span className={registeredSelectedEndpoints.has(activeRegisteredEndpoint.id) ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-500 font-semibold'}>{registeredSelectedEndpoints.has(activeRegisteredEndpoint.id) ? 'Enabled' : 'Disabled'}</span>
                           </p>
                           <textarea
                             value={draftEndpointDescriptions[activeRegisteredEndpoint.id] ?? ''}
                             onChange={(e) =>
                               setDraftEndpointDescriptions((prev) => ({ ...prev, [activeRegisteredEndpoint.id]: e.target.value }))
                             }
-                            className="w-full min-w-[260px] px-2 py-1 text-xs rounded border border-slate-300"
+                            className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/30 outline-none"
                             rows={2}
                             placeholder="Endpoint description"
                           />
@@ -1030,12 +1090,12 @@ export default function RegisterAppPage() {
                               {generatingRegisteredDescriptionId === activeRegisteredEndpoint.id ? 'Generating...' : 'Generate with LLM'}
                             </Button>
                           </div>
-                          <details>
-                            <summary className="text-xs text-slate-700 cursor-pointer">View request/response config</summary>
+                          <details className="mt-3">
+                            <summary className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400">View request/response config</summary>
                             <div className="mt-2 grid gap-2">
-                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredEndpoint.parameters)}</pre>
-                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredEndpoint.requestBody)}</pre>
-                              <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredEndpoint.responses)}</pre>
+                              <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3.5 overflow-auto font-mono">{formatJson(activeRegisteredEndpoint.parameters)}</pre>
+                              <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3.5 overflow-auto font-mono">{formatJson(activeRegisteredEndpoint.requestBody)}</pre>
+                              <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3.5 overflow-auto font-mono">{formatJson(activeRegisteredEndpoint.responses)}</pre>
                             </div>
                           </details>
                         </div>
@@ -1046,12 +1106,12 @@ export default function RegisterAppPage() {
               )}
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
-              <p className="text-sm text-slate-700">Enabled: {registeredSelectedEndpoints.size} / {registeredEndpoints.length}</p>
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Enabled: {registeredSelectedEndpoints.size} / {registeredEndpoints.length}</p>
               <Button
                 onClick={() => void applyRegisteredEndpointSelection()}
                 disabled={registeredSyncing || registeredEndpointsLoading}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                className="bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md"
               >
                 {registeredSyncing ? 'Applying...' : 'Apply Selection'}
               </Button>

@@ -295,45 +295,39 @@ export default function PlaygroundPage() {
     const uniqueApps = Array.from(new Set(catalogTools.map(t => t.app))).sort();
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 flex flex-col overflow-hidden">
-            {/* Elegant background elements */}
-            <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-20 left-10 w-80 h-80 bg-rose-400/8 rounded-full blur-3xl animate-float"></div>
-                <div className="absolute bottom-20 right-10 w-80 h-80 bg-orange-400/8 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
-            </div>
-
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col overflow-hidden transition-colors duration-200">
             {/* Navigation */}
             <Navigation pageTitle="Playground" />
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col pt-24 pb-4 relative z-10">
+            <main className="flex-1 flex flex-col pt-8 pb-4 relative z-10">
                 <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-full gap-6">
                     {/* Header Controls */}
-                    <div className="bg-white/80 backdrop-blur-xl border border-rose-200/50 rounded-2xl p-6 shadow-lg shadow-rose-200/20 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="bg-white dark:bg-slate-900 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div>
                             <h1 className="text-2xl font-bold bg-gradient-to-r from-rose-600 to-orange-600 bg-clip-text text-transparent">
                                 Testing Playground
                             </h1>
-                            <p className="text-slate-600 text-sm mt-1">
+                            <p className="text-slate-700 dark:text-slate-300 text-sm mt-1 font-medium">
                                 Select an application to filter the LLM agent&apos;s tool access context.
                             </p>
                         </div>
 
                         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
                             <div className="w-full sm:w-56">
-                                <label className="block text-xs font-medium text-slate-500 mb-1">Ollama Model</label>
+                                <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1">Ollama Model</label>
                                 {ollamaModels.length > 0 ? (
                                     <select
                                         value={selectedModel}
                                         onChange={(e) => setSelectedModel(e.target.value)}
-                                        className="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-rose-500 focus:border-rose-500 block p-2.5 shadow-sm transition-all hover:border-rose-300"
+                                        className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-rose-500/40 block p-2.5 shadow-xs"
                                     >
                                         {ollamaModels.map((model) => (
                                             <option key={model} value={model}>{model}</option>
                                         ))}
                                     </select>
                                 ) : (
-                                    <div className="text-xs text-slate-400 border border-dashed border-slate-300 rounded-lg px-3 py-2">
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2">
                                         {modelError ? modelError : 'No models loaded'}
                                     </div>
                                 )}
@@ -342,11 +336,11 @@ export default function PlaygroundPage() {
                                 <div className="text-sm font-medium text-slate-500 animate-pulse">Loading apps...</div>
                             ) : (
                                 <div className="w-full sm:w-64">
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">Application Context</label>
+                                    <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1">Application Context</label>
                                     <select
                                         value={selectedApp}
                                         onChange={(e) => handleAppSelect(e.target.value)}
-                                        className="w-full bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-rose-500 focus:border-rose-500 block p-2.5 shadow-sm transition-all hover:border-rose-300"
+                                        className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-sm rounded-xl focus:ring-2 focus:ring-rose-500/40 block p-2.5 shadow-xs"
                                     >
                                         <option value="all">🌐 All Applications (Unrestricted)</option>
                                         {uniqueApps.map(app => (
@@ -363,13 +357,13 @@ export default function PlaygroundPage() {
                     </div>
 
                     {error && (
-                        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        <div className="rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-4 py-3 text-sm text-rose-800 dark:text-rose-300">
                             {error}
                         </div>
                     )}
 
                     {/* Chat Container */}
-                    <div className="flex-1 bg-white/70 backdrop-blur-xl border border-rose-300/40 rounded-2xl overflow-hidden flex flex-col shadow-xl shadow-orange-200/20">
+                    <div className="flex-1 bg-white dark:bg-slate-900 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-xs">
                         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
                             {messages.map((message, index) => (
                                 <div
@@ -384,23 +378,23 @@ export default function PlaygroundPage() {
                                             </div>
                                         )}
                                         <div
-                                            className={`px-5 py-4 rounded-2xl transition-all duration-300 hover:scale-[1.02] ${message.role === 'user'
-                                                    ? 'bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-br-none shadow-lg shadow-slate-900/20'
-                                                    : 'bg-white text-slate-800 rounded-bl-none border border-rose-200 shadow-md shadow-rose-100/50'
+                                            className={`px-5 py-4 rounded-2xl transition-all duration-200 ${message.role === 'user'
+                                                    ? 'bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-br-none shadow-md'
+                                                    : 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-bl-none border border-slate-200 dark:border-slate-700 shadow-xs'
                                                 }`}
                                         >
-                                            <div className="text-sm sm:text-base leading-relaxed prose prose-sm max-w-none">
+                                            <div className="text-sm sm:text-base leading-relaxed prose prose-sm max-w-none dark:prose-invert">
                                                 {message.content ? (
                                                     <MessageContent content={message.content} />
                                                 ) : (
                                                     <div className="flex gap-2 py-1">
-                                                        <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce"></div>
-                                                        <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
-                                                        <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce"></div>
+                                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
                                                     </div>
                                                 )}
                                             </div>
-                                            <span className={`text-xs mt-2 block opacity-60 ${message.role === 'user' ? 'text-slate-300' : 'text-slate-500'}`}>
+                                            <span className={`text-xs mt-2 block opacity-60 ${message.role === 'user' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
                                                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </span>
                                         </div>
@@ -413,11 +407,11 @@ export default function PlaygroundPage() {
                                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-rose-400/30">
                                             <span className="text-white text-xs font-bold">AI</span>
                                         </div>
-                                        <div className="bg-white text-slate-800 px-5 py-4 rounded-2xl rounded-bl-none border border-rose-200 shadow-md">
+                                        <div className="bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white px-5 py-4 rounded-2xl rounded-bl-none border border-slate-200 dark:border-slate-700 shadow-xs">
                                             <div className="flex gap-2">
-                                                <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce"></div>
-                                                <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
-                                                <div className="w-2.5 h-2.5 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                                <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce"></div>
+                                                <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                                                <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
                                             </div>
                                         </div>
                                     </div>
@@ -427,24 +421,24 @@ export default function PlaygroundPage() {
                         </div>
 
                         {/* Input Area */}
-                        <div className="border-t border-rose-200/50 bg-white/80 backdrop-blur-xl p-4 sm:p-5 shadow-lg">
+                        <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 backdrop-blur-xl p-4 sm:p-5">
                             <form onSubmit={handleSendMessage} className="flex gap-3">
                                 <input
                                     type="text"
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     placeholder="Ask the agent to test a tool..."
-                                    className="flex-1 px-5 py-3 border border-slate-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent bg-white text-slate-800 placeholder-slate-400 transition-all duration-300 hover:border-slate-400 font-medium"
+                                    className="flex-1 px-5 py-3 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/40 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 transition-all duration-200 font-medium"
                                     disabled={chatLoading}
                                     autoFocus
                                 />
                                 <button
                                     type="submit"
                                     disabled={chatLoading || !input.trim()}
-                                    className="cursor-pointer bg-gradient-to-r from-rose-500 to-orange-600 hover:from-rose-600 hover:to-orange-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-rose-400/40 hover:scale-[1.02] shadow-md active:scale-95"
+                                    className="cursor-pointer bg-gradient-to-r from-rose-500 to-orange-600 hover:from-rose-600 hover:to-orange-700 text-white px-6 sm:px-8 py-3 rounded-xl font-bold disabled:opacity-50 transition-all duration-200 shadow-sm active:scale-95"
                                 >
                                     {chatLoading ? (
-                                        <span className="inline-block animate-spin-slow">⚙️</span>
+                                        <span className="inline-block animate-spin">⚙️</span>
                                     ) : (
                                         'Run Test'
                                     )}

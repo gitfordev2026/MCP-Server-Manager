@@ -12,7 +12,7 @@ def _normalize_mcp_url(url: str) -> str:
     value = (url or "").strip()
     if not value:
         raise ValueError("MCP server URL is empty")
-    if value.endswith("/mcp"):
+    if not value.endswith("/"):
         return f"{value}/"
     return value
 

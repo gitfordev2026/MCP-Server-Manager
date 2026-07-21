@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
@@ -376,32 +376,6 @@ export default function RegisterServerPage() {
       setSelectedTools(new Set());
       setActiveToolName(null);
       await syncCatalog();
-      const toolsPayload = await http<{ tools: Array<{
-        id: number;
-        owner_id: string;
-        name: string;
-        description: string;
-        source_type: string;
-        current_version?: string;
-      }> }>('/tools?include_inactive=true');
-      const ownerId = `mcp:${formData.name.trim()}`;
-      const selectedNames = new Set(Array.from(selectedTools));
-      const selectedRows = (toolsPayload.tools || []).filter(
-        (tool) =>
-          tool.source_type === 'mcp' &&
-          tool.owner_id === ownerId &&
-          selectedNames.has(tool.name)
-      );
-      await Promise.all(
-        selectedRows.map((tool) => {
-          const nextDescription = (selectedToolDescriptions[tool.name] || tool.description || '').trim();
-          if (!nextDescription || nextDescription === (tool.description || '')) return Promise.resolve();
-          return http(`/tools/${tool.id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ description: nextDescription, version: tool.current_version || '1.0.0' }),
-          });
-        })
-      );
       await fetchServers();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -411,49 +385,49 @@ export default function RegisterServerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       <Navigation pageTitle="Fetch MCP Tools" />
 
-      <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
+      <main className="pt-8 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
         <div className="grid md:grid-cols-2 gap-8">
           <section>
             <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-emerald-500 bg-clip-text text-transparent mb-2">Fetch MCP Tools</h2>
-            <p className="text-slate-600 mb-6">Discover MCP tools, inspect configurations, and register selected tools.</p>
+            <p className="text-slate-700 dark:text-slate-300 mb-6 font-medium">Discover MCP tools, inspect configurations, and register selected tools.</p>
 
-            {success && <div className="mb-4 p-3 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700">{success}</div>}
-            {error && <div className="mb-4 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700">{error}</div>}
+            {success && <div className="mb-4 p-3 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">{success}</div>}
+            {error && <div className="mb-4 p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300">{error}</div>}
 
-            <div className="space-y-4 bg-white/85 border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="space-y-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Server Name</label>
-                <input name="name" value={formData.name} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" placeholder="e.g. test-mcp" />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Server Name</label>
+                <input name="name" value={formData.name} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/40 outline-none" placeholder="e.g. test-mcp" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Server URL</label>
-                <input name="url" value={formData.url} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" placeholder="http://127.0.0.1:8005/mcp" />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Server URL</label>
+                <input name="url" value={formData.url} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/40 outline-none" placeholder="http://127.0.0.1:8005/mcp" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea name="description" value={formData.description} onChange={onChangeInput} className="w-full px-3 py-2 rounded-lg border border-slate-300" rows={3} />
+                <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Description</label>
+                <textarea name="description" value={formData.description} onChange={onChangeInput} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/40 outline-none" rows={3} />
               </div>
 
               <div>
-                <p className="text-sm font-medium text-slate-700 mb-2">Domain Type</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Domain Type</p>
                 <div className="flex gap-4">
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input type="radio" checked={formData.domain_type === 'ADM'} onChange={() => onChangeDomain('ADM')} />
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-800 dark:text-slate-200 font-medium cursor-pointer">
+                    <input type="radio" checked={formData.domain_type === 'ADM'} onChange={() => onChangeDomain('ADM')} className="text-emerald-600 focus:ring-emerald-500" />
                     ADM
                   </label>
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input type="radio" checked={formData.domain_type === 'OPS'} onChange={() => onChangeDomain('OPS')} />
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-800 dark:text-slate-200 font-medium cursor-pointer">
+                    <input type="radio" checked={formData.domain_type === 'OPS'} onChange={() => onChangeDomain('OPS')} className="text-emerald-600 focus:ring-emerald-500" />
                     OPS
                   </label>
                 </div>
               </div>
 
-              <Button onClick={fetchTools} disabled={discovering || loading} className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
+              <Button onClick={fetchTools} disabled={discovering || loading} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
                 {discovering ? 'Fetching MCP Tools...' : 'Fetch MCP Tools'}
               </Button>
             </div>
@@ -461,25 +435,25 @@ export default function RegisterServerPage() {
 
           <section>
             <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent mb-2">Registered MCP Servers</h2>
-            <p className="text-slate-600 mb-6">Includes active and inactive servers for status tracking.</p>
+            <p className="text-slate-700 dark:text-slate-300 mb-6 font-medium">Includes active and inactive servers for status tracking.</p>
 
             <div className="space-y-3">
-              {servers.length === 0 && <div className="p-6 rounded-xl border border-slate-200 bg-white">No servers found.</div>}
+              {servers.length === 0 && <div className="p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">No servers found.</div>}
               {servers.map((server) => (
                 <button
                   key={server.name}
                   type="button"
                   onClick={() => void loadRegisteredTools(server.name)}
-                  className="w-full text-left p-4 rounded-xl border border-cyan-200 bg-gradient-to-r from-cyan-50 to-blue-50 hover:border-cyan-400 transition-colors shadow-sm"
+                  className="w-full text-left p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-500 transition-colors shadow-xs"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{server.name}</p>
-                      <p className="text-sm text-slate-600 break-all">{server.url}</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{server.name}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 break-all">{server.url}</p>
                     </div>
                     <div className="text-right text-xs">
-                      <p className="text-slate-700">{server.domain_type || 'ADM'}</p>
-                      <p className={server.is_deleted ? 'text-red-600' : server.is_enabled ? 'text-emerald-600' : 'text-amber-600'}>
+                      <p className="text-slate-700 dark:text-slate-300 font-medium">{server.domain_type || 'ADM'}</p>
+                      <p className={server.is_deleted ? 'text-rose-600 dark:text-rose-400' : server.is_enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
                         {server.is_deleted ? 'Deleted' : server.is_enabled ? 'Enabled' : 'Disabled'}
                       </p>
                     </div>
@@ -492,19 +466,19 @@ export default function RegisterServerPage() {
       </main>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-[120] bg-black/50 p-4 md:p-8 overflow-auto">
-          <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-[120] bg-black/60 p-4 md:p-8 overflow-auto backdrop-blur-xs">
+          <div className="max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Select MCP Tools</h3>
-                <p className="text-xs text-slate-600 mt-1">Choose tools to register for {formData.name || 'this server'}.</p>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Select MCP Tools</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Choose tools to register for {formData.name || 'this server'}.</p>
               </div>
               <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Close</Button>
             </div>
 
             <div className="grid md:grid-cols-2 gap-0">
-              <div className="p-4 border-r border-slate-200 max-h-[70vh] overflow-auto">
-                {discoveredTools.length === 0 && <p className="text-sm text-slate-600">No tools discovered.</p>}
+              <div className="p-4 border-r border-slate-200 dark:border-slate-800 max-h-[70vh] overflow-auto">
+                {discoveredTools.length === 0 && <p className="text-sm text-slate-600 dark:text-slate-400">No tools discovered.</p>}
                 {discoveredTools.length > 0 && (
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex gap-2">
@@ -515,7 +489,7 @@ export default function RegisterServerPage() {
                         Unselect All
                       </Button>
                     </div>
-                    <p className="text-xs text-slate-600">Page {discoveryPage} / {discoveryTotalPages}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Page {discoveryPage} / {discoveryTotalPages}</p>
                   </div>
                 )}
                 <div className="space-y-2">
@@ -524,11 +498,11 @@ export default function RegisterServerPage() {
                       key={tool.name}
                       type="button"
                       onClick={() => setActiveToolName(tool.name)}
-                      className={`w-full text-left p-3 rounded-lg border ${activeToolName === tool.name ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`}
+                      className={`w-full text-left p-3 rounded-xl border transition-colors ${activeToolName === tool.name ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-slate-900">{tool.name}</p>
-                        <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+                        <p className="font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
                           <input
                             type="checkbox"
                             checked={selectedTools.has(tool.name)}
@@ -541,12 +515,12 @@ export default function RegisterServerPage() {
                           Selected
                         </label>
                       </div>
-                      <p className="text-xs text-slate-600 mt-1 line-clamp-2">{tool.description || 'No description'}</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">{tool.description || 'No description'}</p>
                       <textarea
                         value={selectedToolDescriptions[tool.name] ?? ''}
                         onChange={(e) => setSelectedToolDescription(tool.name, e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="mt-2 w-full px-2 py-1 text-xs rounded border border-slate-300"
+                        className="mt-2 w-full px-2.5 py-1 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                         rows={2}
                         placeholder="Description override for registration"
                       />
@@ -576,23 +550,23 @@ export default function RegisterServerPage() {
               </div>
 
               <div className="p-4 max-h-[70vh] overflow-auto">
-                {!activeTool && <p className="text-sm text-slate-600">Select a tool to view its configuration.</p>}
+                {!activeTool && <p className="text-sm text-slate-600 dark:text-slate-400">Select a tool to view its configuration.</p>}
                 {activeTool && (
                   <div className="space-y-3">
-                    <h4 className="text-base font-semibold text-slate-900">{activeTool.name}</h4>
-                    <p className="text-sm text-slate-700">{activeTool.description || 'No description'}</p>
+                    <h4 className="text-base font-semibold text-slate-900 dark:text-white">{activeTool.name}</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">{activeTool.description || 'No description'}</p>
                     <div>
-                      <p className="text-xs font-semibold text-slate-700 mb-1">Required Parameters / Input Schema</p>
-                      <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeTool.inputSchema)}</pre>
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Required Parameters / Input Schema</p>
+                      <pre className="text-xs bg-slate-950 text-slate-100 rounded-xl p-3 overflow-auto border border-slate-800">{formatJson(activeTool.inputSchema)}</pre>
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
-              <p className="text-sm text-slate-700">Selected: {selectedTools.size} / {discoveredTools.length}</p>
-              <Button onClick={registerSelected} disabled={loading || selectedTools.size === 0} className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white">
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">Selected: {selectedTools.size} / {discoveredTools.length}</p>
+              <Button onClick={registerSelected} disabled={loading || selectedTools.size === 0} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                 {loading ? 'Registering...' : 'Register Selected Tools'}
               </Button>
             </div>
@@ -601,36 +575,36 @@ export default function RegisterServerPage() {
       )}
 
       {selectedServerName && (
-        <div className="fixed inset-0 z-[120] bg-black/50 p-4 md:p-8 overflow-auto">
-          <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-[120] bg-black/60 p-4 md:p-8 overflow-auto backdrop-blur-xs">
+          <div className="max-w-6xl mx-auto bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">Registered MCP Tools</h3>
-                <p className="text-xs text-slate-600 mt-1">Server: {selectedServerName} (database-backed controls)</p>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Registered MCP Tools</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Server: {selectedServerName} (database-backed controls)</p>
               </div>
               <Button variant="secondary" onClick={() => setSelectedServerName(null)}>Close</Button>
             </div>
 
             <div className="p-4">
               {registeredSyncing && (
-                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="h-4 w-4 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" />
                   Syncing latest state...
                 </div>
               )}
               {registeredToolsError && (
-                <div className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm">
+                <div className="mb-3 p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 text-sm">
                   {registeredToolsError}
                 </div>
               )}
 
               {registeredToolsLoading ? (
-                <div className="flex items-center gap-2 text-sm text-slate-600">
+                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="h-4 w-4 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" />
                   Loading tools...
                 </div>
               ) : registeredTools.length === 0 ? (
-                <p className="text-sm text-slate-600">No tools discovered for this server.</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">No tools discovered for this server.</p>
               ) : (
                 <>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -639,7 +613,6 @@ export default function RegisterServerPage() {
                         size="sm"
                         variant="secondary"
                         onClick={() => setRegisteredSelectedTools(new Set(registeredTools.map((row) => row.name)))}
-                        className="bg-emerald-50 border-emerald-300 text-emerald-700"
                       >
                         Select All
                       </Button>
@@ -647,27 +620,26 @@ export default function RegisterServerPage() {
                         size="sm"
                         variant="secondary"
                         onClick={() => setRegisteredSelectedTools(new Set())}
-                        className="bg-rose-50 border-rose-300 text-rose-700"
                       >
                         Unselect All
                       </Button>
                     </div>
-                    <p className="text-xs text-slate-600">Page {registeredPage} / {registeredTotalPages}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Page {registeredPage} / {registeredTotalPages}</p>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-0 border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="p-4 border-r border-slate-200 max-h-[60vh] overflow-auto bg-slate-50/60">
+                  <div className="grid md:grid-cols-2 gap-0 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                    <div className="p-4 border-r border-slate-200 dark:border-slate-800 max-h-[60vh] overflow-auto bg-slate-50/60 dark:bg-slate-900/60">
                       <div className="space-y-2">
                         {registeredPageItems.map((tool) => (
                           <button
                             key={tool.name}
                             type="button"
                             onClick={() => setActiveToolName(tool.name)}
-                            className={`w-full text-left p-3 rounded-lg border ${activeToolName === tool.name ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`}
+                            className={`w-full text-left p-3 rounded-xl border ${activeToolName === tool.name ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'}`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <p className="font-medium text-slate-900">{tool.name}</p>
-                              <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+                              <p className="font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                              <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
                                 <input
                                   type="checkbox"
                                   checked={registeredSelectedTools.has(tool.name)}
@@ -685,7 +657,7 @@ export default function RegisterServerPage() {
                                 Enabled
                               </label>
                             </div>
-                            <p className="text-xs text-slate-600 mt-1 line-clamp-2">{tool.description || 'No description'}</p>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 line-clamp-2">{tool.description || 'No description'}</p>
                           </button>
                         ))}
                       </div>
@@ -712,13 +684,13 @@ export default function RegisterServerPage() {
                       )}
                     </div>
 
-                    <div className="p-4 max-h-[60vh] overflow-auto bg-white">
+                    <div className="p-4 max-h-[60vh] overflow-auto bg-white dark:bg-slate-900">
                       {!activeRegisteredTool ? (
-                        <p className="text-sm text-slate-600">Select a tool to view configuration.</p>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">Select a tool to view configuration.</p>
                       ) : (
                         <div className="space-y-3">
-                          <h4 className="text-base font-semibold text-slate-900">{activeRegisteredTool.name}</h4>
-                          <p className="text-xs text-slate-600">
+                          <h4 className="text-base font-semibold text-slate-900 dark:text-white">{activeRegisteredTool.name}</h4>
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
                             Current state: {registeredSelectedTools.has(activeRegisteredTool.name) ? 'Enabled' : 'Disabled'}
                           </p>
                           <textarea
@@ -726,7 +698,7 @@ export default function RegisterServerPage() {
                             onChange={(e) =>
                               setDraftToolDescriptions((prev) => ({ ...prev, [activeRegisteredTool.name]: e.target.value }))
                             }
-                            className="w-full min-w-[260px] px-2 py-1 text-xs rounded border border-slate-300"
+                            className="w-full min-w-[260px] px-2.5 py-1.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                             rows={2}
                             placeholder="Tool description"
                           />
@@ -739,8 +711,8 @@ export default function RegisterServerPage() {
                             {savingToolDescriptionName === activeRegisteredTool.name ? 'Saving...' : 'Save Description'}
                           </Button>
                           <div>
-                            <p className="text-xs font-semibold text-slate-700 mb-1">Input Schema</p>
-                            <pre className="text-xs bg-slate-950 text-slate-100 rounded-lg p-3 overflow-auto">{formatJson(activeRegisteredTool.inputSchema)}</pre>
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Input Schema</p>
+                            <pre className="text-xs bg-slate-950 text-slate-100 rounded-xl p-3 overflow-auto border border-slate-800">{formatJson(activeRegisteredTool.inputSchema)}</pre>
                           </div>
                         </div>
                       )}
@@ -750,12 +722,12 @@ export default function RegisterServerPage() {
               )}
             </div>
 
-            <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
-              <p className="text-sm text-slate-700">Enabled: {registeredSelectedTools.size} / {registeredTools.length}</p>
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">Enabled: {registeredSelectedTools.size} / {registeredTools.length}</p>
               <Button
                 onClick={() => void applyRegisteredToolSelection()}
                 disabled={registeredSyncing || registeredToolsLoading}
-                className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 {registeredSyncing ? 'Applying...' : 'Apply Selection'}
               </Button>

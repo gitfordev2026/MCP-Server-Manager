@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
@@ -93,19 +94,8 @@ export default function Home() {
   const backendToastShownRef = useRef(false);
   const [systemStatuses, setSystemStatuses] = useState<SystemStatus[]>([]);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'down' | null>(null);
-  const isDark = useSyncExternalStore(
-    (onStoreChange) => {
-      if (typeof window === 'undefined') {
-        return () => {};
-      }
-      const media = window.matchMedia('(prefers-color-scheme: dark)');
-      const listener = () => onStoreChange();
-      media.addEventListener('change', listener);
-      return () => media.removeEventListener('change', listener);
-    },
-    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
-    () => false
-  );
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
 
   const aliveLatencies = Object.values(serverHealth)
     .filter((item) => item.status === 'alive')

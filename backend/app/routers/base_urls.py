@@ -101,6 +101,37 @@ def create_base_urls_router(
         db.execute(delete(api_server_link_model).where(api_server_link_model.raw_api_id == base_url_id))
         return {"tools": len(tool_ids), "endpoints": len(endpoint_ids)}
 
+    def _sync_app_tools_selection(db: Any, app_name: str, selected_endpoints: list[str]) -> None:
+        owner_id = f"app:{app_name}"
+        selected_set = {str(item).strip() for item in selected_endpoints if str(item).strip()}
+        all_enabled_by_default = (len(selected_set) == 0)
+
+        tools = db.scalars(
+            select(mcp_tool_model).where(mcp_tool_model.owner_id == owner_id)
+        ).all()
+
+        for tool in tools:
+            method = (getattr(tool, "method", "") or "").upper()
+            path = getattr(tool, "path", "") or ""
+            endpoint_key = f"{method} {path}".strip()
+
+            is_selected = all_enabled_by_default or (
+                endpoint_key in selected_set or tool.name in selected_set
+            )
+
+            if is_selected:
+                tool.owner_enabled = True
+                tool.is_enabled = bool(getattr(tool, "admin_enabled", True) and tool.owner_enabled)
+                tool.is_deleted = False
+                tool.registration_state = "selected"
+                tool.exposure_state = "active"
+            else:
+                tool.owner_enabled = False
+                tool.is_enabled = False
+                tool.is_deleted = True
+                tool.registration_state = "unselected"
+                tool.exposure_state = "disabled"
+
     @router.post(
         "/register-base-url",
         summary="Register Application",
@@ -144,6 +175,7 @@ def create_base_urls_router(
                         owner_id=f"app:{existing.name}",
                         base_url_id=existing.id,
                     )
+                    _sync_app_tools_selection(db, existing.name, existing.selected_endpoints)
                 else:
                     base_url = base_url_model(
                         name=data.name,
@@ -165,6 +197,7 @@ def create_base_urls_router(
                         owner_id=f"app:{base_url.name}",
                         base_url_id=base_url.id,
                     )
+                    _sync_app_tools_selection(db, base_url.name, base_url.selected_endpoints)
                 write_audit_log_fn(
                     db,
                     audit_log_model,
@@ -178,9 +211,7 @@ def create_base_urls_router(
                         "url": data.url,
                         "description": description,
                         "domain_type": _normalize_domain_type(getattr(data, "domain_type", "ADM")),
-                        "selected_endpoints": _normalize_selected_endpoints(
-                            getattr(data, "selected_endpoints", [])
-                        ),
+                        "selected_endpoints": (existing or base_url).selected_endpoints or [],
                         "openapi_path": normalized_openapi_path,
                         "include_unreachable_tools": bool(include_unreachable),
                         "is_enabled": True,
@@ -199,8 +230,8 @@ def create_base_urls_router(
                 "url": data.url,
                 "description": description,
                 "domain_type": _normalize_domain_type(getattr(data, "domain_type", "ADM")),
-                "selected_endpoints_count": len(getattr(data, "selected_endpoints", []) or []),
-                "selected_endpoints": _normalize_selected_endpoints(getattr(data, "selected_endpoints", [])),
+                "selected_endpoints_count": len((existing or base_url).selected_endpoints or []),
+                "selected_endpoints": (existing or base_url).selected_endpoints or [],
                 "openapi_path": normalized_openapi_path,
                 "include_unreachable_tools": bool(include_unreachable),
             }
@@ -211,26 +242,28 @@ def create_base_urls_router(
     @router.get(
         "/base-urls",
         summary="List Applications",
-        description="List all registered application base URLs. Source: backend/app/routers/base_urls.py",
+        description="Retrieve all application base URL registrations. Source: backend/app/routers/base_urls.py",
     )
     def list_base_urls(
-        include_inactive: bool = Query(default=False),
+        include_inactive: bool = Query(default=True),
         current_user: dict[str, Any] | None = None,
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> dict[str, Any]:
         _ = current_user
-        cache_key = f"status:base-urls:include_inactive={str(include_inactive).lower()}"
+        cache_key = f"status:list_base_urls:{include_inactive}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
+
         try:
             with session_local_factory() as db:
-                stmt = select(base_url_model)
+                query = select(base_url_model)
                 if not include_inactive:
-                    stmt = stmt.where(
-                        base_url_model.is_deleted == False,  # noqa: E712
+                    query = query.where(
                         base_url_model.is_enabled == True,  # noqa: E712
+                        base_url_model.is_deleted == False,  # noqa: E712
                     )
-                rows = db.scalars(stmt).all()
+
+                rows = db.scalars(query).all()
                 base_urls = [
                     {
                         "name": row.name,
@@ -242,10 +275,8 @@ def create_base_urls_router(
                         "include_unreachable_tools": bool(row.include_unreachable_tools),
                         "is_enabled": bool(row.is_enabled),
                         "is_deleted": bool(row.is_deleted),
-                        "admin_allowed": bool(getattr(row, "admin_allowed", True)),
-                        "health_status": str(getattr(row, "health_status", "unknown")),
-                        "last_health_check_at": getattr(row, "last_health_check_at", None),
-                        "consecutive_failures": int(getattr(row, "consecutive_failures", 0) or 0),
+                        "admin_allowed": True,
+                        "health_status": "unknown",
                     }
                     for row in rows
                 ]
@@ -317,6 +348,7 @@ def create_base_urls_router(
                 row.domain_type = _normalize_domain_type(payload.domain_type)
             if payload.selected_endpoints is not None:
                 row.selected_endpoints = _normalize_selected_endpoints(payload.selected_endpoints)
+                _sync_app_tools_selection(db, row.name, row.selected_endpoints)
             if payload.description is not None:
                 row.description = payload.description.strip()
             if payload.openapi_path is not None:

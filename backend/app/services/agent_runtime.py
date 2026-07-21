@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -37,6 +38,13 @@ def _normalize_content(content: Any) -> str:
     return str(content)
 
 
+def _normalize_mcp_url(url: str) -> str:
+    val = (url or "").strip()
+    if val and not val.endswith("/"):
+        return f"{val}/"
+    return val
+
+
 def build_default_agent(
     disallowed_tools: list[str] | None = None,
     additional_instructions: str | None = None,
@@ -47,7 +55,7 @@ def build_default_agent(
     config = {
         "mcpServers": {
             ENV.agent_mcp_server_name: {
-                "url": ENV.agent_mcp_server_url,
+                "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
             }
         }
     }
@@ -85,7 +93,7 @@ def build_agent_with_model(
     config = {
         "mcpServers": {
             ENV.agent_mcp_server_name: {
-                "url": ENV.agent_mcp_server_url,
+                "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
             }
         }
     }
@@ -93,7 +101,7 @@ def build_agent_with_model(
     client = MCPClient(config)
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
 
-    resolved_model = model or ENV.agent_ollama_model
+    resolved_model = model or ENV.agent_ollama_model or "gemma4:31b-cloud"
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
@@ -119,7 +127,7 @@ async def generate_direct_response(
     additional_instructions: str | None = None,
 ) -> str:
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
-    resolved_model = model or ENV.agent_ollama_model
+    resolved_model = model or ENV.agent_ollama_model or "gemma4:31b-cloud"
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
@@ -134,6 +142,11 @@ async def generate_direct_response(
     response = await llm.ainvoke(full_prompt)
     if isinstance(response, AIMessage):
         content = response.content
+        if not content and hasattr(response, "tool_calls") and response.tool_calls:
+            tc = response.tool_calls[0]
+            name = tc.get("name", "")
+            args = tc.get("args", {})
+            content = json.dumps({"name": name, "parameters": args})
     else:
         content = getattr(response, "content", response)
 
@@ -146,7 +159,7 @@ async def stream_direct_response_chunks(
     additional_instructions: str | None = None,
 ) -> AsyncIterator[str]:
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
-    resolved_model = model or ENV.agent_ollama_model
+    resolved_model = model or ENV.agent_ollama_model or "gemma4:31b-cloud"
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,

@@ -12,11 +12,13 @@ from typing import Any
 import jwt
 from jwt import PyJWKClient
 
+import ssl
 from app.core.auth import (
     KEYCLOAK_CLIENT_ID,
     KEYCLOAK_ISSUER,
     KEYCLOAK_JWKS_URL,
     KEYCLOAK_VERIFY_AUD,
+    KEYCLOAK_VERIFY_SSL,
 )
 
 
@@ -43,7 +45,8 @@ def _get_jwks_client(jwks_url: str | None = None) -> PyJWKClient:
     if not url:
         raise TokenValidationError("JWKS URL is not configured")
     if _jwks_client is None or jwks_url is not None:
-        _jwks_client = PyJWKClient(url, cache_jwk_set=True, lifespan=3600)
+        ssl_ctx = None if KEYCLOAK_VERIFY_SSL else ssl._create_unverified_context()
+        _jwks_client = PyJWKClient(url, cache_jwk_set=True, lifespan=3600, ssl_context=ssl_ctx)
     return _jwks_client
 
 

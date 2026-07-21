@@ -1,9 +1,11 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import Button from '@/components/ui/Button';
+import ThemeToggle from '@/components/ThemeToggle';
+import { useTheme } from '@/context/ThemeContext';
 import { publicEnv } from '@/lib/env';
 import {
   buildLogoutUrl,
@@ -18,26 +20,70 @@ interface NavigationProps {
   isDark?: boolean;
 }
 
-export default function Navigation({ pageTitle, isDark = false }: NavigationProps) {
+export default function Navigation({ pageTitle, isDark: isDarkProp }: NavigationProps) {
   const pathname = usePathname();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
   const [hasToken, setHasToken] = useState(false);
   const showLogout = hasToken || authEnabled === false;
-  const inactiveButtonClasses = isDark
-    ? 'bg-slate-800/70 text-slate-200 hover:bg-slate-700/80 border border-slate-600/50'
-    : 'bg-white/50 text-slate-700 hover:bg-white/70 border border-slate-200/50';
-  const inactiveMobileButtonClasses = isDark
-    ? 'bg-slate-800/70 text-slate-200 border border-slate-600/50'
-    : 'bg-white/70 text-slate-700 border border-slate-200/50';
+
+  const baseInactiveClass =
+    'bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-900 border border-slate-200/90 shadow-2xs dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white dark:border-slate-700';
+
+  const navItems = [
+    {
+      href: '/',
+      label: 'Dashboard',
+      isActive: pathname === '/' || pathname === '/dashboard',
+      activeClass: 'bg-blue-600 text-white hover:bg-blue-700 hover:text-white shadow-md shadow-blue-500/25 font-bold',
+    },
+    {
+      href: '/register-server',
+      label: 'Register MCP',
+      isActive: pathname === '/register-server' || pathname.includes('/servers/'),
+      activeClass: 'bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white shadow-md shadow-emerald-500/25 font-bold',
+    },
+    {
+      href: '/register-app',
+      label: 'Register App',
+      isActive: pathname === '/register-app' || pathname.includes('/register-app/'),
+      activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700 hover:text-white shadow-md shadow-indigo-500/25 font-bold',
+    },
+    {
+      href: '/mcp-endpoints',
+      label: 'MCP Endpoints',
+      isActive: pathname === '/mcp-endpoints',
+      activeClass: 'bg-purple-600 text-white hover:bg-purple-700 hover:text-white shadow-md shadow-purple-500/25 font-bold',
+    },
+    {
+      href: '/playground',
+      label: 'Playground',
+      isActive: pathname === '/playground',
+      activeClass: 'bg-amber-600 text-white hover:bg-amber-700 hover:text-white shadow-md shadow-amber-500/25 font-bold',
+    },
+    {
+      href: '/chat',
+      label: 'Chat',
+      isActive: pathname === '/chat',
+      activeClass: 'bg-violet-600 text-white hover:bg-violet-700 hover:text-white shadow-md shadow-violet-500/25 font-bold',
+    },
+    {
+      href: '/admin',
+      label: 'Admin',
+      isActive: pathname === '/admin',
+      activeClass: 'bg-rose-600 text-white hover:bg-rose-700 hover:text-white shadow-md shadow-rose-500/25 font-bold',
+    },
+  ];
 
   const getPageName = () => {
     if (pageTitle) return pageTitle;
 
     switch (pathname) {
       case '/':
-        return 'Dashboard';
       case '/dashboard':
         return 'Dashboard';
       case '/register-server':
@@ -81,7 +127,6 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
         const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
@@ -90,7 +135,6 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
         if (!cancelled) setAuthEnabled(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
@@ -102,75 +146,67 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
 
   return (
     <>
-      <nav
-        className={`fixed top-0 w-full z-100 ${isDark
-          ? 'bg-gradient-to-r from-slate-900/95 to-slate-800/95 border-b border-slate-700/50 shadow-lg shadow-slate-900/50'
-          : 'bg-gradient-to-r from-white/95 to-slate-50/95 border-b border-amber-400/30 shadow-lg shadow-amber-200/20'
-          } backdrop-blur-3xl transition-all duration-500`}
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-4">
-
-          {/* Logo - fixed width, never shrinks */}
+      <nav className="fixed top-0 w-full z-50 transition-colors duration-200 bg-white/95 dark:bg-slate-900/95 border-b border-slate-200/90 dark:border-slate-800 shadow-xs backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
+          {/* Logo */}
           <Link href="/" className="flex-shrink-0">
-            <div className="flex items-center gap-2 cursor-pointer hover:scale-105 transition-transform duration-300">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg shadow-amber-500/30">
-                <span className="text-lg font-bold text-slate-950">M</span>
+            <div className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition-opacity">
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-sm shadow-blue-500/30 text-white font-bold text-lg">
+                M
               </div>
               <div className="flex flex-col">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-amber-400 to-amber-300 bg-clip-text text-transparent whitespace-nowrap leading-none">
+                <h1 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
                   MCP Server Manager
                 </h1>
-                <p className={`text-xs font-medium whitespace-nowrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                   {getPageName()}
                 </p>
               </div>
             </div>
           </Link>
 
-          {/* Desktop nav */}
-          <div className="hidden flex-1 items-center gap-2 md:flex">
-            <div className="flex-1 overflow-x-auto">
-              <div className="flex gap-2 items-center justify-end flex-nowrap pr-2">
-              <Link href="/"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : inactiveButtonClasses}`}>Dashboard</Button></Link>
-
-              <Link href="/register-server"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-server' || pathname.includes('/servers/') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-300/30' : inactiveButtonClasses}`}>Register MCP</Button></Link>
-
-              <Link href="/register-app"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : inactiveButtonClasses}`}>Register App</Button></Link>
-
-              <Link href="/mcp-endpoints"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : inactiveButtonClasses}`}>MCP Endpoints</Button></Link>
-
-              <Link href="/playground"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/playground' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : inactiveButtonClasses}`}>Playground</Button></Link>
-
-              <Link href="/chat"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : inactiveButtonClasses}`}>Chat</Button></Link>
-
-              <Link href="/admin"><Button variant="ghost" className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : inactiveButtonClasses}`}>Admin</Button></Link>
-              </div>
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center gap-2 flex-1 justify-end">
+            <div className="flex items-center gap-1.5 overflow-x-auto pr-2">
+              {navItems.map((item) => (
+                <Link key={item.href} href={item.href}>
+                  <span
+                    className={`inline-flex items-center justify-center flex-shrink-0 whitespace-nowrap text-xs px-3.5 py-2 rounded-xl transition-all duration-200 cursor-pointer ${
+                      item.isActive ? item.activeClass : baseInactiveClass
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              ))}
             </div>
-            {showLogout && (
-              <Button
-                variant="ghost"
-                className={`flex-shrink-0 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold transition-all duration-300 hover:scale-105 border ${isDark ? 'bg-slate-800/70 text-slate-200 border-slate-600/50 hover:bg-slate-700/80' : 'bg-white/70 text-slate-700 hover:bg-white/90 border-slate-200/50'}`}
-                onClick={handleLogout}
-                disabled={loggingOut}
-              >
-                {loggingOut ? 'Logging out...' : 'Logout'}
-              </Button>
-            )}
+
+            {/* Theme Toggle Button */}
+            <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+              <ThemeToggle />
+
+              {showLogout && (
+                <button
+                  type="button"
+                  className={`inline-flex items-center justify-center flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-xl transition-all duration-200 cursor-pointer ${baseInactiveClass}`}
+                  onClick={handleLogout}
+                  disabled={loggingOut}
+                >
+                  {loggingOut ? 'Logging out...' : 'Logout'}
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Mobile toggle */}
-          <div className="flex flex-1 justify-end md:hidden">
+          {/* Mobile Actions */}
+          <div className="flex items-center gap-2 md:hidden">
+            <ThemeToggle />
             <button
               type="button"
               aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={mobileOpen}
               onClick={() => setMobileOpen((prev) => !prev)}
-              className={`inline-flex items-center justify-center h-10 w-10 rounded-lg border transition-all ${isDark
-                ? 'border-slate-700 bg-slate-900/70 text-slate-200 hover:bg-slate-800'
-                : 'border-slate-200 bg-white/70 text-slate-700 hover:bg-white'
-                }`}
+              className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
             >
-              <span className="sr-only">{mobileOpen ? 'Close menu' : 'Open menu'}</span>
               <svg
                 className={`h-5 w-5 transition-transform ${mobileOpen ? 'rotate-90' : ''}`}
                 viewBox="0 0 24 24"
@@ -195,49 +231,38 @@ export default function Navigation({ pageTitle, isDark = false }: NavigationProp
               </svg>
             </button>
           </div>
-
         </div>
 
-        {/* Mobile menu */}
+        {/* Mobile menu dropdown */}
         {mobileOpen && (
-          <div className={`border-t ${isDark ? 'border-slate-700/60' : 'border-amber-200/60'}`}>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 grid gap-2">
-              <Link href="/" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-300/30' : inactiveMobileButtonClasses}`}>Dashboard</Button>
-              </Link>
-              <Link href="/register-server" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/register-server' || pathname.includes('/servers/') ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-300/30' : inactiveMobileButtonClasses}`}>Register MCP</Button>
-              </Link>
-              <Link href="/register-app" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/register-app' || pathname.includes('/register-app/') ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-300/30' : inactiveMobileButtonClasses}`}>Register App</Button>
-              </Link>
-              <Link href="/mcp-endpoints" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/mcp-endpoints' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-md shadow-purple-300/30' : inactiveMobileButtonClasses}`}>MCP Endpoints</Button>
-              </Link>
-              <Link href="/playground" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/playground' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : inactiveMobileButtonClasses}`}>Playground</Button>
-              </Link>
-              <Link href="/chat" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/chat' ? 'bg-gradient-to-r from-violet-500 to-violet-600 text-white shadow-md shadow-violet-300/30' : inactiveMobileButtonClasses}`}>Chat</Button>
-              </Link>
-              <Link href="/admin" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold ${pathname === '/admin' ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white shadow-md shadow-rose-300/30' : inactiveMobileButtonClasses}`}>Admin</Button>
-              </Link>
+          <div className="border-t border-slate-200 dark:border-slate-800 md:hidden bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl">
+            <div className="max-w-7xl mx-auto px-4 py-3 grid gap-1.5">
+              {navItems.map((item) => (
+                <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
+                  <span
+                    className={`block w-full text-left text-xs px-4 py-2.5 rounded-xl transition-all duration-200 ${
+                      item.isActive ? item.activeClass : baseInactiveClass
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              ))}
               {showLogout && (
-                <Button
-                  variant="ghost"
-                  className={`w-full justify-start whitespace-nowrap px-3 py-2 rounded-lg text-sm font-bold border ${isDark ? 'bg-slate-800/70 text-slate-200 border-slate-600/50' : 'bg-white/70 text-slate-700 border-slate-200/50'}`}
+                <button
+                  type="button"
+                  className={`w-full text-left text-xs font-semibold px-4 py-2.5 rounded-xl ${baseInactiveClass}`}
                   onClick={handleLogout}
                   disabled={loggingOut}
                 >
                   {loggingOut ? 'Logging out...' : 'Logout'}
-                </Button>
+                </button>
               )}
             </div>
           </div>
         )}
       </nav>
-      <div className="h-[80px]" aria-hidden="true"></div>
+      <div className="h-[68px]" aria-hidden="true" />
     </>
   );
 }

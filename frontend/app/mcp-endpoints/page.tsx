@@ -184,39 +184,30 @@ export default function McpEndpointsPage() {
 
   /* --- render --- */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">
-      {/* Background decoration */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-80 h-80 bg-violet-400/8 rounded-full blur-3xl animate-float"></div>
-        <div
-          className="absolute bottom-20 right-10 w-80 h-80 bg-cyan-400/8 rounded-full blur-3xl animate-float"
-          style={{ animationDelay: '1s' }}
-        ></div>
-      </div>
-
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       <Navigation pageTitle="MCP Endpoints" />
 
-      <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
+      <main className="pt-8 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
         {/* Header */}
         <div className="flex items-start justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-600 to-cyan-600 bg-clip-text text-transparent">
               MCP Endpoints
             </h1>
-            <p className="text-slate-600 text-sm mt-1">
+            <p className="text-slate-700 dark:text-slate-300 text-sm mt-1 font-medium">
               Connect your MCP client to any endpoint below. Click to view available tools &amp; permissions.
             </p>
           </div>
           <button
             onClick={() => fetchData()}
-            className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50 font-semibold text-sm transition-all hover:scale-105"
+            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-4 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold text-sm transition-all shadow-xs cursor-pointer"
           >
             Refresh
           </button>
         </div>
 
         {error && (
-          <div className="mb-6 bg-amber-100 border border-amber-300 rounded-xl p-4 text-amber-700">
+          <div className="mb-6 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl p-4 text-amber-800 dark:text-amber-300">
             <p className="font-semibold">Notice:</p>
             <p className="text-sm">{error}</p>
           </div>
@@ -224,8 +215,8 @@ export default function McpEndpointsPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-4 border-violet-400 border-t-transparent rounded-full animate-spin"></div>
-            <span className="ml-3 text-slate-600 font-medium">Loading endpoints...</span>
+            <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+            <span className="ml-3 text-slate-700 dark:text-slate-300 font-medium">Loading endpoints...</span>
           </div>
         ) : (
           <>
@@ -245,22 +236,22 @@ export default function McpEndpointsPage() {
                   {/* Gradient top bar */}
                   <div className="h-1.5 bg-gradient-to-r from-violet-500 via-purple-500 to-cyan-500"></div>
 
-                  <div className="p-6 bg-gradient-to-br from-white via-violet-50/30 to-cyan-50/20">
+                  <div className="p-6 bg-white dark:bg-slate-900">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-300/40">
+                        <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-500/30">
                           <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                           </svg>
                         </div>
                         <div>
-                          <h2 className="text-xl font-bold text-slate-900">Combined MCP Server</h2>
-                          <p className="text-sm text-slate-500">Only public/client-allowed tools are exposed</p>
+                          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Combined MCP Server</h2>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Only public/client-allowed tools are exposed</p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <span className="px-3 py-1 bg-violet-100 text-violet-700 text-xs font-semibold rounded-full border border-violet-200">
+                        <span className="px-3 py-1 bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-semibold rounded-full border border-violet-200 dark:border-violet-800">
                           UNIFIED
                         </span>
                         <svg
@@ -278,7 +269,7 @@ export default function McpEndpointsPage() {
                     {/* Endpoint URL + stats */}
                     <div className="flex flex-col md:flex-row md:items-center gap-3">
                       <div
-                        className="flex-1 flex items-center gap-2 bg-slate-900 text-slate-100 px-4 py-2.5 rounded-lg font-mono text-sm cursor-pointer hover:bg-slate-800 transition-colors"
+                        className="flex-1 flex items-center gap-2 bg-slate-900 dark:bg-slate-800 text-slate-100 px-4 py-2.5 rounded-xl font-mono text-sm cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors border border-slate-800 dark:border-slate-700"
                         onClick={(e) => {
                           e.stopPropagation();
                           copyUrl(combinedMcpUrl);
@@ -291,16 +282,16 @@ export default function McpEndpointsPage() {
                       </div>
                       <div className="flex gap-4 text-sm">
                         <div className="text-center">
-                          <p className="text-2xl font-bold text-violet-600">{catalogSummary?.apps_total ?? 0}</p>
-                          <p className="text-xs text-slate-500">Apps</p>
+                          <p className="text-2xl font-bold text-violet-600 dark:text-violet-400">{catalogSummary?.apps_total ?? 0}</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Apps</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-2xl font-bold text-purple-600">{catalogToolCount}</p>
-                          <p className="text-xs text-slate-500">Tools</p>
+                          <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{catalogToolCount}</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Tools</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-2xl font-bold text-emerald-600">{catalogSummary?.healthy ?? 0}</p>
-                          <p className="text-xs text-slate-500">Healthy</p>
+                          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{catalogSummary?.healthy ?? 0}</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Healthy</p>
                         </div>
                       </div>
                     </div>
@@ -310,20 +301,20 @@ export default function McpEndpointsPage() {
 
               {/* Expanded: Combined MCP tools grouped by app */}
               {expandedCard === 'combined' && (
-                <div className="mt-3 border border-violet-200 rounded-2xl bg-white/90 p-5 shadow-lg animate-slideInUp">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
+                <div className="mt-3 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-lg animate-slideInUp">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wide mb-4">
                     Tools by App ({catalogToolCount})
                   </h3>
                   {Object.keys(combinedToolsByApp).length === 0 ? (
-                    <p className="text-sm text-slate-500">No public tools available. Set access policy to Allow to expose tools.</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">No public tools available. Set access policy to Allow to expose tools.</p>
                   ) : (
                     <div className="space-y-5">
                       {Object.entries(combinedToolsByApp).map(([appName, tools]) => (
                         <div key={appName}>
                           <div className="flex items-center gap-2 mb-2">
                             <div className="w-2 h-2 rounded-full bg-violet-500"></div>
-                            <h4 className="text-sm font-bold text-slate-800">{appName}</h4>
-                            <span className="text-xs text-slate-400">{tools.length} tools</span>
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">{appName}</h4>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{tools.length} tools</span>
                           </div>
                           <div className="grid gap-2 ml-4">
                             {tools.map((tool) => {
@@ -331,15 +322,15 @@ export default function McpEndpointsPage() {
                               return (
                                 <div
                                   key={tool.name}
-                                  className={`flex items-center justify-between p-3 rounded-lg border transition-all hover:shadow-sm ${tool.is_placeholder
-                                    ? 'bg-slate-50 border-slate-200 opacity-60'
-                                    : 'bg-white border-slate-200'
+                                  className={`flex items-center justify-between p-3 rounded-xl border transition-all hover:shadow-xs ${tool.is_placeholder
+                                    ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 opacity-60'
+                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
                                     }`}
                                 >
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold text-slate-800 truncate">{tool.title || tool.name}</p>
-                                    <p className="text-xs text-slate-500 truncate">
-                                      <span className="font-mono font-bold text-blue-600">{tool.method.toUpperCase()}</span>{' '}
+                                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{tool.title || tool.name}</p>
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
+                                      <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{tool.method.toUpperCase()}</span>{' '}
                                       {tool.path}
                                     </p>
                                   </div>
@@ -362,19 +353,19 @@ export default function McpEndpointsPage() {
 
             {/* ====== INDIVIDUAL MCP SERVERS ====== */}
             <div className="mb-4">
-              <h2 className="text-lg font-bold text-slate-800 mb-1">Individual MCP Servers</h2>
-              <p className="text-sm text-slate-500">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Individual MCP Servers</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">
                 Each server can be connected independently via its own MCP endpoint.
               </p>
             </div>
 
             {servers.length === 0 ? (
-              <div className="text-center py-16 bg-white/60 rounded-2xl border border-dashed border-slate-300">
-                <svg className="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800">
+                <svg className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
-                <p className="text-slate-500 font-medium">No MCP servers registered yet.</p>
-                <p className="text-sm text-slate-400 mt-1">Register servers via the Register Server page.</p>
+                <p className="text-slate-700 dark:text-slate-300 font-medium">No MCP servers registered yet.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Register servers via the Register Server page.</p>
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -399,10 +390,10 @@ export default function McpEndpointsPage() {
                             }`}
                         >
                           <div className="h-1 bg-gradient-to-r from-emerald-400 to-teal-500"></div>
-                          <div className="p-5 bg-white">
+                          <div className="p-5 bg-white dark:bg-slate-900">
                             <div className="flex items-center justify-between mb-3">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shadow-md shadow-emerald-200/40">
+                                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-sm shadow-emerald-500/30">
                                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path
                                       strokeLinecap="round"
@@ -413,8 +404,8 @@ export default function McpEndpointsPage() {
                                   </svg>
                                 </div>
                                 <div>
-                                  <h3 className="text-base font-bold text-slate-900">{server.name}</h3>
-                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-semibold rounded-full border border-emerald-200">
+                                  <h3 className="text-base font-bold text-slate-900 dark:text-white">{server.name}</h3>
+                                  <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold rounded-full border border-emerald-200 dark:border-emerald-800">
                                     MCP SERVER
                                   </span>
                                 </div>
@@ -432,7 +423,7 @@ export default function McpEndpointsPage() {
 
                             {/* Server URL */}
                             <div
-                              className="flex items-center gap-2 bg-slate-900 text-slate-100 px-3 py-2 rounded-lg font-mono text-xs cursor-pointer hover:bg-slate-800 transition-colors"
+                              className="flex items-center gap-2 bg-slate-900 dark:bg-slate-800 text-slate-100 px-3 py-2 rounded-xl font-mono text-xs cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors border border-slate-800 dark:border-slate-700"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 copyUrl(server.url);
@@ -445,7 +436,7 @@ export default function McpEndpointsPage() {
                             </div>
 
                             {tools && (
-                              <p className="text-xs text-emerald-600 mt-2 font-semibold">{tools.length} tools available</p>
+                              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-semibold">{tools.length} tools available</p>
                             )}
                           </div>
                         </div>
@@ -453,26 +444,26 @@ export default function McpEndpointsPage() {
 
                       {/* Expanded: Server tools */}
                       {isExpanded && (
-                        <div className="mt-3 border border-emerald-200 rounded-2xl bg-white/90 p-5 shadow-lg animate-slideInUp">
-                          <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
+                        <div className="mt-3 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-lg animate-slideInUp">
+                          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wide mb-4">
                             Tools — {server.name}
                           </h3>
 
                           {isLoadingTools && (
-                            <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+                            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 py-4 font-medium">
                               <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
                               Loading tools...
                             </div>
                           )}
 
                           {toolsError && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                            <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl p-3 text-sm text-rose-700 dark:text-rose-300">
                               {toolsError}
                             </div>
                           )}
 
                           {tools && tools.length === 0 && (
-                            <p className="text-sm text-slate-500">No tools reported by this server.</p>
+                            <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">No tools reported by this server.</p>
                           )}
 
                           {tools && tools.length > 0 && (
@@ -482,11 +473,11 @@ export default function McpEndpointsPage() {
                                 return (
                                   <div
                                     key={tool.name}
-                                    className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white hover:shadow-sm transition-all"
+                                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 hover:shadow-xs transition-all"
                                   >
                                     <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-semibold text-slate-800">{tool.name}</p>
-                                      <p className="text-xs text-slate-500 truncate">{tool.description}</p>
+                                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                                      <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{tool.description}</p>
                                     </div>
                                     <span
                                       className={`ml-3 text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${permissionBadgeClass(mode)}`}

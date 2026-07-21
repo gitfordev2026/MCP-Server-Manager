@@ -72,7 +72,7 @@ async def get_keycloak_token(domain_type: str, db: Session) -> str | None:
     # 3. Fetch from Keycloak
     logger.info(f"Fetching new Keycloak token for domain {domain} from {url}")
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=ENV.keycloak_verify_ssl) as client:
         try:
             payload = {
                 "grant_type": "client_credentials",
