@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: ./backend
+    image: mcp-backend:070426
+    ports:
+      - "8099:8099"
+
+  frontend:
+    build: ./frontend
+    image: mcp-frontend:070426
+    ports:
+      - "3000:3000"
+
+
+  # mock-server:
+  #   build: ./mock-mcp-server
+  #   image: mock-mcp-server:070426
+  #   ports:
+  #     - "8001:8001"

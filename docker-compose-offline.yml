@@ -1,0 +1,28 @@
+services:
+  backend:
+    image: new-docker-img-mcp-07-04-26-backend:latest
+    volumes:
+      - ./backend/app:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=development
+
+  frontend:
+    image: new-docker-img-mcp-07-04-26-frontend:latest
+    volumes:
+      - ./frontend:/app
+      # This prevents your local empty/different node_modules 
+      # from overwriting the ones we installed in the image
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+
+  # mock-server:
+  #   image: mock-mcp-server:070426
+  #   volumes:
+  #     - ./mock-mcp-server:/app
+  #   ports:
+  #     - "8001:8001"
