@@ -3,100 +3,81 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '@/context/ThemeContext';
 
-interface Stage {
-  id: string;
-  number: string;
+interface StepData {
   title: string;
-  subtitle: string;
-  badge: string;
+  sub: string;
+  icon: 'file' | 'bolt' | 'lock' | 'globe' | 'cpu';
   color: string;
-  iconSvg: React.ReactNode;
-  codeSnippet: string;
-  details: { label: string; value: string }[];
+  badge: string;
+  payload: string;
+  props: [string, string][];
 }
 
-const STAGES: Stage[] = [
+const STEPS: StepData[] = [
   {
-    id: 'openapi',
-    number: '01',
     title: 'OpenAPI Spec',
-    subtitle: 'Register REST APIs',
-    badge: 'Swagger 3.0',
+    sub: 'Register REST APIs',
+    icon: 'file',
     color: '#3b82f6',
-    iconSvg: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
-    codeSnippet: `GET /api/v1/payments
-Host: api.enterprise.com
-OpenAPI 3.0 JSON Registered`,
-    details: [
-      { label: 'Input Format', value: 'OpenAPI 3.0 / Swagger' },
-      { label: 'Endpoints Parsed', value: '14 REST Operations' },
-      { label: 'Status', value: 'Synced & Validated' },
+    badge: 'Swagger 3.0',
+    payload: `GET /openapi.json
+
+{
+  "openapi": "3.0.1",
+  "paths": { "...": {} },
+  "info": { "title": "Payments API" }
+}`,
+    props: [
+      ['Endpoints discovered', '42'],
+      ['Spec version', '3.0.1'],
+      ['Validation', 'Passed'],
     ],
   },
   {
-    id: 'parser',
-    number: '02',
     title: 'MCP Converter',
-    subtitle: 'Synthesize Tools',
-    badge: 'Auto Mapping',
+    sub: 'Synthesize Tools',
+    icon: 'bolt',
     color: '#06b6d4',
-    iconSvg: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
-    codeSnippet: `tools: [
-  {
-    name: "payments_create",
-    description: "Create payment charge",
-    inputSchema: { type: "object", properties: {...} }
-  }
-]`,
-    details: [
-      { label: 'Conversion Engine', value: 'REST -> JSON-RPC 2.0' },
-      { label: 'Schema Validation', value: 'Pydantic Strict' },
-      { label: 'Cache TTL', value: '30s (In-Memory / Redis)' },
+    badge: 'Auto Mapping',
+    payload: `Synthesizing tool definitions...
+
+{
+  "tools_generated": 42,
+  "strategy": "auto",
+  "schema_drift": "none"
+}`,
+    props: [
+      ['Tools generated', '42'],
+      ['Mapping strategy', 'Auto'],
+      ['Schema drift', 'None'],
     ],
   },
   {
-    id: 'keycloak',
-    number: '03',
     title: 'Keycloak Guard',
-    subtitle: 'Zero Trust Auth',
-    badge: 'OAuth2 / OIDC',
+    sub: 'Zero Trust Auth',
+    icon: 'lock',
     color: '#8b5cf6',
-    iconSvg: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-      </svg>
-    ),
-    codeSnippet: `Authorization: Bearer eyJhbGci...
-Client ID: mcp_secure1
-Realm: mcp-realm
-Status: VERIFIED (RS256)`,
-    details: [
-      { label: 'Token Verification', value: 'JWKS RS256 Key Ring' },
-      { label: 'Claims Checked', value: 'iss, exp, aud, roles' },
-      { label: 'RBAC Policy', value: 'mcp:tool:execute ALLOW' },
+    badge: 'OAuth2 / OIDC',
+    payload: `POST /realms/mcp/protocol/openid-connect/token
+
+{
+  "grant_type": "client_credentials",
+  "token_type": "Bearer",
+  "expires_in": 300
+}`,
+    props: [
+      ['Token type', 'Bearer JWT'],
+      ['Grant type', 'client_credentials'],
+      ['Token TTL', '300s'],
     ],
   },
   {
-    id: 'endpoint',
-    number: '04',
     title: 'Unified Gateway',
-    subtitle: 'Single Endpoint',
-    badge: 'POST /mcp/',
+    sub: 'Single Endpoint',
+    icon: 'globe',
     color: '#10b981',
-    iconSvg: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-      </svg>
-    ),
-    codeSnippet: `POST /mcp/ HTTP/1.1
+    badge: 'POST /mcp/',
+    payload: `POST /mcp/ HTTP/1.1
 Content-Type: application/json
 
 {
@@ -104,262 +85,389 @@ Content-Type: application/json
   "method": "tools/call",
   "params": { "name": "payments_create", "arguments": {...} }
 }`,
-    details: [
-      { label: 'Protocol', value: 'Model Context Protocol (MCP)' },
-      { label: 'Transport', value: 'Streamable HTTP / SSE' },
-      { label: 'Audit Log ID', value: 'log_9f83a1c4b' },
+    props: [
+      ['Protocol', 'Model Context Protocol (MCP)'],
+      ['Transport', 'Streamable HTTP / SSE'],
+      ['Audit log ID', 'log_9f83a1c4b'],
     ],
   },
   {
-    id: 'clients',
-    number: '05',
     title: 'AI Clients',
-    subtitle: 'Claude, Cursor, Agents',
-    badge: 'Connected',
+    sub: 'Claude, Cursor, Agents',
+    icon: 'cpu',
     color: '#f59e0b',
-    iconSvg: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-      </svg>
-    ),
-    codeSnippet: `Result: {
+    badge: 'Connected',
+    payload: `Result: {
   "status": "success",
   "payment_id": "pay_987654",
   "amount": 2500,
   "currency": "USD"
 }`,
-    details: [
-      { label: 'Active LLM Session', value: 'Claude Desktop / Cursor' },
-      { label: 'Roundtrip Latency', value: '42 ms' },
-      { label: 'Execution Result', value: '200 OK (Success)' },
+    props: [
+      ['Active LLM session', 'Claude Desktop / Cursor'],
+      ['Roundtrip latency', '42 ms'],
+      ['Execution result', '200 OK (Success)'],
     ],
   },
 ];
 
+function renderIconSvg(icon: string) {
+  switch (icon) {
+    case 'file':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+    case 'bolt':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      );
+    case 'lock':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      );
+    case 'globe':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+      );
+    case 'cpu':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
 export default function InteractiveFlowDiagram() {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
-  const [activeStageIndex, setActiveStageIndex] = useState(0);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [active, setActive] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
 
-  // Auto-cycle through flow steps like LangSmith live trace
   useEffect(() => {
-    if (!isAutoPlaying) return;
-    const interval = setInterval(() => {
-      setActiveStageIndex((prev) => (prev + 1) % STAGES.length);
+    if (!isPlaying) return;
+    const timer = setInterval(() => {
+      setActive((prev) => (prev + 1) % STEPS.length);
     }, 3200);
-    return () => clearInterval(interval);
-  }, [isAutoPlaying]);
+    return () => clearInterval(timer);
+  }, [isPlaying]);
 
-  const activeStage = STAGES[activeStageIndex];
+  const activeStep = STEPS[active];
 
   return (
-    <div
-      className={`w-full max-w-6xl mx-auto my-14 p-6 sm:p-8 md:p-10 lg:p-12 rounded-3xl border shadow-2xl backdrop-blur-2xl transition-colors duration-300 ${
-        isDark
-          ? 'bg-[#030712]/90 border-slate-800 text-white shadow-blue-500/10'
-          : 'bg-white/95 border-slate-200/90 text-slate-900 shadow-slate-200/60'
-      }`}
-    >
-      {/* Header Bar */}
-      <div
-        className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 mb-8 border-b transition-colors duration-300 ${
-          isDark ? 'border-slate-800' : 'border-slate-200'
-        }`}
-      >
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-            <span
-              className={`text-xs font-mono font-bold uppercase tracking-widest ${
-                isDark ? 'text-emerald-400' : 'text-emerald-600'
-              }`}
-            >
-              LIVE MCP ARCHITECTURE TRACE
-            </span>
-          </div>
-          <h3 className={`text-2xl sm:text-3xl font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            How MCP Manager Operates
-          </h3>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsAutoPlaying((prev) => !prev)}
-            className={`px-4 py-2 rounded-xl border text-xs font-mono font-semibold transition-all duration-200 cursor-pointer flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${
-              isDark
-                ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 shadow-xs'
-                : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 shadow-xs'
-            }`}
-          >
-            <span>{isAutoPlaying ? '⏸ Pause Trace' : '▶ Play Trace'}</span>
-          </button>
-          <span className={`text-xs font-mono font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Step {activeStageIndex + 1} of {STAGES.length}
-          </span>
-        </div>
-      </div>
+    <div className={`trace-component-wrapper ${isDark ? 'dark-mode' : 'light-mode'}`}>
+      <style jsx>{`
+        .trace-component-wrapper.dark-mode {
+          --bg: #030712;
+          --panel: #0f172a;
+          --panel-2: #020617;
+          --line: #1e293b;
+          --line-soft: #1e293b99;
+          --text: #ffffff;
+          --text-dim: #94a3b8;
+          --text-faint: #64748b;
+          --focus: #3b82f6;
+          --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+          --sans: "Inter", system-ui, -apple-system, Segoe UI, sans-serif;
+        }
+        .trace-component-wrapper.light-mode {
+          --bg: #f8fafc;
+          --panel: #ffffff;
+          --panel-2: #f1f5f9;
+          --line: #e2e8f0;
+          --line-soft: #e2e8f0cc;
+          --text: #0f172a;
+          --text-dim: #475569;
+          --text-faint: #94a3b8;
+          --focus: #2563eb;
+          --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+          --sans: "Inter", system-ui, -apple-system, Segoe UI, sans-serif;
+        }
 
-      {/* Top Track Indicator Line (Placed cleanly ABOVE cards, not slicing through them!) */}
-      <div className="relative mb-6">
-        <div className="h-1.5 w-full rounded-full bg-slate-800/40 dark:bg-slate-800/80 overflow-hidden relative">
+        @keyframes tracePing {
+          75%, 100% { transform: scale(2.2); opacity: 0; }
+        }
+        @keyframes tracePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+        @keyframes fadeSlide {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .anim-ping::after {
+          content: ""; position: absolute; inset: 0; border-radius: 50%;
+          background: inherit; animation: tracePing 1.6s cubic-bezier(0,0,0.2,1) infinite;
+        }
+        .anim-pulse { animation: tracePulse 1.8s ease-in-out infinite; }
+        .fade-in { animation: fadeSlide .35s ease both; }
+
+        .app {
+          max-width: 1180px; margin: 0 auto;
+          background: var(--panel);
+          border: 1px solid var(--line);
+          border-radius: 24px;
+          box-shadow: 0 25px 60px -20px rgba(59,130,246,0.10);
+          padding: clamp(20px, 3vw, 48px);
+          overflow: hidden;
+          color: var(--text);
+          font-family: var(--sans);
+        }
+
+        .header {
+          display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between;
+          padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--line);
+        }
+        .eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .eyebrow .dot-wrap { position: relative; width: 10px; height: 10px; }
+        .eyebrow .dot { position: relative; width: 10px; height: 10px; border-radius: 50%; background: #10b981; display: block; }
+        .eyebrow span.label { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .15em; color: #34d399; text-transform: uppercase; }
+        h1 { margin: 0; font-size: clamp(20px, 3vw, 28px); font-weight: 800; color: var(--text); }
+
+        .controls { display: flex; align-items: center; gap: 12px; }
+        .pause-btn {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 9px 16px; border-radius: 12px;
+          border: 1px solid var(--line);
+          background: ${isDark ? '#1e293b' : '#e2e8f0'};
+          color: ${isDark ? '#e2e8f0' : '#0f172a'};
+          font-family: var(--mono); font-size: 12px; font-weight: 600; cursor: pointer;
+          transition: background .2s ease, transform .15s ease;
+        }
+        .pause-btn:hover { background: ${isDark ? '#334155' : '#cbd5e1'}; }
+        .pause-btn:active { transform: scale(0.97); }
+        .pause-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+        .step-count { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+
+        /* progress bar */
+        .progress-track { height: 6px; border-radius: 99px; background: ${isDark ? '#1e293b66' : '#e2e8f0'}; overflow: hidden; margin-bottom: 28px; }
+        .progress-fill {
+          height: 100%; border-radius: 99px;
+          background: linear-gradient(90deg, #3b82f6, #22d3ee, #34d399);
+          transition: width .5s cubic-bezier(.4,0,.2,1);
+        }
+
+        .steps {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 20px;
+          margin-bottom: 40px;
+        }
+        .step {
+          position: relative; text-align: left; cursor: pointer;
+          background: ${isDark ? 'rgba(15,23,42,0.6)' : 'rgba(241,245,249,0.8)'};
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 26px 24px;
+          min-height: 195px;
+          display: flex; flex-direction: column; justify-content: space-between;
+          overflow: hidden;
+          color: inherit; font: inherit;
+          transition: border-color .2s ease, background .2s ease, transform .2s ease, box-shadow .2s ease;
+        }
+        .step:hover { border-color: ${isDark ? '#334155' : '#cbd5e1'}; background: ${isDark ? 'rgba(30,41,59,0.5)' : '#e2e8f0'}; transform: translateY(-2px); }
+        .step:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+        .step[aria-current="step"] {
+          background: ${isDark ? 'rgba(30,41,59,0.95)' : '#eff6ff'};
+          border-color: var(--step-color, #3b82f6);
+          box-shadow: 0 12px 30px -12px var(--glow, rgba(59,130,246,.35)), 0 0 0 2px var(--ring, rgba(59,130,246,.35));
+        }
+        .step[aria-current="step"]::before {
+          content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+          background: linear-gradient(90deg, #3b82f6, #22d3ee, #34d399);
+        }
+        .step-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+        .icon {
+          width: 44px; height: 44px; border-radius: 12px;
+          display: flex; align-items: center; justify-content: center;
+          background: color-mix(in srgb, var(--step-color) 15%, transparent);
+          color: var(--step-color);
+          transition: transform .2s ease;
+        }
+        .step[aria-current="step"] .icon { transform: scale(1.06); }
+        .icon :global(svg) { width: 20px; height: 20px; }
+        .index { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--text-faint); }
+        .step-title { font-weight: 800; font-size: 15.5px; margin: 0 0 6px; letter-spacing: -0.01em; }
+        .step[aria-current="step"] .step-title { color: ${isDark ? '#fff' : '#0f172a'}; }
+        .step:not([aria-current="step"]) .step-title { color: ${isDark ? '#cbd5e1' : '#334155'}; }
+        .step-sub { font-size: 12.5px; color: var(--text-dim); margin: 0 0 18px; line-height: 1.5; }
+        .badge {
+          align-self: flex-start;
+          display: inline-flex; align-items: center; gap: 6px;
+          font-family: var(--mono); font-size: 11px; font-weight: 700;
+          padding: 6px 12px; border-radius: 9px; letter-spacing: .02em;
+          background: color-mix(in srgb, var(--step-color) 12%, transparent);
+          color: var(--step-color);
+          border: 1px solid color-mix(in srgb, var(--step-color) 35%, transparent);
+        }
+        .step[aria-current="step"] .badge {
+          background: var(--step-color); color: #04101c; border-color: var(--step-color);
+        }
+
+        .panel {
+          display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+          gap: 24px;
+          background: var(--panel-2);
+          border: 1px solid var(--line);
+          border-radius: 20px;
+          padding: clamp(18px, 2.5vw, 32px);
+        }
+        .panel-col { min-width: 0; display: flex; flex-direction: column; }
+        .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+        .panel-head .label { font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: var(--text-dim); text-transform: uppercase; }
+        .stage-tag {
+          font-family: var(--mono); font-size: 11px; font-weight: 800; color: #04101c;
+          padding: 5px 12px; border-radius: 8px; background: var(--step-color, #3b82f6);
+          transition: background .3s ease;
+        }
+        pre.payload {
+          margin: 0; padding: 20px; border-radius: 16px;
+          background: ${isDark ? '#020617' : '#0f172a'};
+          border: 1px solid var(--line);
+          color: #6ee7b7; font-family: var(--mono); font-size: 12.5px; line-height: 1.7;
+          max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+          box-shadow: inset 0 2px 10px rgba(0,0,0,.4);
+        }
+        .kv { display: flex; flex-direction: column; gap: 2px; }
+        .kv-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
+        .kv-row:last-child { border-bottom: none; }
+        .kv-label { color: var(--text-dim); font-weight: 500; }
+        .kv-value { font-family: var(--mono); font-weight: 700; color: var(--text); text-align: right; }
+
+        .footer-row {
+          grid-column: 1 / -1;
+          display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+          margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--line);
+          font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+        }
+        .live { display: inline-flex; align-items: center; gap: 8px; color: #34d399; font-weight: 700; }
+        .live .dot-wrap { position: relative; width: 8px; height: 8px; }
+        .live .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
+
+        @media (max-width: 980px) {
+          .steps { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 680px) {
+          .steps { grid-template-columns: repeat(2, 1fr); }
+          .panel { grid-template-columns: 1fr; }
+        }
+      `}</style>
+
+      <div className="app">
+        {/* Header */}
+        <div className="header">
+          <div>
+            <div className="eyebrow">
+              <span className="dot-wrap">
+                <span className="dot anim-ping" style={{ position: 'absolute' }} />
+                <span className="dot" style={{ position: 'relative' }} />
+              </span>
+              <span className="label">Live MCP Architecture Trace</span>
+            </div>
+            <h1>How MCP Manager Operates</h1>
+          </div>
+
+          <div className="controls">
+            <button
+              className="pause-btn"
+              type="button"
+              onClick={() => setIsPlaying((prev) => !prev)}
+            >
+              {isPlaying ? '⏸ Pause trace' : '▶ Resume trace'}
+            </button>
+            <span className="step-count">Step {active + 1} of {STEPS.length}</span>
+          </div>
+        </div>
+
+        {/* Progress Track */}
+        <div className="progress-track">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${((activeStageIndex + 1) / STAGES.length) * 100}%` }}
+            className="progress-fill"
+            style={{ width: `${((active + 1) / STEPS.length) * 100}%` }}
           />
         </div>
-      </div>
 
-      {/* 5 Stage Node Buttons Grid with Generous Outer Margins (mt-8 md:mt-10, mb-14 md:mb-16) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 md:gap-6 mt-8 md:mt-10 mb-14 md:mb-16">
-        {STAGES.map((stage, idx) => {
-          const isActive = idx === activeStageIndex;
-          return (
-            <button
-              key={stage.id}
-              type="button"
-              onClick={() => {
-                setActiveStageIndex(idx);
-                setIsAutoPlaying(false);
-              }}
-              className={`relative text-left rounded-2xl p-6 sm:p-7 md:p-8 border cursor-pointer flex flex-col justify-between min-h-[195px] overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${
-                isActive
-                  ? isDark
-                    ? 'bg-slate-800/95 border-blue-500 shadow-xl shadow-blue-500/20 ring-2 ring-blue-500/50'
-                    : 'bg-blue-50/95 border-blue-600 shadow-xl shadow-blue-500/15 ring-2 ring-blue-500/40'
-                  : isDark
-                    ? 'bg-slate-900/80 border-slate-800 hover:border-slate-700 text-slate-400 hover:bg-slate-800/50'
-                    : 'bg-slate-50/90 border-slate-200/90 hover:border-slate-300 text-slate-600 hover:bg-slate-100/80'
-              }`}
-            >
-              {/* Active Accent Top Indicator Bar */}
-              {isActive && (
-                <div
-                  className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400"
-                />
-              )}
-
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <span
-                    className="w-11 h-11 rounded-xl flex items-center justify-center transition-colors"
-                    style={{
-                      backgroundColor: `${stage.color}20`,
-                      color: stage.color,
-                    }}
-                  >
-                    {stage.iconSvg}
-                  </span>
-                  <span className={`text-xs font-mono font-bold ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                    {stage.number}
-                  </span>
+        {/* Steps Grid */}
+        <div className="steps" role="tablist" aria-label="MCP pipeline stages">
+          {STEPS.map((s, i) => {
+            const isActive = i === active;
+            return (
+              <button
+                key={s.title}
+                type="button"
+                className="step"
+                role="tab"
+                aria-selected={isActive}
+                aria-current={isActive ? 'step' : undefined}
+                data-index={i}
+                data-done={i < active}
+                onClick={() => {
+                  setActive(i);
+                  setIsPlaying(false);
+                }}
+                style={{
+                  '--step-color': s.color,
+                  '--glow': `${s.color}59`,
+                  '--ring': `${s.color}59`,
+                } as React.CSSProperties}
+              >
+                <div className="step-top">
+                  <span className="icon">{renderIconSvg(s.icon)}</span>
+                  <span className="index">{String(i + 1).padStart(2, '0')}</span>
                 </div>
 
-                <h4
-                  className={`font-extrabold text-base mb-1.5 tracking-tight ${
-                    isActive
-                      ? isDark
-                        ? 'text-white'
-                        : 'text-blue-950'
-                      : isDark
-                        ? 'text-slate-200'
-                        : 'text-slate-900'
-                  }`}
-                >
-                  {stage.title}
-                </h4>
-                <p className={`text-xs font-normal leading-relaxed mb-5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {stage.subtitle}
-                </p>
-              </div>
+                <div>
+                  <h4 className="step-title">{s.title}</h4>
+                  <p className="step-sub">{s.sub}</p>
+                </div>
 
-              {/* Badge Enclosed Cleanly Inside Card with Bottom Margin */}
-              <div className="pt-2 pb-1">
-                <span
-                  className="inline-block text-[11px] font-mono font-semibold px-3 py-1.5 rounded-lg border shadow-xs"
-                  style={{
-                    color: stage.color,
-                    borderColor: `${stage.color}40`,
-                    backgroundColor: `${stage.color}15`,
-                  }}
-                >
-                  {stage.badge}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Inspector Panel */}
-      <div
-        className={`grid grid-cols-1 lg:grid-cols-2 gap-6 rounded-2xl p-6 md:p-8 border transition-colors duration-300 ${
-          isDark
-            ? 'bg-slate-950/90 border-slate-800 text-white'
-            : 'bg-slate-50/90 border-slate-200/90 text-slate-900 shadow-xs'
-        }`}
-      >
-        {/* Left: Code Snippet */}
-        <div className="flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <span
-                className={`text-xs font-mono font-bold uppercase tracking-wider ${
-                  isDark ? 'text-slate-400' : 'text-slate-600'
-                }`}
-              >
-                Live Inspection Payload
-              </span>
-              <span
-                className="text-xs font-mono px-3 py-1 rounded-md text-white font-bold shadow-xs"
-                style={{ backgroundColor: activeStage.color }}
-              >
-                Stage {activeStage.number}: {activeStage.title}
-              </span>
-            </div>
-            <pre className="p-5 rounded-2xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono text-xs overflow-x-auto leading-relaxed shadow-inner max-h-60">
-              <code>{activeStage.codeSnippet}</code>
-            </pre>
-          </div>
+                <span className="badge">{s.badge}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Right: Technical Specs & Execution Details */}
-        <div className="flex flex-col justify-between">
-          <div>
-            <span
-              className={`text-xs font-mono font-bold uppercase tracking-wider block mb-4 ${
-                isDark ? 'text-slate-400' : 'text-slate-600'
-              }`}
-            >
-              Execution Properties
-            </span>
-            <div className="space-y-3">
-              {activeStage.details.map((detail, dIdx) => (
-                <div
-                  key={dIdx}
-                  className={`flex items-center justify-between py-2.5 border-b text-xs ${
-                    isDark ? 'border-slate-800/80' : 'border-slate-200'
-                  }`}
-                >
-                  <span className={`font-medium ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                    {detail.label}
-                  </span>
-                  <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                    {detail.value}
-                  </span>
+        {/* Inspector Panel */}
+        <div className="panel" style={{ '--step-color': activeStep.color } as React.CSSProperties}>
+          <div className="panel-col">
+            <div className="panel-head">
+              <span className="label">Live Inspection Payload</span>
+              <span className="stage-tag">Stage {String(active + 1).padStart(2, '0')}</span>
+            </div>
+            <pre className="payload fade-in" key={active}>
+              {activeStep.payload}
+            </pre>
+          </div>
+
+          <div className="panel-col">
+            <span className="label" style={{ marginBottom: '14px' }}>Execution Properties</span>
+            <div className="kv">
+              {activeStep.props.map(([k, v]) => (
+                <div key={k} className="kv-row">
+                  <span className="kv-label">{k}</span>
+                  <span className="kv-value">{v}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div
-            className={`mt-5 pt-3.5 border-t flex items-center justify-between text-xs font-mono ${
-              isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
-            }`}
-          >
+          <div className="footer-row">
             <span>Security: Keycloak JWT Guard</span>
-            <span className="text-emerald-500 font-bold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="live">
+              <span className="dot-wrap">
+                <span className="dot anim-pulse" />
+              </span>
               Active
             </span>
           </div>

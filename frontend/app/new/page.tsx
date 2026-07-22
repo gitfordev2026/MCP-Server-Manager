@@ -183,13 +183,13 @@ export default function NewLandingPage() {
         @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 
         .eyebrow {
-          display: inline-flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .06em;
+          display: inline-flex; align-items: center; gap: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; letter-spacing: .06em;
           color: var(--blue); background: var(--blue-soft); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; margin-bottom: 24px;
         }
         .eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 8px var(--blue); animation: pulse-dot 2.2s ease-in-out infinite; }
         @keyframes pulse-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 
-        h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: clamp(32px, 4.6vw, 54px); line-height: 1.08; letter-spacing: -.01em; margin: 0 0 20px; }
+        h1 { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; font-size: clamp(32px, 4.6vw, 54px); line-height: 1.08; letter-spacing: -.01em; margin: 0 0 20px; }
         h1 span { color: var(--blue); }
         .lede { color: var(--text-muted); font-size: 16.5px; line-height: 1.65; max-width: 540px; margin: 0 auto 32px; }
 

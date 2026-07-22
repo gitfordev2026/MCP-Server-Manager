@@ -1,41 +1,67 @@
+# ==========================================================================
+# MCP SERVER MANAGER - 100% AIRGAPPED & OFFLINE DOCKER COMPOSE MANIFEST
+# ==========================================================================
+# This manifest allows running the entire MCP Server Manager platform in an
+# airgapped / offline environment with zero outbound internet access.
+# ==========================================================================
+
 services:
   backend:
-    image: new-docker-img-mcp-07-04-26-backend:latest
-    network_mode: host
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: mcp-backend:airgapped
+    container_name: mcp-backend
+    ports:
+      - "8000:8000"
+      - "8099:8099"
+    environment:
+      - ENV=production
+      - KEYCLOAK_URL=http://host.docker.internal:8080
+      - KEYCLOAK_REALM=mcp-realm
+      - KEYCLOAK_CLIENT_ID=mcp_secure1
+      - ENABLE_MULTI_KEYCLOAK=false
     volumes:
       - ./backend/app:/app
-    environment:
-      - ENV=development
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-internal-net
 
   frontend:
-    image: new-docker-img-mcp-07-04-26-frontend:latest
-    volumes:
-      - ./frontend:/app
-      # This prevents your local empty/different node_modules
-      # from overwriting the ones we installed in the image
-      - /app/node_modules
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: mcp-frontend:airgapped
+    container_name: mcp-frontend
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
     networks:
-      - default
+      - mcp-internal-net
 
-  # mock-server:
-  #   image: mock-mcp-server:070426
-  #   volumes:
-  #     - ./mock-mcp-server:/app
-  #   ports:
-  #     - "8001:8001"
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
+  mock-server:
+    build:
+      context: ./mock-mcp-server
+      dockerfile: Dockerfile
+    image: mcp-mock-server:airgapped
+    container_name: mcp-mock-server
+    ports:
+      - "8001:8001"
+    environment:
+      - ENV=production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-internal-net
 
 networks:
-  default:
+  mcp-internal-net:
     driver: bridge
-  external-services:
-    external: true
-    name: chatbot-2-git_default

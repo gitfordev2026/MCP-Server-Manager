@@ -1,16 +1,26 @@
-# backend/Dockerfile
+# backend/Dockerfile - Airgapped & Offline Ready
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies first (cached layer)
+# Prevent bytecode & buffer issues
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Copy requirements and local wheelhouse if present for offline installation
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY wheels* ./wheels/
 
-# Copy the rest of the code
-COPY . .
+# Install from local wheelhouse if available, or cached pip layer
+RUN if [ -d "./wheels" ] && [ "$(ls -A ./wheels 2>/dev/null)" ]; then \
+        pip install --no-index --find-links=./wheels -r requirements.txt ; \
+    else \
+        pip install --no-cache-dir -r requirements.txt ; \
+    fi
 
-# Expose FastAPI port
-EXPOSE 8099
+# Copy backend application source code
+COPY app/ /app/
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8099", "--reload"]
+EXPOSE 8000 8099
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
