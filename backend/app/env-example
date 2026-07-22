@@ -46,13 +46,13 @@ KEYCLOAK_VERIFY_SSL=true
 ADM_KEYCLOAK_SERVER_URL=http://127.0.0.1:8080/realms/mcp-realm/protocol/openid-connect/token
 ADM_KEYCLOAK_REALM=mcp-realm
 ADM_KEYCLOAK_CLIENT_ID=mcp_secure1
-ADM_KEYCLOAK_CLIENT_SECRET=AIZM1E0JpEh5qOF8oDjJQsbDsNarAGZe
+ADM_KEYCLOAK_CLIENT_SECRET=MXPDo5pOcCA0wOrPKV8vz2jzxJIadvZY8LdexNR2yWEqmsuF0TjF25YxMZGjAgNUNyWGHjC2tbizEaHlXbHC7T
 
 # OPS domain (same realm, same client — mirror ADM since all apps are in IAF)
 OPS_KEYCLOAK_SERVER_URL=http://127.0.0.1:8080/realms/mcp-realm/protocol/openid-connect/token
 OPS_KEYCLOAK_REALM=mcp-realm
 OPS_KEYCLOAK_CLIENT_ID=mcp_secure1
-OPS_KEYCLOAK_CLIENT_SECRET=AIZM1E0JpEh5qOF8oDjJQsbDsNarAGZe
+OPS_KEYCLOAK_CLIENT_SECRET=MXPDo5pOcCA0wOrPKV8vz2jzxJIadvZY8LdexNR2yWEqmsuF0TjF25YxMZGjAgNUNyWGHjC2tbizEaHlXbHC7T
 
 #------------redis cache------------
 REDIS_ENABLED=true
