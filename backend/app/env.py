@@ -59,12 +59,15 @@ class BackendEnv:
     health_monitor_failure_threshold: int
     health_monitor_timeout_sec: float
     log_level: str
+    enable_multi_keycloak: bool
     adm_keycloak_server_url: str
     adm_keycloak_realm: str
     adm_keycloak_client_id: str
+    adm_keycloak_client_secret: str
     ops_keycloak_server_url: str
     ops_keycloak_realm: str
     ops_keycloak_client_id: str
+    ops_keycloak_client_secret: str
 
 
 def load_backend_env() -> BackendEnv:
@@ -110,12 +113,15 @@ def load_backend_env() -> BackendEnv:
         health_monitor_failure_threshold=int(os.getenv("HEALTH_MONITOR_FAILURE_THRESHOLD", "3").strip()),
         health_monitor_timeout_sec=float(os.getenv("HEALTH_MONITOR_TIMEOUT_SEC", "8").strip()),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
+        enable_multi_keycloak=os.getenv("ENABLE_MULTI_KEYCLOAK", os.getenv("ENABLE_TWO_KEYCLOAK", "false")).strip().lower() == "true",
         adm_keycloak_server_url=os.getenv("ADM_KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
         adm_keycloak_realm=os.getenv("ADM_KEYCLOAK_REALM", "").strip(),
         adm_keycloak_client_id=os.getenv("ADM_KEYCLOAK_CLIENT_ID", "").strip(),
+        adm_keycloak_client_secret=os.getenv("ADM_KEYCLOAK_CLIENT_SECRET", "").strip(),
         ops_keycloak_server_url=os.getenv("OPS_KEYCLOAK_SERVER_URL", "").strip().rstrip("/"),
         ops_keycloak_realm=os.getenv("OPS_KEYCLOAK_REALM", "").strip(),
         ops_keycloak_client_id=os.getenv("OPS_KEYCLOAK_CLIENT_ID", "").strip(),
+        ops_keycloak_client_secret=os.getenv("OPS_KEYCLOAK_CLIENT_SECRET", "").strip(),
     )
 
 

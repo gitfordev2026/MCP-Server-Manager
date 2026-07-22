@@ -564,50 +564,72 @@ def _format_tool_result_human_readable(tool_name: str, arguments: Dict[str, Any]
             data = tool_result["body"]
         elif "structuredContent" in tool_result:
             data = tool_result["structuredContent"]
+            if isinstance(data, dict) and "body" in data:
+                data = data["body"]
 
-    lines: List[str] = []
-    lines.append(f"Tool used: {tool_name}")
-    lines.append(f"Arguments: {json.dumps(arguments, ensure_ascii=True)}")
-    lines.append("\n### 📋 Summary & Details")
-
-    def format_node(val: Any, depth: int = 0) -> List[str]:
-        indent = "  " * depth
-        out: List[str] = []
-        if isinstance(val, dict):
-            for k, v in val.items():
-                label = k.replace("_", " ").title()
-                if isinstance(v, (dict, list)) and v:
-                    out.append(f"{indent}- **{label}**:")
-                    out.extend(format_node(v, depth + 1))
-                else:
-                    v_str = "None" if v is None or v == "" else str(v)
-                    out.append(f"{indent}- **{label}**: {v_str}")
-        elif isinstance(val, list):
-            if not val:
-                out.append(f"{indent}_None_")
-            else:
-                for idx, item in enumerate(val, 1):
-                    if isinstance(item, dict):
-                        out.append(f"{indent}**Item {idx}**:")
-                        out.extend(format_node(item, depth + 1))
-                    else:
-                        out.append(f"{indent}- {item}")
-        else:
-            out.append(f"{indent}{val}")
-        return out
-
-    if isinstance(data, (dict, list)):
-        lines.append("\n".join(format_node(data)))
-    elif isinstance(data, str):
+    if isinstance(data, str):
         try:
-            parsed = json.loads(data)
-            lines.append("\n".join(format_node(parsed)))
+            data = json.loads(data)
         except Exception:
-            lines.append(data.strip())
-    else:
-        lines.append(str(data))
+            pass
 
-    return "\n".join(lines)
+    sections: List[str] = []
+
+    clean_tool_title = tool_name.replace("app__", "").replace("mcp__", "").replace("__", " ").replace("_", " ").title()
+    sections.append(f"### 📄 {clean_tool_title}\n")
+
+    def _render_dict_clean(d: dict, depth: int = 0) -> str:
+        items = []
+        indent = "  " * depth
+        for k, v in d.items():
+            key_label = k.replace("_", " ").title()
+            if isinstance(v, dict):
+                items.append(f"{indent}- **{key_label}**:")
+                items.append(_render_dict_clean(v, depth + 1))
+            elif isinstance(v, list):
+                if not v:
+                    items.append(f"{indent}- **{key_label}**: _No entries_")
+                elif all(isinstance(x, dict) for x in v):
+                    items.append(f"{indent}- **{key_label}**:")
+                    items.append(_render_table(v, depth + 1))
+                else:
+                    items.append(f"{indent}- **{key_label}**: {', '.join(str(x) for x in v)}")
+            else:
+                val_str = "None" if v is None or v == "" else str(v)
+                items.append(f"{indent}- **{key_label}**: `{val_str}`")
+        return "\n".join(items)
+
+    def _render_table(items: List[dict], depth: int = 0) -> str:
+        if not items:
+            return "_No items_"
+        keys = list(dict.fromkeys(k for item in items if isinstance(item, dict) for k in item.keys()))
+        if not keys:
+            return "_No structured data_"
+
+        indent = "  " * depth
+        header_line = f"{indent}| " + " | ".join(k.replace("_", " ").title() for k in keys) + " |"
+        divider_line = f"{indent}| " + " | ".join("---" for _ in keys) + " |"
+        rows = []
+        for item in items:
+            row_vals = [str(item.get(k, "")) for k in keys]
+            rows.append(f"{indent}| " + " | ".join(row_vals) + " |")
+        return "\n".join([header_line, divider_line, *rows])
+
+    if isinstance(data, dict):
+        sections.append(_render_dict_clean(data))
+    elif isinstance(data, list):
+        if all(isinstance(x, dict) for x in data):
+            sections.append(_render_table(data))
+        else:
+            sections.append("\n".join(f"- `{x}`" for x in data))
+    else:
+        sections.append(f"`{str(data)}`")
+
+    sections.append("\n---")
+    sections.append(f"**Tool Executed**: `{tool_name}`")
+    sections.append(f"**Arguments**: `{json.dumps(arguments, ensure_ascii=True)}`")
+
+    return "\n".join(sections)
 
 
 async def _maybe_execute_raw_tool_call(

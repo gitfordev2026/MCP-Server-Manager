@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Manager — API Gateway for AI Agents</title>
+    <meta name="description" content="Securely transform every OpenAPI into AI-ready MCP tools. Register once, authenticate with Keycloak, expose one unified MCP endpoint for Claude, Cursor, VS Code, and every AI agent.">
+    <meta name="theme-color" content="#020617">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- ============================================ -->
+    <!--  NAVBAR                                      -->
+    <!-- ============================================ -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo" aria-label="MCP Manager Home">
+                <div class="logo-icon">
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                        <rect x="2" y="2" width="24" height="24" rx="6" stroke="url(#logo-grad)" stroke-width="2"/>
+                        <circle cx="9" cy="14" r="2.5" fill="#3b82f6"/>
+                        <circle cx="19" cy="14" r="2.5" fill="#06b6d4"/>
+                        <circle cx="14" cy="8" r="2.5" fill="#8b5cf6"/>
+                        <line x1="9" y1="14" x2="14" y2="8" stroke="#3b82f6" stroke-width="1" opacity="0.5"/>
+                        <line x1="14" y1="8" x2="19" y2="14" stroke="#8b5cf6" stroke-width="1" opacity="0.5"/>
+                        <line x1="9" y1="14" x2="19" y2="14" stroke="#06b6d4" stroke-width="1" opacity="0.5"/>
+                        <defs><linearGradient id="logo-grad" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+                    </svg>
+                </div>
+                <span class="logo-text">MCP Manager</span>
+            </a>
+
+            <div class="nav-links" id="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#architecture" class="nav-link">Architecture</a>
+                <a href="#security" class="nav-link">Security</a>
+                <a href="#docs" class="nav-link">Documentation</a>
+            </div>
+
+            <a href="/login" class="nav-cta">
+                <span>Login</span>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+
+            <button class="nav-mobile-toggle" id="mobile-toggle" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+
+
+    <!-- ============================================ -->
+    <!--  HERO SECTION                                -->
+    <!-- ============================================ -->
+    <section class="hero" id="hero">
+
+        <!-- Layer 0: Noise texture overlay -->
+        <div class="hero-noise" aria-hidden="true"></div>
+
+        <!-- Layer 1: Subtle grid background -->
+        <div class="hero-grid" aria-hidden="true"></div>
+
+        <!-- Layer 2: Canvas particle network -->
+        <canvas id="hero-canvas" aria-hidden="true"></canvas>
+
+        <!-- Layer 3: SVG data flow paths (populated by JS) -->
+        <svg id="flow-svg" class="flow-svg" aria-hidden="true"></svg>
+
+        <!-- Layer 4: Radial glow behind center -->
+        <div class="hero-glow" aria-hidden="true"></div>
+
+        <!-- Layer 5: Floating application cards -->
+        <div class="app-constellation" id="app-constellation" aria-hidden="true">
+
+            <!-- Top region -->
+            <div class="app-card" style="--x:5%;  --y:7%;  --delay:0.0s; --dur:7.2s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">GitHub API</span></div>
+            <div class="app-card" style="--x:19%; --y:10%; --delay:0.4s; --dur:6.5s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Jira</span></div>
+            <div class="app-card" style="--x:34%; --y:5%;  --delay:0.9s; --dur:8.0s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">Slack</span></div>
+            <div class="app-card" style="--x:64%; --y:8%;  --delay:1.3s; --dur:6.8s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">Jenkins</span></div>
+            <div class="app-card" style="--x:79%; --y:5%;  --delay:0.7s; --dur:7.5s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Confluence</span></div>
+            <div class="app-card" style="--x:93%; --y:9%;  --delay:1.6s; --dur:6.2s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">CRM</span></div>
+
+            <!-- Upper sides -->
+            <div class="app-card" style="--x:2%;  --y:25%; --delay:0.2s; --dur:7.8s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">ERP Suite</span></div>
+            <div class="app-card" style="--x:12%; --y:32%; --delay:1.1s; --dur:6.3s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">HRMS</span></div>
+            <div class="app-card" style="--x:86%; --y:24%; --delay:0.5s; --dur:7.1s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Analytics</span></div>
+            <div class="app-card" style="--x:95%; --y:30%; --delay:1.8s; --dur:6.7s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">Finance API</span></div>
+
+            <!-- Middle sides -->
+            <div class="app-card" style="--x:1%;  --y:47%; --delay:0.3s; --dur:8.2s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Monitoring</span></div>
+            <div class="app-card" style="--x:3%;  --y:60%; --delay:1.5s; --dur:6.9s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">Email Service</span></div>
+            <div class="app-card" style="--x:95%; --y:46%; --delay:0.8s; --dur:7.4s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">Storage</span></div>
+            <div class="app-card" style="--x:94%; --y:58%; --delay:2.0s; --dur:6.1s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Search API</span></div>
+
+            <!-- Lower sides -->
+            <div class="app-card" style="--x:3%;  --y:74%; --delay:0.6s; --dur:7.6s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">Auth Service</span></div>
+            <div class="app-card" style="--x:14%; --y:78%; --delay:1.2s; --dur:6.4s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">Payment</span></div>
+            <div class="app-card" style="--x:84%; --y:73%; --delay:0.4s; --dur:7.9s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Billing</span></div>
+            <div class="app-card" style="--x:96%; --y:76%; --delay:1.7s; --dur:6.6s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">CI/CD</span></div>
+
+            <!-- Bottom region -->
+            <div class="app-card" style="--x:8%;  --y:89%; --delay:1.0s; --dur:7.3s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Data Pipeline</span></div>
+            <div class="app-card" style="--x:28%; --y:91%; --delay:0.3s; --dur:8.1s; --glow:#8b5cf6"><span class="ac-dot" style="background:#8b5cf6"></span><span class="ac-label">Internal Tools</span></div>
+            <div class="app-card" style="--x:62%; --y:90%; --delay:1.4s; --dur:6.8s; --glow:#3b82f6"><span class="ac-dot" style="background:#3b82f6"></span><span class="ac-label">Customer Support</span></div>
+            <div class="app-card" style="--x:82%; --y:88%; --delay:0.9s; --dur:7.0s; --glow:#06b6d4"><span class="ac-dot" style="background:#06b6d4"></span><span class="ac-label">Inventory</span></div>
+        </div>
+
+        <!-- Layer 6: Central MCP hub visualization -->
+        <div class="central-hub" id="central-hub" aria-hidden="true">
+            <div class="hub-ring hub-ring--outer"></div>
+            <div class="hub-ring hub-ring--middle"></div>
+            <div class="hub-ring hub-ring--inner"></div>
+            <div class="hub-core">
+                <svg class="hub-shield" width="48" height="48" viewBox="0 0 48 48" fill="none">
+                    <path d="M24 4L6 12v12c0 11.1 7.7 21.5 18 24 10.3-2.5 18-12.9 18-24V12L24 4z" stroke="url(#shield-grad)" stroke-width="2" fill="none" opacity="0.6"/>
+                    <path d="M20 24l4 4 8-8" stroke="#06b6d4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <defs><linearGradient id="shield-grad" x1="6" y1="4" x2="42" y2="48"><stop stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+                </svg>
+            </div>
+            <!-- Orbiting JWT tokens -->
+            <div class="jwt-orbit">
+                <div class="jwt-token" style="--orbit-delay:0s">JWT</div>
+                <div class="jwt-token" style="--orbit-delay:-2.5s">JWT</div>
+                <div class="jwt-token" style="--orbit-delay:-5s">JWT</div>
+            </div>
+        </div>
+
+        <!-- Layer 7: Hero text content (highest z-index) -->
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="badge-pulse"></span>
+                <span>API Gateway for AI Agents</span>
+            </div>
+
+            <h1 class="hero-title">
+                Securely Transform Every OpenAPI<br>
+                Into AI-Ready <span class="text-gradient">MCP Tools</span>
+            </h1>
+
+            <p class="hero-subtitle">
+                Register your OpenAPI-compatible applications once. MCP Manager automatically
+                discovers endpoints, generates MCP tools, secures them with Keycloak JWT
+                authentication, and exposes everything through one unified endpoint.
+            </p>
+
+            <div class="hero-ctas">
+                <a href="/login" class="cta-primary" id="cta-login">
+                    <span class="cta-text">Login</span>
+                    <span class="cta-icon">
+                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7 4l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
+                    <span class="cta-glow"></span>
+                </a>
+                <a href="#docs" class="cta-secondary" id="cta-docs">
+                    <span class="cta-text">Documentation</span>
+                </a>
+            </div>
+
+            <!-- Floating tool labels that appear near the hub -->
+            <div class="hero-tools" id="hero-tools">
+                <span class="tool-pill" style="--pill-x:-260px; --pill-y:60px; --pill-delay:2s">search_users()</span>
+                <span class="tool-pill" style="--pill-x:240px; --pill-y:50px; --pill-delay:2.6s">create_ticket()</span>
+                <span class="tool-pill" style="--pill-x:-220px; --pill-y:110px; --pill-delay:3.2s">send_email()</span>
+                <span class="tool-pill" style="--pill-x:200px; --pill-y:105px; --pill-delay:3.8s">get_orders()</span>
+                <span class="tool-pill" style="--pill-x:-180px; --pill-y:155px; --pill-delay:4.4s">deploy_build()</span>
+                <span class="tool-pill" style="--pill-x:260px; --pill-y:150px; --pill-delay:5.0s">create_invoice()</span>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ============================================ -->
+    <!--  HOW IT WORKS / PIPELINE                     -->
+    <!-- ============================================ -->
+    <section class="section section-pipeline" id="features">
+        <div class="section-container">
+            <div class="section-header" data-reveal>
+                <span class="section-tag">How It Works</span>
+                <h2 class="section-title">From REST API to MCP Tool in Minutes</h2>
+                <p class="section-desc">Six steps. Fully automated. Zero code changes to your existing APIs.</p>
+            </div>
+
+            <div class="pipeline-grid" data-reveal>
+                <div class="pipeline-step">
+                    <div class="step-number">01</div>
+                    <div class="step-icon-wrap">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect x="4" y="6" width="24" height="20" rx="3" stroke="#3b82f6" stroke-width="1.5"/><path d="M4 12h24" stroke="#3b82f6" stroke-width="1.5"/><circle cx="8" cy="9" r="1" fill="#3b82f6"/><circle cx="12" cy="9" r="1" fill="#3b82f6"/></svg>
+                    </div>
+                    <h3 class="step-title">Register</h3>
+                    <p class="step-desc">Point MCP Manager to any OpenAPI specification URL. Supports JSON and YAML.</p>
+                </div>
+                <div class="pipeline-connector"><span></span></div>
+
+                <div class="pipeline-step">
+                    <div class="step-number">02</div>
+                    <div class="step-icon-wrap">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="10" stroke="#06b6d4" stroke-width="1.5"/><path d="M16 10v6l4 4" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/><path d="M26 16h2M4 16h2M16 4v2M16 26v2" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="step-title">Discover</h3>
+                    <p class="step-desc">Automatically crawl and detect every endpoint, method, parameter, and schema.</p>
+                </div>
+                <div class="pipeline-connector"><span></span></div>
+
+                <div class="pipeline-step">
+                    <div class="step-number">03</div>
+                    <div class="step-icon-wrap">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M8 8h6v6H8zM18 8h6v6h-6zM8 18h6v6H8z" stroke="#8b5cf6" stroke-width="1.5" rx="1"/><path d="M21 18l3 3m0 0l3 3m-3-3l3-3m-3 3l-3 3" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="step-title">Generate</h3>
+                    <p class="step-desc">Convert each endpoint into a typed MCP tool with JSON Schema input validation.</p>
+                </div>
+                <div class="pipeline-connector"><span></span></div>
+
+                <div class="pipeline-step">
+                    <div class="step-number">04</div>
+                    <div class="step-icon-wrap">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M16 4L6 10v8c0 7.4 4.3 14.3 10 16 5.7-1.7 10-8.6 10-16v-8L16 4z" stroke="#3b82f6" stroke-width="1.5"/><path d="M12 16l3 3 5-5" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <h3 class="step-title">Secure</h3>
+                    <p class="step-desc">Apply Keycloak JWT verification, RBAC roles, and per-tool access policies.</p>
+                </div>
+                <div class="pipeline-connector"><span></span></div>
+
+                <div class="pipeline-step">
+                    <div class="step-number">05</div>
+                    <div class="step-icon-wrap">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="4" stroke="#06b6d4" stroke-width="1.5"/><path d="M16 6v4M16 22v4M6 16h4M22 16h4M9.17 9.17l2.83 2.83M20 20l2.83 2.83M22.83 9.17L20 12M12 20l-2.83 2.83" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="step-title">Publish</h3>
+                    <p class="step-desc">All tools merge into one unified, authenticated MCP endpoint at <code>/mcp/</code>.</p>
+                </div>
+                <div class="pipeline-connector"><span></span></div>
+
+                <div class="pipeline-step">
+                    <div class="step-number">06</div>
+                    <div class="step-icon-wrap">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M10 8a6 6 0 0112 0v2H10V8z" stroke="#8b5cf6" stroke-width="1.5"/><rect x="6" y="10" width="20" height="16" rx="3" stroke="#8b5cf6" stroke-width="1.5"/><circle cx="16" cy="18" r="2" stroke="#8b5cf6" stroke-width="1.5"/><path d="M16 20v3" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="step-title">Connect</h3>
+                    <p class="step-desc">Claude, Cursor, VS Code, and custom agents discover and call authorized tools.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ============================================ -->
+    <!--  ARCHITECTURE                                -->
+    <!-- ============================================ -->
+    <section class="section section-arch" id="architecture">
+        <div class="section-container">
+            <div class="section-header" data-reveal>
+                <span class="section-tag">Architecture</span>
+                <h2 class="section-title">One Endpoint. Every Tool. Full Control.</h2>
+                <p class="section-desc">MCP Manager sits between your applications and AI clients, converting, securing, and routing every tool call.</p>
+            </div>
+
+            <div class="arch-visual" data-reveal>
+                <!-- Left column: Sources -->
+                <div class="arch-col arch-col--sources">
+                    <h4 class="arch-col-label">Your Applications</h4>
+                    <div class="arch-source-card"><span class="arch-dot" style="background:#3b82f6"></span>GitHub API<span class="arch-badge">OpenAPI 3.1</span></div>
+                    <div class="arch-source-card"><span class="arch-dot" style="background:#06b6d4"></span>Jira Cloud<span class="arch-badge">OpenAPI 3.0</span></div>
+                    <div class="arch-source-card"><span class="arch-dot" style="background:#8b5cf6"></span>Internal CRM<span class="arch-badge">Swagger 2.0</span></div>
+                    <div class="arch-source-card"><span class="arch-dot" style="background:#06b6d4"></span>Payment API<span class="arch-badge">OpenAPI 3.1</span></div>
+                    <div class="arch-source-card"><span class="arch-dot" style="background:#3b82f6"></span>HRMS<span class="arch-badge">OpenAPI 3.0</span></div>
+                </div>
+
+                <!-- Center: MCP Manager -->
+                <div class="arch-col arch-col--center">
+                    <div class="arch-flow-line arch-flow-line--left">
+                        <svg viewBox="0 0 80 400" preserveAspectRatio="none"><path d="M80 40 Q20 40 20 80 Q20 120 80 120" stroke="url(#flow-left)" stroke-width="1.5" fill="none"/><path d="M80 160 Q20 160 20 200 Q20 240 80 240" stroke="url(#flow-left)" stroke-width="1.5" fill="none"/><path d="M80 280 Q20 280 20 320 Q20 360 80 360" stroke="url(#flow-left)" stroke-width="1.5" fill="none"/><defs><linearGradient id="flow-left" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#3b82f6" stop-opacity="0.1"/><stop offset="1" stop-color="#3b82f6" stop-opacity="0.6"/></linearGradient></defs></svg>
+                    </div>
+
+                    <div class="arch-hub-card">
+                        <div class="arch-hub-glow"></div>
+                        <div class="arch-hub-title">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="#3b82f6" stroke-width="1.5"/><circle cx="7" cy="10" r="1.5" fill="#3b82f6"/><circle cx="13" cy="10" r="1.5" fill="#06b6d4"/><line x1="7" y1="10" x2="13" y2="10" stroke="#8b5cf6" stroke-width="1"/></svg>
+                            MCP Manager
+                        </div>
+                        <div class="arch-hub-stages">
+                            <span class="arch-stage">OpenAPI Parse</span>
+                            <span class="arch-stage-arrow">→</span>
+                            <span class="arch-stage">Tool Generate</span>
+                            <span class="arch-stage-arrow">→</span>
+                            <span class="arch-stage">JWT + RBAC</span>
+                            <span class="arch-stage-arrow">→</span>
+                            <span class="arch-stage">MCP Endpoint</span>
+                        </div>
+                        <div class="arch-hub-endpoint">
+                            <code>/mcp/</code>
+                            <span class="arch-endpoint-badge">Secured</span>
+                        </div>
+                    </div>
+
+                    <div class="arch-flow-line arch-flow-line--right">
+                        <svg viewBox="0 0 80 400" preserveAspectRatio="none"><path d="M0 40 Q60 40 60 80 Q60 120 0 120" stroke="url(#flow-right)" stroke-width="1.5" fill="none"/><path d="M0 160 Q60 160 60 200 Q60 240 0 240" stroke="url(#flow-right)" stroke-width="1.5" fill="none"/><path d="M0 280 Q60 280 60 320 Q60 360 0 360" stroke="url(#flow-right)" stroke-width="1.5" fill="none"/><defs><linearGradient id="flow-right" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#06b6d4" stop-opacity="0.6"/><stop offset="1" stop-color="#06b6d4" stop-opacity="0.1"/></linearGradient></defs></svg>
+                    </div>
+                </div>
+
+                <!-- Right column: Consumers -->
+                <div class="arch-col arch-col--consumers">
+                    <h4 class="arch-col-label">AI Clients</h4>
+                    <div class="arch-consumer-card"><span class="arch-dot" style="background:#06b6d4"></span>Claude Desktop</div>
+                    <div class="arch-consumer-card"><span class="arch-dot" style="background:#3b82f6"></span>Cursor</div>
+                    <div class="arch-consumer-card"><span class="arch-dot" style="background:#8b5cf6"></span>VS Code</div>
+                    <div class="arch-consumer-card"><span class="arch-dot" style="background:#06b6d4"></span>Gemini CLI</div>
+                    <div class="arch-consumer-card"><span class="arch-dot" style="background:#3b82f6"></span>Custom Agents</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ============================================ -->
+    <!--  SECURITY                                    -->
+    <!-- ============================================ -->
+    <section class="section section-security" id="security">
+        <div class="section-container">
+            <div class="section-header" data-reveal>
+                <span class="section-tag">Security</span>
+                <h2 class="section-title">Enterprise-Grade Authentication Built In</h2>
+                <p class="section-desc">Every tool call is authenticated, authorized, and audited. No exceptions.</p>
+            </div>
+
+            <div class="security-grid" data-reveal>
+                <div class="sec-card">
+                    <div class="sec-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M14 3L4 8v7c0 8 4.5 15.5 10 17.5 5.5-2 10-9.5 10-17.5V8L14 3z" stroke="#3b82f6" stroke-width="1.5"/><path d="M10 14l3 3 5-6" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <h3 class="sec-card-title">JWT Verification</h3>
+                    <p class="sec-card-desc">Cryptographic token validation via JWKS. Every request verified against Keycloak's public keys in real time.</p>
+                </div>
+
+                <div class="sec-card">
+                    <div class="sec-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="10" r="4" stroke="#06b6d4" stroke-width="1.5"/><path d="M6 24c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#06b6d4" stroke-width="1.5"/><path d="M20 7l4-4M24 3h-4M24 3v4" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="sec-card-title">RBAC Enforcement</h3>
+                    <p class="sec-card-desc">Role-based access control with Keycloak realm and client roles. Permissions enforced at every API layer.</p>
+                </div>
+
+                <div class="sec-card">
+                    <div class="sec-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="4" y="4" width="8" height="8" rx="2" stroke="#8b5cf6" stroke-width="1.5"/><rect x="16" y="4" width="8" height="8" rx="2" stroke="#8b5cf6" stroke-width="1.5"/><rect x="4" y="16" width="8" height="8" rx="2" stroke="#8b5cf6" stroke-width="1.5"/><rect x="16" y="16" width="8" height="8" rx="2" stroke="#8b5cf6" stroke-width="1.5"/><circle cx="20" cy="20" r="2" fill="#8b5cf6" opacity="0.4"/></svg>
+                    </div>
+                    <h3 class="sec-card-title">Per-Tool Policies</h3>
+                    <p class="sec-card-desc">Allow, deny, or require approval per tool. Three-tier inheritance from system → owner → tool level.</p>
+                </div>
+
+                <div class="sec-card">
+                    <div class="sec-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="3" y="12" width="22" height="12" rx="3" stroke="#3b82f6" stroke-width="1.5"/><path d="M8 12V8a6 6 0 1112 0v4" stroke="#3b82f6" stroke-width="1.5"/><circle cx="14" cy="18" r="2" fill="#3b82f6"/><path d="M14 20v2" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="sec-card-title">Token Forwarding</h3>
+                    <p class="sec-card-desc">JWT tokens forwarded to downstream APIs so your services can independently verify the calling user's identity.</p>
+                </div>
+
+                <div class="sec-card">
+                    <div class="sec-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M14 4v20M4 14h20" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="14" r="10" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="3 3"/><circle cx="14" cy="14" r="4" stroke="#06b6d4" stroke-width="1.5"/></svg>
+                    </div>
+                    <h3 class="sec-card-title">Scope Validation</h3>
+                    <p class="sec-card-desc">Audience, issuer, and scope claims validated. Expired or malformed tokens rejected instantly.</p>
+                </div>
+
+                <div class="sec-card">
+                    <div class="sec-card-icon">
+                        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M4 6h20M4 12h20M4 18h14M4 24h8" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round"/><circle cx="22" cy="22" r="4" stroke="#8b5cf6" stroke-width="1.5"/><path d="M22 20v4M20 22h4" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h3 class="sec-card-title">Audit Trail</h3>
+                    <p class="sec-card-desc">Immutable log of every action with before/after state snapshots. Full forensic traceability.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ============================================ -->
+    <!--  SUPPORTED MCP CLIENTS                       -->
+    <!-- ============================================ -->
+    <section class="section section-clients" id="clients">
+        <div class="section-container">
+            <div class="section-header" data-reveal>
+                <span class="section-tag">Ecosystem</span>
+                <h2 class="section-title">Works With Every MCP Client</h2>
+                <p class="section-desc">One endpoint. Universal compatibility. Your tools are instantly available everywhere.</p>
+            </div>
+
+            <div class="client-grid" data-reveal>
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect x="4" y="4" width="28" height="28" rx="8" stroke="#06b6d4" stroke-width="1.5"/><path d="M12 14c0 0 3-4 6-4s6 4 6 4" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/><path d="M14 20c0 0 2 3 4 3s4-3 4-3" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h4 class="client-name">Claude Desktop</h4>
+                    <p class="client-desc">Native MCP support</p>
+                </div>
+
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect x="4" y="8" width="28" height="20" rx="3" stroke="#3b82f6" stroke-width="1.5"/><path d="M4 14h28" stroke="#3b82f6" stroke-width="1.5"/><path d="M10 18h8M10 22h12" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/></svg>
+                    </div>
+                    <h4 class="client-name">Cursor</h4>
+                    <p class="client-desc">AI-first code editor</p>
+                </div>
+
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><path d="M18 4L4 12v12l14 8 14-8V12L18 4z" stroke="#8b5cf6" stroke-width="1.5"/><path d="M4 12l14 8M18 20v12M32 12l-14 8" stroke="#8b5cf6" stroke-width="1" opacity="0.4"/></svg>
+                    </div>
+                    <h4 class="client-name">VS Code</h4>
+                    <p class="client-desc">Extension ecosystem</p>
+                </div>
+
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="12" stroke="#06b6d4" stroke-width="1.5"/><circle cx="18" cy="18" r="4" fill="#06b6d4" opacity="0.3"/><path d="M18 6v4M18 26v4M6 18h4M26 18h4" stroke="#06b6d4" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h4 class="client-name">OpenAI</h4>
+                    <p class="client-desc">GPT integration</p>
+                </div>
+
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><path d="M10 8h16l-3 20H13L10 8z" stroke="#3b82f6" stroke-width="1.5"/><path d="M8 14h20" stroke="#3b82f6" stroke-width="1.5"/><path d="M14 28l-2 4M22 28l2 4" stroke="#3b82f6" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    </div>
+                    <h4 class="client-name">Gemini CLI</h4>
+                    <p class="client-desc">Terminal-native</p>
+                </div>
+
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><path d="M8 10h20v16H8z" stroke="#8b5cf6" stroke-width="1.5" rx="2"/><path d="M12 16l4 4 8-6" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <h4 class="client-name">Continue</h4>
+                    <p class="client-desc">Open-source copilot</p>
+                </div>
+
+                <div class="client-card">
+                    <div class="client-icon">
+                        <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="12" cy="12" r="4" stroke="#06b6d4" stroke-width="1.5"/><circle cx="24" cy="12" r="4" stroke="#3b82f6" stroke-width="1.5"/><circle cx="18" cy="24" r="4" stroke="#8b5cf6" stroke-width="1.5"/><path d="M14 15l3 6M22 15l-3 6" stroke="#64748b" stroke-width="1" stroke-dasharray="2 2"/></svg>
+                    </div>
+                    <h4 class="client-name">Custom Agents</h4>
+                    <p class="client-desc">Any MCP-compatible client</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ============================================ -->
+    <!--  CTA FOOTER SECTION                          -->
+    <!-- ============================================ -->
+    <section class="section section-cta-final" id="docs">
+        <div class="section-container">
+            <div class="final-cta-wrap" data-reveal>
+                <div class="final-cta-glow"></div>
+                <h2 class="final-cta-title">Ready to unify your APIs for AI?</h2>
+                <p class="final-cta-desc">Start exposing your existing applications as secure MCP tools. No SDKs. No code changes. Just point and connect.</p>
+                <div class="final-cta-actions">
+                    <a href="/login" class="cta-primary cta-primary--lg">
+                        <span class="cta-text">Login to Get Started</span>
+                        <span class="cta-icon"><svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M7 4l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                        <span class="cta-glow"></span>
+                    </a>
+                    <a href="#" class="cta-secondary">
+                        <span class="cta-text">View Documentation</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ============================================ -->
+    <!--  FOOTER                                      -->
+    <!-- ============================================ -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-brand">
+                <div class="logo-icon logo-icon--sm">
+                    <svg width="20" height="20" viewBox="0 0 28 28" fill="none"><rect x="2" y="2" width="24" height="24" rx="6" stroke="url(#logo-grad-f)" stroke-width="2"/><circle cx="9" cy="14" r="2.5" fill="#3b82f6"/><circle cx="19" cy="14" r="2.5" fill="#06b6d4"/><circle cx="14" cy="8" r="2.5" fill="#8b5cf6"/><defs><linearGradient id="logo-grad-f" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>
+                </div>
+                <span>MCP Manager</span>
+            </div>
+            <div class="footer-links">
+                <a href="#features">Features</a>
+                <a href="#architecture">Architecture</a>
+                <a href="#security">Security</a>
+                <a href="#docs">Documentation</a>
+                <a href="/login">Login</a>
+            </div>
+            <div class="footer-copy">&copy; 2026 MCP Manager. Secured by Keycloak.</div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

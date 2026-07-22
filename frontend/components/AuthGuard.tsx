@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
@@ -12,7 +12,8 @@ import {
 import { publicEnv } from '@/lib/env';
 
 /** Paths that should never trigger the auth guard. */
-const PUBLIC_PATHS = ['/auth/callback', '/auth/register', '/login'];
+const EXACT_PUBLIC_PATHS = ['/', '/new'];
+const PREFIX_PUBLIC_PATHS = ['/auth/callback', '/auth/register', '/login'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -25,7 +26,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     () => true,
     () => false
   );
-  const isPublicPath = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const isPublicPath = EXACT_PUBLIC_PATHS.includes(pathname) || PREFIX_PUBLIC_PATHS.some((p) => pathname.startsWith(p));
   const hasToken = hydrated && Boolean(getStoredToken());
 
   useEffect(() => {

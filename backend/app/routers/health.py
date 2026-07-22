@@ -143,6 +143,7 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
             "keycloak_url": keycloak_url,
             "realm": realm,
             "client_id": KEYCLOAK_CLIENT_ID,
+            "client_secret": ENV.adm_keycloak_client_secret if KEYCLOAK_CLIENT_ID == "mcp_secure1" else "",
             "authorization_endpoint": f"{oidc_base}/auth" if oidc_base else "",
             "token_endpoint": f"{oidc_base}/token" if oidc_base else "",
             "logout_endpoint": f"{oidc_base}/logout" if oidc_base else "",

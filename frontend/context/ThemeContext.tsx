@@ -33,13 +33,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
 
     const applyTheme = () => {
-      const activeTheme = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
+      const activeTheme = theme === 'system' ? (media.matches ? 'dark' : 'dark') : theme;
       setResolvedTheme(activeTheme);
 
       if (activeTheme === 'dark') {
         root.classList.add('dark');
+        root.setAttribute('data-theme', 'dark');
       } else {
         root.classList.remove('dark');
+        root.setAttribute('data-theme', 'light');
       }
     };
 

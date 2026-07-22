@@ -15,11 +15,14 @@ MCP_MANAGER_NAME="MCP SERVER MANAGER(Combined)"
 
 MCP_USE_ANONYMIZED_TELEMETRY=false
 
+# Toggle multi-keycloak mode (set to true later when ops keycloak is required)
+ENABLE_MULTI_KEYCLOAK=false
+
 # Keycloak server + realm
 KEYCLOAK_SERVER_URL=http://127.0.0.1:8080
 KEYCLOAK_FRONTEND_URL=http://localhost:8080
 KEYCLOAK_REALM=mcp-realm
-KEYCLOAK_CLIENT_ID=mcp_server1
+KEYCLOAK_CLIENT_ID=mcp_secure1
 
  
  # Public clients don't get client_id in the aud claim — disable for now.

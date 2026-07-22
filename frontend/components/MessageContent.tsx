@@ -50,132 +50,197 @@ function renderCodeBlock(value: string, key: string, language?: string) {
   const label = language || (looksLikeJson(value) ? 'json' : '');
 
   return (
-    <div key={key} className="rounded-xl border border-slate-300/40 bg-slate-950/90 overflow-hidden">
+    <div key={key} className="my-2 rounded-xl border border-slate-300/40 dark:border-slate-700 bg-slate-950/90 overflow-hidden shadow-sm">
       {label && (
-        <div className="px-3 py-1 text-[11px] uppercase tracking-wide text-slate-400 bg-slate-900/80 border-b border-slate-800">
-          {label}
+        <div className="px-3 py-1 text-[11px] font-mono uppercase tracking-wide text-slate-400 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+          <span>{label}</span>
         </div>
       )}
-      <pre className="p-3 text-xs sm:text-sm overflow-auto whitespace-pre-wrap break-words text-slate-100">
+      <pre className="p-3 text-xs sm:text-sm overflow-auto whitespace-pre-wrap break-words text-slate-100 font-mono">
         <code>{normalized}</code>
       </pre>
     </div>
   );
 }
 
-function renderList(lines: string[], key: string) {
-  const isOrdered = lines.every((line) => /^\d+\.\s+/.test(line.trim()));
-  const ListTag = isOrdered ? 'ol' : 'ul';
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const regex = /(`[^`]+`|\*\*[^*]+\*\*|_[^_]+_|\*[^*]+\*)/g;
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
 
-  return (
-    <ListTag
-      key={key}
-      className={`${isOrdered ? 'list-decimal' : 'list-disc'} pl-5 space-y-1`}
-    >
-      {lines.map((line, index) => (
-        <li key={`${key}-${index}`}>
-          {line.replace(isOrdered ? /^\d+\.\s+/ : /^[-*]\s+/, '')}
-        </li>
-      ))}
-    </ListTag>
-  );
-}
-
-function renderToolSections(block: string, key: string) {
-  const lines = block
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const supportedLabels = ['Tool used:', 'Tools used:', 'Arguments:', 'Result:'];
-  const hasToolFormat = lines.some((line) => supportedLabels.some((label) => line.startsWith(label)));
-  if (!hasToolFormat) {
-    return null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      nodes.push(text.slice(lastIdx, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith('`') && token.endsWith('`')) {
+      const codeVal = token.slice(1, -1);
+      nodes.push(
+        <code
+          key={match.index}
+          className="bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/60 px-1.5 py-0.5 rounded-md font-mono text-xs font-semibold mx-0.5 inline-block"
+        >
+          {codeVal}
+        </code>
+      );
+    } else if (token.startsWith('**') && token.endsWith('**')) {
+      nodes.push(
+        <strong key={match.index} className="font-bold text-slate-900 dark:text-slate-100">
+          {renderInlineMarkdown(token.slice(2, -2))}
+        </strong>
+      );
+    } else if ((token.startsWith('_') && token.endsWith('_')) || (token.startsWith('*') && token.endsWith('*'))) {
+      nodes.push(
+        <em key={match.index} className="italic text-slate-700 dark:text-slate-300">
+          {renderInlineMarkdown(token.slice(1, -1))}
+        </em>
+      );
+    } else {
+      nodes.push(token);
+    }
+    lastIdx = regex.lastIndex;
   }
 
-  const nodes: React.ReactNode[] = [];
-  let currentLabel = '';
-  let currentValue: string[] = [];
+  if (lastIdx < text.length) {
+    nodes.push(text.slice(lastIdx));
+  }
 
-  const flush = (index: number) => {
-    if (!currentLabel) return;
-    const value = currentValue.join('\n').trim();
-    const title = currentLabel.replace(':', '');
+  return nodes;
+}
 
-    nodes.push(
-      <div key={`${key}-${index}`} className="rounded-xl border border-slate-200/70 bg-slate-50/70 px-4 py-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</div>
-        {currentLabel === 'Arguments:' && value ? (
-          <div className="mt-2">{renderCodeBlock(value, `${key}-${index}-code`, 'json')}</div>
-        ) : (
-          <div className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">{value}</div>
-        )}
+function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode {
+  const lines = block.split('\n');
+  const elements: React.ReactNode[] = [];
+
+  let inTable = false;
+  let tableRows: string[] = [];
+
+  const flushTable = (idx: number) => {
+    if (tableRows.length === 0) return;
+    const header = tableRows[0].split('|').map((s) => s.trim()).filter(Boolean);
+    const bodyRows = tableRows
+      .slice(1)
+      .filter((row) => !row.includes('---'))
+      .map((row) => row.split('|').map((s) => s.trim()).filter(Boolean));
+
+    elements.push(
+      <div key={`${keyPrefix}-table-${idx}`} className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        <table className="min-w-full text-xs sm:text-sm text-left">
+          <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
+            <tr>
+              {header.map((cell, colIdx) => (
+                <th key={colIdx} className="px-4 py-2.5">{renderInlineMarkdown(cell)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+            {bodyRows.map((row, rIdx) => (
+              <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                {row.map((cell, cIdx) => (
+                  <td key={cIdx} className="px-4 py-2 text-slate-700 dark:text-slate-300">{renderInlineMarkdown(cell)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
+    tableRows = [];
+    inTable = false;
   };
 
-  lines.forEach((line, index) => {
-    const matchedLabel = supportedLabels.find((label) => line.startsWith(label));
-    if (matchedLabel) {
-      flush(index);
-      currentLabel = matchedLabel;
-      currentValue = [line.slice(matchedLabel.length).trim()];
-    } else if (currentLabel) {
-      currentValue.push(line);
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+
+    // Table detection
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      inTable = true;
+      tableRows.push(trimmed);
+      return;
+    } else if (inTable) {
+      flushTable(idx);
+    }
+
+    // Horizontal Rule
+    if (trimmed === '---' || trimmed === '***') {
+      elements.push(<hr key={idx} className="my-3 border-slate-200 dark:border-slate-800" />);
+      return;
+    }
+
+    // Headers
+    if (trimmed.startsWith('### ')) {
+      elements.push(
+        <h3 key={idx} className="text-base font-bold text-slate-900 dark:text-white mt-3 mb-1.5 flex items-center gap-2">
+          {renderInlineMarkdown(trimmed.slice(4))}
+        </h3>
+      );
+      return;
+    }
+    if (trimmed.startsWith('## ')) {
+      elements.push(
+        <h2 key={idx} className="text-lg font-bold text-slate-900 dark:text-white mt-4 mb-2">
+          {renderInlineMarkdown(trimmed.slice(3))}
+        </h2>
+      );
+      return;
+    }
+    if (trimmed.startsWith('# ')) {
+      elements.push(
+        <h1 key={idx} className="text-xl font-bold text-slate-900 dark:text-white mt-4 mb-2">
+          {renderInlineMarkdown(trimmed.slice(2))}
+        </h1>
+      );
+      return;
+    }
+
+    // Bullet List Item with Indentation
+    const listMatch = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)$/);
+    if (listMatch) {
+      const indentSpaces = listMatch[1].length;
+      const contentText = listMatch[3];
+      elements.push(
+        <div
+          key={idx}
+          className="flex items-start gap-2.5 text-sm leading-relaxed my-1 text-slate-800 dark:text-slate-200"
+          style={{ paddingLeft: `${Math.min(indentSpaces, 12) * 0.5}rem` }}
+        >
+          <span className="text-rose-500 font-bold text-xs pt-1 select-none">•</span>
+          <span className="flex-1">{renderInlineMarkdown(contentText)}</span>
+        </div>
+      );
+      return;
+    }
+
+    if (trimmed) {
+      elements.push(
+        <p key={idx} className="text-sm leading-relaxed my-1 text-slate-800 dark:text-slate-200">
+          {renderInlineMarkdown(line)}
+        </p>
+      );
     }
   });
 
-  flush(lines.length);
-
-  return <div key={key} className="space-y-3">{nodes}</div>;
-}
-
-function renderTextBlock(block: string, key: string) {
-  const trimmed = block.trim();
-  if (!trimmed) {
-    return null;
+  if (inTable) {
+    flushTable(lines.length);
   }
 
-  const toolSections = renderToolSections(trimmed, key);
-  if (toolSections) {
-    return toolSections;
-  }
-
-  const lines = trimmed.split('\n');
-  const isBulletList = lines.every((line) => /^[-*]\s+/.test(line.trim()));
-  if (isBulletList) {
-    return renderList(lines, key);
-  }
-
-  const isNumberedList = lines.every((line) => /^\d+\.\s+/.test(line.trim()));
-  if (isNumberedList) {
-    return renderList(lines, key);
-  }
-
-  if (looksLikeJson(trimmed)) {
-    return renderCodeBlock(trimmed, key, 'json');
-  }
-
-  return (
-    <p key={key} className="whitespace-pre-wrap break-words">
-      {trimmed}
-    </p>
-  );
+  return <div key={keyPrefix} className="space-y-1">{elements}</div>;
 }
 
 export default function MessageContent({ content }: { content: string }) {
+  if (!content) return null;
+
   const segments = parseSegments(content);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {segments.map((segment, index) => {
         if (segment.type === 'code') {
           return renderCodeBlock(segment.value, `code-${index}`, segment.language);
         }
 
-        return segment.value
-          .split(/\n{2,}/)
-          .map((block, blockIndex) => renderTextBlock(block, `text-${index}-${blockIndex}`));
+        return renderMarkdownBlock(segment.value, `md-${index}`);
       })}
     </div>
   );

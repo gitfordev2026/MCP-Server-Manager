@@ -27,6 +27,7 @@
 11. [Current State vs. Desired State](#11-current-state-vs-desired-state)
 12. [Key Design Decisions & Constraints](#12-key-design-decisions--constraints)
 13. [Technology Stack Summary](#13-technology-stack-summary)
+14. [Session & Development Changelog (Recent Upgrades)](#14-session--development-changelog-recent-upgrades)
 
 ---
 
@@ -968,9 +969,55 @@ sequenceDiagram
 
 ---
 
+---
+
+## 14. Session & Development Changelog (Recent Upgrades)
+
+### 14.1 OpenAPI Spec Candidate Fetching & Docker Host Networking
+- **Host Network Mode (`docker-compose-offline.yml`)**: Set `network_mode: host` and `command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload` for the backend service. This prevents Docker bridge network isolation from dropping packets destined for host processes (e.g., student API on `http://10.196.167.176:5555/openapi.json`).
+- **URL Candidate Building & Diagnostic Fetch (`backend/app/main.py`)**: Added `.rstrip(":")` in `build_openapi_candidates()` to sanitize input URLs and path candidates, automatically generating `host.docker.internal` fallbacks and unauthenticated GET attempts for public specs.
+
+### 14.2 Secure HTTP Cookie Authentication & Dev Admin Fallback
+- **Frontend Cookie Management (`frontend/lib/auth.ts` & `frontend/services/http.ts`)**:
+  - Implemented `setCookie()`, `getCookie()`, and `deleteCookie()` for `mcp_access_token`, `mcp_refresh_token`, and `mcp_token_expiry` with `SameSite=Lax`, `Path=/`, and early expiration handling.
+  - Added `credentials: 'include'` to `authenticatedFetch()` and `http()` to ensure browser cookies are attached to all API requests automatically.
+- **Backend Cookie Extraction (`backend/app/core/rbac.py` & `backend/app/main.py`)**:
+  - `_extract_bearer_token()` inspects both `Authorization: Bearer <token>` header AND `request.cookies.get("mcp_access_token")`.
+  - In development mode (`ENV=development`), `get_request_actor()` falls back gracefully to the administrator identity (`username="admin"`, `roles=["super_admin"]`) if a Keycloak Bearer token is missing or expired, preventing sudden 401 redirects during active form edits.
+
+### 14.3 Application & Tool Endpoint Selection Synchronization
+- **Database Tool State Sync (`backend/app/routers/base_urls.py`)**:
+  - Added `_sync_app_tools_selection(db, app_name, selected_endpoints)` in `base_urls.py`.
+  - Whenever `PATCH /base-urls/{name}` or `POST /register-base-url` updates an application's `selected_endpoints`, all matching tool rows in `MCPToolModel` table (under `owner_id = "app:{name}"`) are updated with `is_enabled`, `owner_enabled`, `is_deleted`, `registration_state`, and `exposure_state`.
+
+### 14.4 Agent Playground Architecture & Port Corrections
+- **Backend Port Configuration (`backend/app/.env` & `backend/app/env.py`)**: Updated `AGENT_MCP_SERVER_URL` to `http://127.0.0.1:8000/mcp/apps/` (correcting port `8099` typo).
+- **ASGI Middleware Loopback Exemption (`backend/app/main.py`)**: Updated `JWTAuthASGIMiddleware` to allow internal loopback calls (`127.0.0.1`) without issuing OAuth `WWW-Authenticate` challenges that crash automated client loops.
+- **Tool Call Rescuing & Flat OpenAPI Parameter Mapping (`backend/app/routers/agent.py` & `backend/app/main.py`)**:
+  - Updated `generate_direct_response()` to detect `AIMessage.tool_calls` when content is empty and format it into a structured tool call.
+  - Enhanced `_parse_raw_tool_call()` to extract JSON tool calls wrapped in markdown code blocks or text.
+  - Added in-process tool execution fallback (`combined_apps_mcp.call_tool()`).
+  - Updated `invoke_openapi_tool()` to extract path template parameters (like `{student_id}`) from flat top-level argument dictionaries.
+
+### 14.5 Human-Readable Markdown UI Rendering Engine
+- **Frontend Markdown Component (`frontend/components/MessageContent.tsx`)**:
+  - Replaced rigid `lines.every(...)` list check with a full React Markdown renderer supporting:
+    - **Headings** (`#`, `##`, `###`) ➔ Rendered as styled font-bold heading tags (`<h1>`, `<h2>`, `<h3>`).
+    - **Bold text** (`**text**`) ➔ Rendered as `<strong>` tags.
+    - **Italic text** (`_text_` / `*text*`) ➔ Rendered as `<em>` tags.
+    - **Inline Code Badges** (`` `code` ``) ➔ Rendered as styled rose-accented inline code pills.
+    - **Nested Bullet Lists & Indented Trees** ➔ Rendered with indented bullets and clean label formatting.
+    - **Markdown Tables** (`| Col 1 | Col 2 |`) ➔ Rendered as styled responsive HTML tables with headers and alternating hover states.
+    - **Horizontal Rules** (`---`) ➔ Rendered as clean subtle divider lines.
+- **Unwrapped Technical Headers (`backend/app/routers/agent.py`)**:
+  - Updated `_format_tool_result_human_readable()` to strip internal HTTP metadata (`status_code`, `ok`, `url`, `content_type`), formatting core payload data directly into clean Markdown bullet lists and tables with an execution summary footer.
+
+---
+
 > **Quick Start for Development**:
 > 1. Start Keycloak, PostgreSQL (or use SQLite fallback), and Ollama
-> 2. `cd backend && uvicorn app.main:app --port 8099 --reload`
+> 2. `cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`
 > 3. `cd frontend && npm run dev` (port 3000)
 > 4. Optionally: `cd mock-mcp-server && uvicorn server:app --port 8001 --reload`
 > 5. Access dashboard at `http://localhost:3000`
+

@@ -24,6 +24,11 @@ async def get_keycloak_token(domain_type: str, db: Session) -> str | None:
     """
     domain = domain_type.strip().upper()
     
+    # Single Keycloak mode vs Multi Keycloak mode flag check
+    if not ENV.enable_multi_keycloak and domain != "ADM":
+        logger.debug(f"Single Keycloak mode enabled: routing domain '{domain}' request to ADM Keycloak")
+        domain = "ADM"
+    
     # 1. Check Cache
     cached = _TOKEN_CACHE.get(domain)
     if cached:

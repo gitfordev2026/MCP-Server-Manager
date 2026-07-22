@@ -15,6 +15,7 @@ export interface AuthConfig {
   keycloak_url: string;
   realm: string;
   client_id: string;
+  client_secret?: string;
   authorization_endpoint: string;
   token_endpoint: string;
   logout_endpoint: string;
@@ -278,6 +279,9 @@ export async function exchangeCodeForToken(
     redirect_uri: redirectUri,
     code_verifier: verifier,
   });
+  if (config.client_secret) {
+    body.append("client_secret", config.client_secret);
+  }
 
   const res = await fetch(config.token_endpoint, {
     method: "POST",
@@ -309,6 +313,9 @@ export async function refreshAccessToken(
     client_id: config.client_id,
     refresh_token: refreshToken,
   });
+  if (config.client_secret) {
+    body.append("client_secret", config.client_secret);
+  }
 
   const res = await fetch(config.token_endpoint, {
     method: "POST",
@@ -330,7 +337,7 @@ export async function refreshAccessToken(
 // ---------- Logout ----------
 
 export function buildLogoutUrl(config: AuthConfig): string {
-  const redirectUri = `${window.location.origin}/login`;
+  const redirectUri = `${window.location.origin}/`;
   const params = new URLSearchParams({
     client_id: config.client_id,
     post_logout_redirect_uri: redirectUri,
