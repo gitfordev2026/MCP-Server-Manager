@@ -3,17 +3,15 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Disable telemetry and set production env
+# Disable Next.js telemetry
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 
 # Copy package manifests
 COPY package.json package-lock.json* ./
 
-# If node_modules is already provided in build context (offline mode), use it directly.
-# Otherwise run npm ci.
+# Install ALL dependencies (including devDependencies like typescript needed for build)
 COPY node_modules* ./node_modules/
-RUN if [ ! -d "./node_modules/next" ]; then npm ci ; fi
+RUN if [ ! -d "./node_modules/next" ] || [ ! -d "./node_modules/typescript" ]; then npm ci ; fi
 
 # Copy application source code
 COPY . .
@@ -21,7 +19,7 @@ COPY . .
 # Build Next.js production bundle
 RUN npm run build
 
-# Stage 2: Runner container (Zero runtime network calls)
+# Stage 2: Production Runner container (Zero runtime network calls)
 FROM node:20-slim AS runner
 
 WORKDIR /app

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -12,7 +12,7 @@ import {
 } from '@/lib/auth';
 import { publicEnv } from '@/lib/env';
 
-export default function AuthCallbackPage() {
+function CallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,6 @@ export default function AuthCallbackPage() {
       return;
     }
 
-    // Guard against React Strict Mode double-invocation and duplicate code exchanges.
     if (exchangeStarted.current === code) return;
     exchangeStarted.current = code;
 
@@ -93,5 +92,22 @@ export default function AuthCallbackPage() {
         <p className="text-slate-600">Completing authentication...</p>
       </div>
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4" />
+            <p className="text-slate-600">Loading callback parameters...</p>
+          </div>
+        </div>
+      }
+    >
+      <CallbackContent />
+    </Suspense>
   );
 }

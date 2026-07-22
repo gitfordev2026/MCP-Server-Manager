@@ -1,0 +1,79 @@
+# ==========================================================================
+# MCP SERVER MANAGER - WINDOWS DOCKER COMPOSE MANIFEST
+# Optimized for Windows (Docker Desktop / WSL2 / Hyper-V)
+# ==========================================================================
+# Usage on Windows PowerShell / Command Prompt:
+#   docker-compose -f docker-compose.windows.yml up -d
+# ==========================================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: mcp-backend:windows
+    container_name: mcp-backend-win
+    ports:
+      - "8000:8000"
+      - "8099:8099"
+    volumes:
+      - .\\backend\\app:/app
+    environment:
+      - ENV=development
+      - PYTHONUNBUFFERED=1
+      - KEYCLOAK_URL=http://host.docker.internal:8080
+      - KEYCLOAK_REALM=mcp-realm
+      - KEYCLOAK_CLIENT_ID=mcp_secure1
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-win-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    image: mcp-frontend:windows
+    container_name: mcp-frontend-win
+    ports:
+      - "3000:3000"
+    volumes:
+      - .\\frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
+    command: npm run dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-win-network
+
+  mock-server:
+    build:
+      context: ./mock-mcp-server
+      dockerfile: Dockerfile
+    image: mcp-mock-server:windows
+    container_name: mcp-mock-win
+    ports:
+      - "8001:8001"
+    volumes:
+      - .\\mock-mcp-server:/app
+    environment:
+      - ENV=development
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-win-network
+
+networks:
+  mcp-win-network:
+    driver: bridge

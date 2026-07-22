@@ -1,0 +1,78 @@
+# ==========================================================================
+# MCP SERVER MANAGER - AIRGAPPED DEVELOPMENT DOCKER COMPOSE MANIFEST
+# ==========================================================================
+# Allows developers to work and edit code in an offline / airgapped network
+# with live hot-reloading (uvicorn --reload & npm run dev).
+# ==========================================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    image: mcp-backend:airgapped-dev
+    container_name: mcp-backend-dev
+    ports:
+      - "8000:8000"
+      - "8099:8099"
+    volumes:
+      - ./backend/app:/app
+    environment:
+      - ENV=development
+      - PYTHONUNBUFFERED=1
+      - KEYCLOAK_URL=http://host.docker.internal:8080
+      - KEYCLOAK_REALM=mcp-realm
+      - KEYCLOAK_CLIENT_ID=mcp_secure1
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-airgapped-dev-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    image: mcp-frontend:airgapped-dev
+    container_name: mcp-frontend-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
+    command: npm run dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-airgapped-dev-net
+
+  mock-server:
+    build:
+      context: ./mock-mcp-server
+      dockerfile: Dockerfile.dev
+    image: mcp-mock-server:airgapped-dev
+    container_name: mcp-mock-dev
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./mock-mcp-server:/app
+    environment:
+      - ENV=development
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-airgapped-dev-net
+
+networks:
+  mcp-airgapped-dev-net:
+    driver: bridge

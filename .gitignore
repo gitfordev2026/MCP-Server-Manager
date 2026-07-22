@@ -1,0 +1,4 @@
+*.tar.gz
+node_modules/
+*.log
+.venv/
