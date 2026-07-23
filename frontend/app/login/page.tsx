@@ -37,7 +37,7 @@ export default function LoginPage() {
 
         // Redirect to Keycloak login.
         if (!cancelled) {
-          await redirectToLogin(config);
+          await redirectToLogin(config, true);
         }
       } catch (err) {
         if (!cancelled) {

@@ -2,17 +2,24 @@
 # MCP SERVER MANAGER - UNIVERSAL DOCKER COMPOSE MANIFEST
 # Compatible with both Windows (Docker Desktop / WSL2) and Ubuntu / Linux
 # ==========================================================================
-# Code is mounted live from host folders for instant hot-reloading:
-#   - ./backend/app -> /app (FastAPI Gateway)
-#   - ./frontend -> /app (Next.js Dashboard)
-#   - ./mock-mcp-server -> /app (Mock REST Server)
+# Bound to IP: 10.196.167.176
+# Confidential Keycloak + Redis + Dynamic Inference Engine
 # ==========================================================================
 
 services:
+  redis:
+    image: redis:alpine
+    container_name: mcp-redis-uni
+    ports:
+      - "6380:6379"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     image: mcp-backend:latest
     container_name: mcp-backend
     ports:
@@ -23,12 +30,23 @@ services:
     environment:
       - ENV=development
       - PYTHONUNBUFFERED=1
-      - KEYCLOAK_URL=http://host.docker.internal:8080
-      - KEYCLOAK_REALM=mcp-realm
-      - KEYCLOAK_CLIENT_ID=mcp_secure1
+      - REDIS_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
+      - KEYCLOAK_SERVER_URL=http://10.196.167.176:8080
+      - KEYCLOAK_FRONTEND_URL=http://10.196.167.176:8080
+      - KEYCLOAK_REALM=IAF
+      - KEYCLOAK_CLIENT_ID=mcp-client-secure
+      - KEYCLOAK_CLIENT_SECRET=ZkDIyMqzv0kJUe90tjKEvX3jwGZB3ACHS9hpJO0y3i9vteYNAfc9ngI8ga2cwSNucAjpEG7re3864gxrygGkAG
+      - ENABLE_MULTI_KEYCLOAK=false
+      - AGENT_OLLAMA_BASE_URL=http://10.196.167.176:11434
+      - INFERENCE_ENGINE_OPENAPI_URL=http://10.196.167.176:11434
+      - INFERENCE_ENGINE_API_KEY=dummy_api_key_12345
+      - AGENT_MCP_SERVER_URL=http://10.196.167.176:8000/mcp/apps/
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
     restart: unless-stopped
     networks:
       - mcp-network
@@ -42,16 +60,14 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Mount host source code into container
       - ./frontend:/app
-      # Prevent host OS node_modules & .next from overwriting container build
       - /app/node_modules
       - /app/.next
     environment:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
-      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_BE_API_URL=http://10.196.167.176:8000
     command: npm run dev
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -62,7 +78,7 @@ services:
   mock-server:
     build:
       context: ./mock-mcp-server
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     image: mcp-mock-server:latest
     container_name: mcp-mock-server
     ports:

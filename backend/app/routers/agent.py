@@ -227,6 +227,9 @@ def _select_relevant_tools(
     return selected
 
 
+from app.services.inference_model_service import fetch_available_models, get_default_model
+
+
 # =========================================================
 # Prompt & Model Utilities
 # =========================================================
@@ -756,7 +759,7 @@ async def _run_agent_query(
         agent.tools_used_names.clear()
 
     try:
-        result = await agent.run(effective_prompt)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
         rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
         if rescued is not None:
             result = rescued
@@ -764,11 +767,13 @@ async def _run_agent_query(
             result = _append_tool_usage_note(result, agent)
     except Exception as exc:
         logger.warning(f"MCPAgent execution failed ({exc}), falling back to direct LLM response")
-        result = await generate_direct_response(
+        raw_direct = await generate_direct_response(
             effective_prompt,
             model=model,
             additional_instructions=instructions,
         )
+        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools)
+        result = rescued if rescued is not None else raw_direct
 
     return {"response": result, "mode": "mcp_agent"}
 
@@ -853,7 +858,7 @@ async def _run_playground_query(
     )
 
     try:
-        result = await agent.run(effective_prompt)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
         rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
         if rescued is not None:
             result = rescued
@@ -898,9 +903,10 @@ async def _stream_agent_query(
         yield _jsonl_event("meta", mode="mcp_agent", status="thinking")
         result = await runner(request, build_agent_with_model)
         response_text = str(result.get("response") or "").strip()
-        if response_text:
-            async for chunk in _stream_text_chunks(response_text):
-                yield chunk
+        if not response_text:
+            response_text = "No response generated. Please check if tools or model parameters are configured correctly."
+        async for chunk in _stream_text_chunks(response_text):
+            yield chunk
         yield _jsonl_event("end", mode=result.get("mode"))
 
     except HTTPException as exc:
@@ -956,45 +962,18 @@ def create_agent_router(
 
     @router.get("/agent/models")
     async def list_models() -> Dict[str, Any]:
-        base_url = (ENV.agent_ollama_base_url or "").rstrip("/")
-
-        if not base_url:
-            raise HTTPException(
-                status_code=500,
-                detail="Ollama base URL not configured",
-            )
-
         try:
-            async with httpx.AsyncClient(
-                base_url=base_url,
-                timeout=httpx.Timeout(5.0),
-            ) as client:
-                res = await client.get("/api/tags")
-
-            if not res.is_success:
-                raise HTTPException(
-                    status_code=res.status_code,
-                    detail="Failed to fetch Ollama models",
-                )
-
-            payload = res.json()
-            models = [
-                m.get("name")
-                for m in payload.get("models", [])
-                if m.get("name")
-            ]
+            discovered_models = await fetch_available_models()
+            default_mod = discovered_models[0] if discovered_models else "gemma4:31b-cloud"
 
             return {
-                "models": models,
-                "default_model": ENV.agent_ollama_model,
+                "models": discovered_models,
+                "default_model": default_mod,
             }
-
-        except HTTPException:
-            raise
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to reach Ollama server: {exc}",
+                detail=f"Failed to fetch models: {exc}",
             ) from exc
 
     # -----------------------------------------------------

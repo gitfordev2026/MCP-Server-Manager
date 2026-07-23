@@ -654,7 +654,7 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
             if existing:
                 existing.method = tool.method
                 existing.path = tool.path
-                existing.description = tool.description or existing.description
+                existing.description = existing.description or tool.description
                 existing.display_name = tool.title
                 existing.external_id = tool.name
                 existing.registration_state = "selected"
@@ -906,10 +906,11 @@ def build_openapi_candidates(raw_url: str, openapi_path: str | None = "") -> lis
         hostname = (parsed_c.hostname or "").lower()
         port = f":{parsed_c.port}" if parsed_c.port else ""
         if hostname and hostname not in {"host.docker.internal", "localhost", "127.0.0.1"}:
-            fallback_hdi = urlunparse((parsed_c.scheme, f"host.docker.internal{port}", parsed_c.path, "", "", ""))
-            if fallback_hdi not in seen:
-                candidates.append(fallback_hdi)
-                seen.add(fallback_hdi)
+            for fb_host in ["host.docker.internal", "127.0.0.1", "localhost"]:
+                fallback_url = urlunparse((parsed_c.scheme, f"{fb_host}{port}", parsed_c.path, "", "", ""))
+                if fallback_url not in seen:
+                    candidates.append(fallback_url)
+                    seen.add(fallback_url)
 
     def _compose(p: str) -> str:
         return urlunparse((parsed.scheme, parsed.netloc, p, "", "", ""))
@@ -1245,6 +1246,10 @@ async def fetch_openapi_spec_with_diagnostics(
     detail = "Could not fetch a valid OpenAPI spec. "
     if errors:
         detail += "Tried: " + "; ".join(dict.fromkeys(errors))
+        if any("ConnectTimeout" in err for err in errors):
+            parsed = urlparse(raw_url)
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            detail += f" (Note: If port {port} is running on the host OS, allow Docker bridge traffic via firewall: 'sudo ufw allow {port}/tcp')"
     return {
         "ok": False,
         "spec": None,

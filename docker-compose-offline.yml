@@ -1,11 +1,20 @@
 # ==========================================================================
 # MCP SERVER MANAGER - 100% AIRGAPPED & OFFLINE DOCKER COMPOSE MANIFEST
 # ==========================================================================
-# This manifest allows running the entire MCP Server Manager platform in an
-# airgapped / offline environment with zero outbound internet access.
+# Bound to IP: 10.196.167.176
+# Confidential Keycloak + Redis + Dynamic Inference Engine
 # ==========================================================================
 
 services:
+  redis:
+    image: redis:alpine
+    container_name: mcp-redis
+    ports:
+      - "6380:6379"
+    restart: unless-stopped
+    networks:
+      - mcp-internal-net
+
   backend:
     build:
       context: ./backend
@@ -17,14 +26,24 @@ services:
       - "8099:8099"
     environment:
       - ENV=production
-      - KEYCLOAK_URL=http://host.docker.internal:8080
-      - KEYCLOAK_REALM=mcp-realm
-      - KEYCLOAK_CLIENT_ID=mcp_secure1
+      - REDIS_ENABLED=true
+      - REDIS_URL=redis://redis:6379/0
+      - KEYCLOAK_SERVER_URL=http://10.196.167.176:8080
+      - KEYCLOAK_FRONTEND_URL=http://10.196.167.176:8080
+      - KEYCLOAK_REALM=IAF
+      - KEYCLOAK_CLIENT_ID=mcp-client-secure
+      - KEYCLOAK_CLIENT_SECRET=ZkDIyMqzv0kJUe90tjKEvX3jwGZB3ACHS9hpJO0y3i9vteYNAfc9ngI8ga2cwSNucAjpEG7re3864gxrygGkAG
       - ENABLE_MULTI_KEYCLOAK=false
+      - AGENT_OLLAMA_BASE_URL=http://10.196.167.176:11434
+      - INFERENCE_ENGINE_OPENAPI_URL=http://10.196.167.176:11434
+      - INFERENCE_ENGINE_API_KEY=dummy_api_key_12345
+      - AGENT_MCP_SERVER_URL=http://10.196.167.176:8000/mcp/apps/
     volumes:
       - ./backend/app:/app
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
     restart: unless-stopped
     networks:
       - mcp-internal-net
@@ -39,7 +58,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_BE_API_URL=http://10.196.167.176:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

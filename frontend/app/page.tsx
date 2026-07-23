@@ -36,7 +36,7 @@ export default function LandingPage() {
         router.push('/dashboard');
         return;
       }
-      await redirectToLogin(config);
+      await redirectToLogin(config, true);
     } catch (err) {
       console.error('Failed to trigger Keycloak login:', err);
       setLoggingIn(false);

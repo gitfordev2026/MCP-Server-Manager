@@ -934,7 +934,25 @@ export default function RegisterAppPage() {
                 </h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Application: <span className="font-semibold text-slate-800 dark:text-slate-200">{selectedAppName}</span> (database-backed controls)</p>
               </div>
-              <Button variant="secondary" onClick={() => setSelectedAppName(null)}>Close</Button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Model</label>
+                  <select
+                    value={llmModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                    className="min-w-[180px] px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  >
+                    {llmModels.length === 0 && <option value="">No models found</option>}
+                    {llmModels.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  {llmModelError && <span className="text-xs text-rose-500">{llmModelError}</span>}
+                </div>
+                <Button variant="secondary" onClick={() => setSelectedAppName(null)}>Close</Button>
+              </div>
             </div>
 
             <div className="p-4 flex-1 overflow-auto">
