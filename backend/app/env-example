@@ -1,0 +1,73 @@
+ 
+ 
+ #------------frontend------------
+ # Backend API URL for frontend (required for Next.js)
+ NEXT_PUBLIC_BE_API_URL=http://127.0.0.1:8000
+
+
+ #------------keycloak------------
+ # Toggle auth
+# AUTH_ENABLED=false
+AUTH_ENABLED=true
+ 
+
+MCP_MANAGER_NAME="MCP SERVER MANAGER(Combined)"
+
+MCP_USE_ANONYMIZED_TELEMETRY=false
+
+# Toggle multi-keycloak mode (set to true later when ops keycloak is required)
+ENABLE_MULTI_KEYCLOAK=false
+
+# Keycloak server + realm
+KEYCLOAK_SERVER_URL=http://127.0.0.1:8080
+KEYCLOAK_FRONTEND_URL=http://localhost:8080
+KEYCLOAK_REALM=mcp-realm
+KEYCLOAK_CLIENT_ID=mcp_secure1
+
+ 
+ # Public clients don't get client_id in the aud claim — disable for now.
+ # To re-enable, add an "audience" protocol mapper in Keycloak for mcp_server.
+ KEYCLOAK_VERIFY_AUD=true
+# Set to false to disable SSL certificate verification in dev environments with self-signed HTTPS certs
+KEYCLOAK_VERIFY_SSL=true
+
+ 
+ 
+ 
+ #------------database------------
+ 
+ DATABASE_URL=postgresql://langfuse:langfuse@127.0.0.1:5432/mcp_manager_8
+ 
+ # Set to true to fallback to SQLite if PostgreSQL is unavailable
+ 
+ DB_FALLBACK_SQLITE=true
+
+#------------keycloak service-to-service (ADM domain)------------
+ADM_KEYCLOAK_SERVER_URL=http://127.0.0.1:8080/realms/mcp-realm/protocol/openid-connect/token
+ADM_KEYCLOAK_REALM=mcp-realm
+ADM_KEYCLOAK_CLIENT_ID=mcp_secure1
+ADM_KEYCLOAK_CLIENT_SECRET=MXPDo5pOcCA0wOrPKV8vz2jzxJIadvZY8LdexNR2yWEqmsuF0TjF25YxMZGjAgNUNyWGHjC2tbizEaHlXbHC7T
+
+# OPS domain (same realm, same client — mirror ADM since all apps are in IAF)
+OPS_KEYCLOAK_SERVER_URL=http://127.0.0.1:8080/realms/mcp-realm/protocol/openid-connect/token
+OPS_KEYCLOAK_REALM=mcp-realm
+OPS_KEYCLOAK_CLIENT_ID=mcp_secure1
+OPS_KEYCLOAK_CLIENT_SECRET=MXPDo5pOcCA0wOrPKV8vz2jzxJIadvZY8LdexNR2yWEqmsuF0TjF25YxMZGjAgNUNyWGHjC2tbizEaHlXbHC7T
+
+#------------redis cache------------
+REDIS_ENABLED=true
+REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_STATUS_TTL_SEC=5
+REDIS_LIST_TTL_SEC=5
+
+# -----------OLLAMA---------------
+AGENT_OLLAMA_BASE_URL=http://127.0.0.1:11434
+
+
+# --------Testing MCP server-------------
+AGENT_MCP_SERVER_URL=http://127.0.0.1:8000/mcp/apps/
+
+# --------Health Monitor-------------
+HEALTH_MONITOR_INTERVAL_SEC=30
+HEALTH_MONITOR_FAILURE_THRESHOLD=3
+HEALTH_MONITOR_TIMEOUT_SEC=8

@@ -1,0 +1,21 @@
+# frontend/Dockerfile.dev - Airgapped Development Ready
+FROM node:20-slim
+
+WORKDIR /app
+
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV WATCHPACK_POLLING=true
+ENV CHOKIDAR_USEPOLLING=true
+
+COPY package.json package-lock.json* ./
+COPY node_modules* ./node_modules/
+
+# Install dependencies if node_modules is missing
+RUN if [ ! -d "./node_modules/next" ] || [ ! -d "./node_modules/typescript" ]; then npm ci ; fi
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
