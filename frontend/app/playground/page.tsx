@@ -582,7 +582,7 @@ export default function PlaygroundPage() {
                                         <div className="flex flex-col">
                                             <div
                                                 className={`px-5 py-4 rounded-2xl transition-all duration-200 ${message.role === 'user'
-                                                        ? 'bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-br-none shadow-md'
+                                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-none shadow-lg shadow-blue-500/20'
                                                         : 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-bl-none border border-slate-200 dark:border-slate-700 shadow-xs'
                                                     }`}
                                             >
@@ -655,7 +655,7 @@ export default function PlaygroundPage() {
                                             )}
                                         </div>
                                         {message.role === 'user' && (
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center flex-shrink-0 shadow-md">
+                                            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-blue-500/30">
                                                 <span className="text-white text-xs font-bold">U</span>
                                             </div>
                                         )}

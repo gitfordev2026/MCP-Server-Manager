@@ -216,6 +216,30 @@ class RolePermissionModel(Base):
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 
 
+class FeatureAccessModel(Base):
+    __tablename__ = "feature_access"
+    __table_args__ = (UniqueConstraint("role_name", "feature_key", name="uq_role_feature"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    role_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    feature_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class UserRoleAssignmentModel(Base):
+    __tablename__ = "user_role_assignments"
+    __table_args__ = (UniqueConstraint("username", name="uq_user_role_assignment"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(128), nullable=False)
+    role_name: Mapped[str] = mapped_column(String(64), nullable=False, default="operator")
+    created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
+    updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+
+
+
 class AuditLogModel(Base):
     __tablename__ = "audit_logs"
 

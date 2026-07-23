@@ -2,3 +2,13 @@
 node_modules/
 *.log
 .venv/
+
+*.tar.gz
+
+
+# Air-gapped artifacts
+*.tar
+*.tar.gz
+*_airgapped
+*_airgapped-dev
+airgap_bundle/

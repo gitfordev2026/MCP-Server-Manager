@@ -522,8 +522,13 @@ export default function AdminPanelPage() {
     const q = toolSearch.toLowerCase();
     return tools.filter(
       (t) =>
-        t.source_type === 'mcp' &&
-        (!q || t.name.toLowerCase().includes(q) || t.owner_id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+        !q ||
+        t.name.toLowerCase().includes(q) ||
+        t.owner_id.toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q) ||
+        (t.source_type || '').toLowerCase().includes(q) ||
+        (t.method || '').toLowerCase().includes(q) ||
+        (t.path || '').toLowerCase().includes(q)
     );
   }, [tools, toolSearch]);
 
