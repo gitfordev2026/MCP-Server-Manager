@@ -512,31 +512,27 @@ export default function RegisterAppPage() {
         throw new Error('Enable the endpoint first, then save description.');
       }
 
-      await syncCatalog();
-      const payload = await http<{
-        tools: Array<{
-          id: number;
-          owner_id: string;
-          source_type: string;
-          method?: string;
-          path?: string;
-          current_version?: string;
-        }>
-      }>('/tools?include_inactive=true');
-      const dbEndpoint = (payload.tools || []).find(
-        (item) =>
-          item.owner_id === `app:${selectedAppName}` &&
-          item.source_type === 'openapi' &&
-          `${(item.method || '').toUpperCase()} ${item.path || ''}` === endpoint.id
-      );
-      if (!dbEndpoint) {
-        throw new Error('Endpoint record not found in registry. Re-enable and try again.');
+      // Use the by-endpoint route to avoid race with catalog sync.
+      // endpoint.id is "METHOD /path" e.g. "GET /items"
+      const [method, ...pathParts] = endpoint.id.split(' ');
+      const path = pathParts.join(' ');
+
+      const res = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/tools/by-endpoint`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: `app:${selectedAppName}`,
+          method: method,
+          path: path,
+          description: nextDescription,
+          version: endpoint.current_version || '1.0.0',
+        }),
+      });
+      if (!res.ok) {
+        const errPayload = await res.json().catch(() => ({}));
+        throw new Error(errPayload?.detail || 'Failed to update endpoint description');
       }
 
-      await http(`/tools/${dbEndpoint.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ description: nextDescription, version: dbEndpoint.current_version || endpoint.current_version || '1.0.0' }),
-      });
       setRegisteredEndpoints((prev) =>
         prev.map((item) =>
           item.id === endpoint.id ? { ...item, description: nextDescription } : item

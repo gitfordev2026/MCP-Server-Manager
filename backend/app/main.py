@@ -20,6 +20,8 @@ from fastmcp.tools.tool import Tool as FastMCPTool, ToolResult
 from sqlalchemy import (
     select,
     inspect,
+    or_,
+    and_,
 )
 
 # Allow running from the `backend/` directory (e.g. `uvicorn app.main:app`).
@@ -168,6 +170,9 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
     expose_headers=["Mcp-Session-Id", "mcp-session-id", "MCP-Session-Id"],
 )
+
+from app.core.hmac_middleware import HMACVerificationMiddleware
+app.add_middleware(HMACVerificationMiddleware)
 
 
 if AUTH_ENABLED:
@@ -610,9 +615,15 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 else []
             )
             endpoint_key = f"{tool.method.upper()} {tool.path}"
-            # Backward compatible matching: allow method+path key or tool name.
+            norm_path = tool.path.rstrip('/') or '/'
+            selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_endpoints}
+
+            # Flexible matching: allow method+path key, tool name, exact path, or normalized path
             is_selected = not selected_endpoints or (
-                endpoint_key in selected_endpoints or tool.name in selected_endpoints
+                endpoint_key in selected_endpoints
+                or tool.name in selected_endpoints
+                or tool.path in selected_endpoints
+                or norm_path in selected_paths
             )
             if not is_selected:
                 continue
@@ -644,21 +655,36 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                     default=str,
                 ).encode("utf-8")
             ).hexdigest()
+            # Look up by stable key: owner_id + source_type + method + path.
+            # This is more robust than name which can change across syncs.
+            norm_path_key = tool.path.rstrip('/') or '/'
             existing = db.scalar(
                 select(MCPToolModel).where(
                     MCPToolModel.source_type == "openapi",
                     MCPToolModel.owner_id == owner_id,
-                    MCPToolModel.name == tool.name,
+                    or_(
+                        and_(MCPToolModel.method == tool.method, MCPToolModel.path == tool.path),
+                        and_(MCPToolModel.method == tool.method, MCPToolModel.path == norm_path_key),
+                    ),
                 )
             )
             if existing:
+                existing.name = tool.name          # update name in case sanitization changed
                 existing.method = tool.method
                 existing.path = tool.path
-                existing.description = tool.description or existing.description
+                # NEVER overwrite user-set description.
+                # Only update description if current value is blank (never been customized).
+                if not (existing.description or "").strip():
+                    existing.description = tool.description or ""
                 existing.display_name = tool.title
                 existing.external_id = tool.name
                 existing.registration_state = "selected"
                 existing.exposure_state = "active"
+                # Restore soft-deleted tools on re-sync.
+                if existing.is_deleted:
+                    existing.is_deleted = False
+                    existing.owner_enabled = True
+                    existing.is_enabled = bool(existing.admin_enabled and existing.owner_enabled)
                 existing.last_discovered_on = synced_at
                 existing.last_synced_on = synced_at
                 existing.source_updated_on = synced_at
@@ -1354,21 +1380,33 @@ async def build_openapi_tool_catalog(
                 for row in rows
             ]
 
-        async def fetch_one(base_url: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-            with SessionLocal() as fetch_db:
-                outcome = await fetch_openapi_spec_with_diagnostics(
-                    raw_url=base_url["url"],
-                    openapi_path=base_url.get("openapi_path") or "",
-                    retries=retries,
-                    domain_type=base_url["domain_type"],
-                    db=fetch_db,
-                )
-            return base_url, outcome
+        # Skip apps with blank/invalid URLs before attempting any network calls.
+        valid_base_urls = [bu for bu in base_urls if (bu.get("url") or "").strip().startswith(("http://", "https://"))]
+        skipped = [bu["name"] for bu in base_urls if bu not in valid_base_urls]
+        if skipped:
+            sync_errors_early = [f"{name}: skipped — invalid or missing URL" for name in skipped]
+        else:
+            sync_errors_early = []
 
-        fetched = await asyncio.gather(*(fetch_one(item) for item in base_urls))
+        async def fetch_one(base_url: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+            try:
+                with SessionLocal() as fetch_db:
+                    outcome = await fetch_openapi_spec_with_diagnostics(
+                        raw_url=base_url["url"],
+                        openapi_path=base_url.get("openapi_path") or "",
+                        retries=retries,
+                        domain_type=base_url["domain_type"],
+                        db=fetch_db,
+                    )
+                return base_url, outcome
+            except Exception as exc:
+                # Return a synthetic error outcome so one bad app doesn't crash the whole catalog build.
+                return base_url, {"ok": False, "error": str(exc), "spec": None}
+
+        fetched = await asyncio.gather(*(fetch_one(item) for item in valid_base_urls))
 
         tools: dict[str, OpenAPIToolDefinition] = {}
-        sync_errors: list[str] = []
+        sync_errors: list[str] = list(sync_errors_early)  # carry forward any URL-skipped errors
         app_diagnostics: list[dict[str, Any]] = []
         existing_names: set[str] = set()
 
@@ -1413,7 +1451,15 @@ async def build_openapi_tool_catalog(
                 selected_endpoints = [str(item).strip() for item in (base_url.get("selected_endpoints") or []) if str(item).strip()]
                 if selected_endpoints:
                     endpoint_key = f"{tool.method.upper()} {tool.path}"
-                    if endpoint_key not in selected_endpoints and tool.name not in selected_endpoints:
+                    norm_path = tool.path.rstrip('/') or '/'
+                    selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_endpoints}
+                    is_match = (
+                        endpoint_key in selected_endpoints
+                        or tool.name in selected_endpoints
+                        or tool.path in selected_endpoints
+                        or norm_path in selected_paths
+                    )
+                    if not is_match:
                         continue
                 if tool.name in tools:
                     renamed = choose_unique_tool_name(tool.name, existing_names)
@@ -1980,6 +2026,7 @@ app.include_router(
         write_audit_log,
         AuditLogModel,
         get_request_actor,
+        build_openapi_tool_catalog_fn=build_openapi_tool_catalog,
     ),
     tags=["Applications"],
 )

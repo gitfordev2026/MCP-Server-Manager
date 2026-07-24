@@ -61,7 +61,11 @@ export default function ChatPage() {
         }
         const modelList = Array.isArray(payload.models) ? payload.models : [];
         setModels(modelList);
-        setModel(payload.default_model || modelList[0] || '');
+        const defaultModel = typeof payload.default_model === 'string' ? payload.default_model : '';
+        const initialModel = (defaultModel && modelList.includes(defaultModel))
+          ? defaultModel
+          : (modelList[0] || defaultModel || '');
+        setModel(initialModel);
         setModelError(null);
       } catch (err) {
         console.error('Failed to load models:', err);
@@ -109,7 +113,7 @@ export default function ChatPage() {
         throw new Error('No model selected. Please select a model and try again.');
       }
       await streamAgentResponse({
-        url: `${NEXT_PUBLIC_BE_API_URL}/agent/query/stream`,
+        url: `/api/proxy/agent/query/stream`,
         body: {
           prompt,
           model,
@@ -240,7 +244,10 @@ export default function ChatPage() {
                   onChange={(e) => setModel(e.target.value)}
                   className="min-w-[220px] px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
-                  {models.length === 0 && <option value="">No models found</option>}
+                  {models.length === 0 && !model && <option value="">No models found</option>}
+                  {model && !models.includes(model) && (
+                    <option value={model}>{model}</option>
+                  )}
                   {models.map((name) => (
                     <option key={name} value={name}>
                       {name}

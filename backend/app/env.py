@@ -18,7 +18,7 @@ def _parse_env_keys(env_path: Path) -> list[str]:
     return keys
 
 
-def _resolve_env_file() -> Path:
+def _resolve_env_file() -> Path | None:
     current_dir = Path(__file__).resolve().parent
     candidates = [
         current_dir / ".env",
@@ -27,18 +27,19 @@ def _resolve_env_file() -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise RuntimeError("No backend env file found. Expected backend/.env or project .env")
+    return None
 
 
 @dataclass(frozen=True)
 class BackendEnv:
-    env_file: Path
+    env_file: Path | None
     mcp_manager_name: str
     auth_enabled: bool
     keycloak_server_url: str
     keycloak_frontend_url: str
     keycloak_realm: str
     keycloak_client_id: str
+    keycloak_client_secret: str
     keycloak_verify_aud: bool
     keycloak_verify_ssl: bool
     database_url: str
@@ -53,6 +54,7 @@ class BackendEnv:
     agent_mcp_server_url: str
     agent_ollama_model: str
     agent_ollama_base_url: str
+    hmac_secret_key: str
     agent_ollama_temperature: float
     agent_debug_callbacks: bool
     health_monitor_interval_sec: int
@@ -72,16 +74,16 @@ class BackendEnv:
 
 def load_backend_env() -> BackendEnv:
     env_file = _resolve_env_file()
-    env_keys = _parse_env_keys(env_file)
+    if env_file:
+        env_keys = _parse_env_keys(env_file)
+        load_dotenv(env_file, override=False)
 
-    load_dotenv(env_file, override=False)
-
-    missing = [key for key in env_keys if os.getenv(key) is None]
-    if missing:
-        raise RuntimeError(
-            "Failed to load all backend env vars. Missing keys after dotenv load: "
-            + ", ".join(sorted(missing))
-        )
+        missing = [key for key in env_keys if os.getenv(key) is None]
+        if missing:
+            raise RuntimeError(
+                "Failed to load all backend env vars. Missing keys after dotenv load: "
+                + ", ".join(sorted(missing))
+            )
 
     return BackendEnv(
         env_file=env_file,
@@ -91,6 +93,7 @@ def load_backend_env() -> BackendEnv:
         keycloak_frontend_url=os.getenv("KEYCLOAK_FRONTEND_URL", "").strip().rstrip("/") or os.getenv("KEYCLOAK_SERVER_URL", "").strip().rstrip("/").replace("host.docker.internal", "localhost"),
         keycloak_realm=os.getenv("KEYCLOAK_REALM", "").strip(),
         keycloak_client_id=os.getenv("KEYCLOAK_CLIENT_ID", "").strip(),
+        keycloak_client_secret=os.getenv("KEYCLOAK_CLIENT_SECRET", "").strip(),
         keycloak_verify_aud=os.getenv("KEYCLOAK_VERIFY_AUD", "true").strip().lower() == "true",
         keycloak_verify_ssl=os.getenv("KEYCLOAK_VERIFY_SSL", "true").strip().lower() == "true",
         database_url=os.getenv("DATABASE_URL", "").strip(),
@@ -107,6 +110,7 @@ def load_backend_env() -> BackendEnv:
         ),
         agent_ollama_model=os.getenv("AGENT_OLLAMA_MODEL", "gemma4:31b-cloud").strip() or "gemma4:31b-cloud",
         agent_ollama_base_url=os.getenv("AGENT_OLLAMA_BASE_URL", "http://localhost:11434").strip(),
+        hmac_secret_key=os.getenv("HMAC_SECRET_KEY", "").strip(),
         agent_ollama_temperature=float(os.getenv("AGENT_OLLAMA_TEMPERATURE", "0.7").strip()),
         agent_debug_callbacks=os.getenv("AGENT_DEBUG_CALLBACKS", "true").strip().lower() == "true",
         health_monitor_interval_sec=int(os.getenv("HEALTH_MONITOR_INTERVAL_SEC", "30").strip()),

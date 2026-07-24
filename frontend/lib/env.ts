@@ -5,10 +5,7 @@ function readRequiredEnv(value: string | undefined, key: string): string {
   return value.trim();
 }
 
-const NEXT_PUBLIC_BE_API_URL = readRequiredEnv(
-  process.env.NEXT_PUBLIC_BE_API_URL,
-  "NEXT_PUBLIC_BE_API_URL"
-);
+const NEXT_PUBLIC_BE_API_URL = '/api/proxy';
 // const NEXT_PUBLIC_API_URL = readRequiredEnv(
 //   process.env.NEXT_PUBLIC_API_URL,
 //   "NEXT_PUBLIC_API_URL"

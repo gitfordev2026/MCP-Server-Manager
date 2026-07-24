@@ -14,16 +14,146 @@ Endpoints:
 
 from __future__ import annotations
 
+import os
 import random
 import datetime
+import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+import httpx
+
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastmcp import FastMCP
 import uvicorn
+
+logger = logging.getLogger("mock_server")
+
+# ─────────────────────────────────────────────────────────────
+#  Keycloak Configuration
+# ─────────────────────────────────────────────────────────────
+KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://host.docker.internal:8080").rstrip("/")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "mcp-realm")
+KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "")
+KEYCLOAK_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("true", "1", "yes")
+
+security_scheme = HTTPBearer(auto_error=False)
+
+async def get_confidential_client_token(
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> dict[str, Any]:
+    cid = client_id or KEYCLOAK_CLIENT_ID
+    csecret = client_secret or KEYCLOAK_CLIENT_SECRET
+    if not cid or not csecret:
+        raise HTTPException(
+            status_code=400,
+            detail="Client ID and Client Secret are required to authenticate as a Confidential Client. Set KEYCLOAK_CLIENT_ID and KEYCLOAK_CLIENT_SECRET or pass them in request."
+        )
+
+    token_endpoint = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+    urls_to_try = [
+        token_endpoint,
+        token_endpoint.replace("host.docker.internal", "localhost"),
+        token_endpoint.replace("host.docker.internal", "developer-api-keycloak-1"),
+        token_endpoint.replace("localhost", "developer-api-keycloak-1"),
+        token_endpoint.replace("host.docker.internal", "keycloak"),
+    ]
+    seen = set()
+    candidates = [u for u in urls_to_try if not (u in seen or seen.add(u))]
+
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": cid,
+        "client_secret": csecret,
+    }
+
+    last_err = None
+    async with httpx.AsyncClient(timeout=6.0, verify=False) as client:
+        for url in candidates:
+            try:
+                res = await client.post(url, data=data)
+                if res.is_success:
+                    return res.json()
+                elif res.status_code in (400, 401):
+                    raise HTTPException(
+                        status_code=res.status_code,
+                        detail=f"Keycloak client authentication failed ({res.status_code}): {res.text}"
+                    )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                last_err = str(exc)
+                continue
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"Could not connect to Keycloak token endpoint: {last_err}"
+    )
+
+async def verify_keycloak_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme)
+) -> dict[str, Any]:
+    if not REQUIRE_AUTH:
+        return {"sub": "anonymous", "preferred_username": "anonymous", "auth_status": "disabled"}
+
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header or Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    userinfo_endpoint = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo"
+
+    urls_to_try = [
+        userinfo_endpoint,
+        userinfo_endpoint.replace("host.docker.internal", "localhost"),
+        userinfo_endpoint.replace("host.docker.internal", "developer-api-keycloak-1"),
+        userinfo_endpoint.replace("localhost", "developer-api-keycloak-1"),
+        userinfo_endpoint.replace("host.docker.internal", "keycloak"),
+    ]
+    seen = set()
+    candidates = [u for u in urls_to_try if not (u in seen or seen.add(u))]
+
+    user_data = None
+    last_err = None
+
+    async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+        for url in candidates:
+            try:
+                res = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+                if res.is_success:
+                    user_data = res.json()
+                    break
+                elif res.status_code in (401, 403):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid or expired Keycloak access token",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                last_err = str(exc)
+                continue
+
+    if user_data is not None:
+        return user_data
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=f"Keycloak verification failed. Could not reach Keycloak userinfo endpoint: {last_err}",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -46,7 +176,31 @@ _notes: dict[str, dict] = {
 mcp = FastMCP("MockDevServer")
 
 
-# ═════════════ TOOLS ═════════════════════════════════════════
+@mcp.tool
+def call_external_protected_api(target_url: str, client_id: str = "", client_secret: str = "") -> dict:
+    """Act as a Confidential Client: Fetch Keycloak M2M token and call a downstream protected API."""
+    import asyncio
+    async def _run():
+        token_data = await get_confidential_client_token(
+            client_id=client_id or None,
+            client_secret=client_secret or None,
+        )
+        access_token = token_data.get("access_token")
+        if not access_token:
+            return {"error": "Failed to acquire token from Keycloak"}
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            res = await client.get(target_url, headers={"Authorization": f"Bearer {access_token}"})
+            return {
+                "target_url": target_url,
+                "status_code": res.status_code,
+                "response": res.json() if "application/json" in res.headers.get("content-type", "") else res.text,
+            }
+
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:
+        return {"error": f"Failed to invoke protected API: {exc}"}
 
 @mcp.tool
 def add(a: float, b: float) -> float:
@@ -221,18 +375,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Mount MCP ASGI app at root
-# Since mcp_app is configured with path="/mcp", it will only intercept
-# exactly /mcp and /mcp/messages, avoiding standard FastAPI router 307 redirects
-# for trailing slashes when interacting with external MCP clients.
 app.mount("/mcp/", mcp_app)
+
+# ─────────────────────────────────────────────────────────────
+#  5. Mount Individual Sub-Apps (Independent FastAPI instances)
+# ─────────────────────────────────────────────────────────────
+from inventory_app import app as inventory_fastapi_app
+from portal_app import app as portal_fastapi_app
+from analytics_app import app as analytics_fastapi_app
+
+app.mount("/apps/inventory", inventory_fastapi_app)
+app.mount("/apps/portal", portal_fastapi_app)
+app.mount("/apps/analytics", analytics_fastapi_app)
 
 
 # ──── Pydantic models ────────────────────────────────────────
@@ -250,8 +404,19 @@ class EchoRequest(BaseModel):
     message: str
     repeat:  int = 1
 
+class ClientCredentialsRequest(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
 
-# ═════════════ REST — Health ══════════════════════════════════
+class CallAppRequest(BaseModel):
+    target_url: str
+    method: str = "GET"
+    client_id: str | None = None
+    client_secret: str | None = None
+    json_body: dict[str, Any] | None = None
+
+
+# ═════════════ REST — Health & Auth ═══════════════════════════
 
 @app.get("/", tags=["Health"])
 def root():
@@ -263,21 +428,321 @@ def health():
 
 @app.get("/info", tags=["Health"])
 def info():
-    return {"server": "MockDevServer", "version": "1.0.0", "mcp_url": "/mcp/", "docs": "/docs"}
+    return {
+        "server": "MockDevServer", 
+        "version": "1.0.0", 
+        "mcp_url": "/mcp/", 
+        "docs": "/docs",
+        "keycloak_realm": KEYCLOAK_REALM,
+        "auth_required": REQUIRE_AUTH,
+    }
+
+@app.get("/auth/config", tags=["Auth"])
+def auth_config():
+    issuer = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}"
+    return {
+        "realm": KEYCLOAK_REALM,
+        "issuer": issuer,
+        "token_endpoint": f"{issuer}/protocol/openid-connect/token",
+        "userinfo_endpoint": f"{issuer}/protocol/openid-connect/userinfo",
+        "jwks_uri": f"{issuer}/protocol/openid-connect/certs",
+        "auth_required": REQUIRE_AUTH,
+    }
+
+@app.post("/auth/client-token", tags=["Auth"])
+async def get_client_token(req: ClientCredentialsRequest | None = None):
+    """Act as a Confidential Client: Fetch M2M Access Token from Keycloak using client_credentials grant."""
+    cid = req.client_id if req else None
+    csec = req.client_secret if req else None
+    return await get_confidential_client_token(client_id=cid, client_secret=csec)
+
+@app.post("/proxy/call-protected-app", tags=["Confidential Client Testing"])
+async def call_protected_app(req: CallAppRequest):
+    """Act as a Confidential Client: Acquire Keycloak token via client_credentials and invoke a downstream protected API/app."""
+    token_data = await get_confidential_client_token(client_id=req.client_id, client_secret=req.client_secret)
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(500, "Failed to retrieve access token from Keycloak")
+
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+
+    async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+        try:
+            res = await client.request(
+                method=req.method.upper(),
+                url=req.target_url,
+                headers=headers,
+                json=req.json_body if req.json_body else None,
+            )
+            return {
+                "target_url": req.target_url,
+                "status_code": res.status_code,
+                "token_type": token_data.get("token_type"),
+                "expires_in": token_data.get("expires_in"),
+                "response": res.json() if "application/json" in res.headers.get("content-type", "") else res.text,
+            }
+        except Exception as exc:
+            raise HTTPException(502, f"Error communicating with target application: {exc}")
+
+@app.get("/protected/data", tags=["Protected"])
+def protected_data(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "status": "authenticated",
+        "user": user,
+        "message": f"Successfully accessed Keycloak protected API as {user.get('preferred_username', 'user')}",
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+    }
+
+
+# ═════════════ SIMULATED DUMMY APPS (SAME KEYCLOAK REALM) ═════════════════
+
+SIMULATED_APPS = [
+    {
+        "id": "inventory-app",
+        "name": "Inventory & Supply Chain API",
+        "client_type": "confidential",
+        "client_id": "adm-client",
+        "realm": KEYCLOAK_REALM,
+        "port": 8002,
+        "base_url": "http://localhost:8002",
+        "openapi_path": "/openapi.json",
+        "description": "Enterprise inventory tracking API running on port 8002 requiring M2M Confidential Client authentication."
+    },
+    {
+        "id": "portal-app",
+        "name": "Customer Portal API",
+        "client_type": "public",
+        "client_id": "mcp-client",
+        "realm": KEYCLOAK_REALM,
+        "port": 8003,
+        "base_url": "http://localhost:8003",
+        "openapi_path": "/openapi.json",
+        "description": "User-facing portal API running on port 8003 requiring Keycloak Bearer token authentication."
+    },
+    {
+        "id": "analytics-app",
+        "name": "Analytics & Reporting API",
+        "client_type": "confidential",
+        "client_id": "ops-client",
+        "realm": KEYCLOAK_REALM,
+        "port": 8004,
+        "base_url": "http://localhost:8004",
+        "openapi_path": "/openapi.json",
+        "description": "High-performance analytics data service running on port 8004 requiring Confidential Client authentication."
+    }
+]
+
+@app.get("/apps/catalog", tags=["Simulated Apps"])
+def list_simulated_apps():
+    """List all simulated applications available for registration in the MCP Server Manager."""
+    return {"apps": SIMULATED_APPS, "realm": KEYCLOAK_REALM, "total": len(SIMULATED_APPS)}
+
+# -------------------------------------------------------------
+# 1. App: Inventory & Supply Chain API (/apps/inventory)
+# -------------------------------------------------------------
+@app.get("/apps/inventory/openapi.json", tags=["Simulated App - Inventory"])
+def inventory_openapi_spec():
+    return {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "Inventory & Supply Chain API",
+            "version": "1.0.0",
+            "description": "Simulated Confidential Client App in mcp-realm"
+        },
+        "servers": [{"url": "http://localhost:8001/apps/inventory"}],
+        "paths": {
+            "/items": {
+                "get": {
+                    "summary": "List Inventory Items",
+                    "operationId": "list_inventory_items",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            },
+            "/stock": {
+                "get": {
+                    "summary": "Check Stock Level",
+                    "operationId": "check_stock_level",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+@app.get("/apps/inventory/items", tags=["Simulated App - Inventory"])
+def inventory_items(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "app": "Inventory & Supply Chain API",
+        "client_type": "confidential",
+        "authenticated_as": user.get("preferred_username") or user.get("sub"),
+        "items": [
+            {"id": "inv-101", "name": "Server Rack Cabinet 42U", "quantity": 14, "warehouse": "A-12"},
+            {"id": "inv-102", "name": "Fiber Optic Patch Cable 10m", "quantity": 350, "warehouse": "B-04"},
+            {"id": "inv-103", "name": "Gigabit Ethernet Switch 48-Port", "quantity": 28, "warehouse": "A-08"},
+        ]
+    }
+
+@app.get("/apps/inventory/stock", tags=["Simulated App - Inventory"])
+def inventory_stock(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "app": "Inventory & Supply Chain API",
+        "total_stock_count": 392,
+        "status": "healthy",
+        "last_updated": datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+    }
+
+# -------------------------------------------------------------
+# 2. App: Customer Portal API (/apps/portal)
+# -------------------------------------------------------------
+@app.get("/apps/portal/openapi.json", tags=["Simulated App - Portal"])
+def portal_openapi_spec():
+    return {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "Customer Portal API",
+            "version": "1.0.0",
+            "description": "Simulated Public Client App in mcp-realm"
+        },
+        "servers": [{"url": "http://localhost:8001/apps/portal"}],
+        "paths": {
+            "/profile": {
+                "get": {
+                    "summary": "Get Customer Profile",
+                    "operationId": "get_customer_profile",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            },
+            "/dashboard": {
+                "get": {
+                    "summary": "Get Portal Dashboard Summary",
+                    "operationId": "get_portal_dashboard",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+@app.get("/apps/portal/profile", tags=["Simulated App - Portal"])
+def portal_profile(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "app": "Customer Portal API",
+        "client_type": "public",
+        "profile": {
+            "username": user.get("preferred_username", "portal_user"),
+            "email": user.get("email", "user@example.com"),
+            "account_status": "Active",
+            "tier": "Enterprise Premium"
+        }
+    }
+
+@app.get("/apps/portal/dashboard", tags=["Simulated App - Portal"])
+def portal_dashboard(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "app": "Customer Portal API",
+        "active_services": 5,
+        "pending_tickets": 0,
+        "system_health": "100% Operational",
+        "last_login": datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+    }
+
+# -------------------------------------------------------------
+# 3. App: Analytics & Reporting API (/apps/analytics)
+# -------------------------------------------------------------
+@app.get("/apps/analytics/openapi.json", tags=["Simulated App - Analytics"])
+def analytics_openapi_spec():
+    return {
+        "openapi": "3.0.3",
+        "info": {
+            "title": "Analytics & Reporting API",
+            "version": "1.0.0",
+            "description": "Simulated Confidential Client App in mcp-realm"
+        },
+        "servers": [{"url": "http://localhost:8001/apps/analytics"}],
+        "paths": {
+            "/metrics": {
+                "get": {
+                    "summary": "Get System Performance Metrics",
+                    "operationId": "get_system_metrics",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            },
+            "/reports": {
+                "get": {
+                    "summary": "Get Executive Summary Report",
+                    "operationId": "get_executive_reports",
+                    "responses": {
+                        "200": {
+                            "description": "Successful Response",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+@app.get("/apps/analytics/metrics", tags=["Simulated App - Analytics"])
+def analytics_metrics(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "app": "Analytics & Reporting API",
+        "client_type": "confidential",
+        "metrics": {
+            "requests_per_second": 1420,
+            "avg_latency_ms": 12.4,
+            "error_rate_pct": 0.01,
+            "cpu_utilization_pct": 34.2,
+            "memory_utilization_pct": 58.7
+        }
+    }
+
+@app.get("/apps/analytics/reports", tags=["Simulated App - Analytics"])
+def analytics_reports(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {
+        "app": "Analytics & Reporting API",
+        "report_id": "rep-99042",
+        "title": "Q3 Infrastructure Efficiency Report",
+        "generated_by": user.get("preferred_username", "m2m_service"),
+        "status": "Final",
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z"
+    }
 
 
 # ═════════════ REST — Users ═══════════════════════════════════
 
 @app.get("/users", tags=["Users"])
-def list_users():
-    return {"users": list(_users.values()), "total": len(_users)}
+def list_users(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {"users": list(_users.values()), "total": len(_users), "authenticated_as": user.get("preferred_username")}
 
 @app.get("/users/{user_id}", tags=["Users"])
-def get_user_rest(user_id: str):
-    user = _users.get(user_id)
-    if not user:
+def get_user_rest(user_id: str, user: dict[str, Any] = Depends(verify_keycloak_token)):
+    u = _users.get(user_id)
+    if not u:
         raise HTTPException(404, f"User '{user_id}' not found")
-    return user
+    return u
 
 @app.post("/users", status_code=201, tags=["Users"])
 def create_user(req: CreateUserRequest):
@@ -298,18 +763,18 @@ def delete_user(user_id: str):
 # ═════════════ REST — Notes ═══════════════════════════════════
 
 @app.get("/notes", tags=["Notes"])
-def list_notes():
-    return {"notes": list(_notes.values()), "total": len(_notes)}
+def list_notes(user: dict[str, Any] = Depends(verify_keycloak_token)):
+    return {"notes": list(_notes.values()), "total": len(_notes), "authenticated_as": user.get("preferred_username")}
 
 @app.get("/notes/{note_id}", tags=["Notes"])
-def get_note(note_id: str):
+def get_note(note_id: str, user: dict[str, Any] = Depends(verify_keycloak_token)):
     note = _notes.get(note_id)
     if not note:
         raise HTTPException(404, f"Note '{note_id}' not found")
     return note
 
 @app.post("/notes", status_code=201, tags=["Notes"])
-def create_note_rest(req: CreateNoteRequest):
+def create_note_rest(req: CreateNoteRequest, user: dict[str, Any] = Depends(verify_keycloak_token)):
     if req.author_id not in _users:
         raise HTTPException(400, f"Author '{req.author_id}' not found")
     nid = f"n{len(_notes) + 1}"

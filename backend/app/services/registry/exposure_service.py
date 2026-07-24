@@ -51,7 +51,8 @@ def resolve_exposable_tools(
                 base_url_model.is_deleted == False,  # noqa: E712
                 base_url_model.is_enabled == True,  # noqa: E712
                 base_url_model.admin_allowed == True,  # noqa: E712
-                base_url_model.health_status.in_(["healthy", "degraded"]),
+                # Allow 'unknown' (never health-checked / newly registered) alongside healthy/degraded
+                base_url_model.health_status.in_(["healthy", "degraded", "unknown"]),
             )
         ).all()
     }

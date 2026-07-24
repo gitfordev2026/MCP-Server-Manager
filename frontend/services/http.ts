@@ -1,11 +1,8 @@
 import { publicEnv } from '@/lib/env';
 import { getStoredToken, clearTokens, storePostLoginRedirect } from '@/lib/auth';
 
-const API_BASE = publicEnv.NEXT_PUBLIC_BE_API_URL;
-
-if (!API_BASE) {
-  throw new Error('NEXT_PUBLIC_BE_API_URL is not configured');
-}
+// Use the local Next.js proxy for all API requests to ensure HMAC signing
+const API_BASE = '/api/proxy';
 
 export function resolveAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') {
@@ -13,7 +10,8 @@ export function resolveAuthHeaders(): Record<string, string> {
   }
   const token = getStoredToken();
   if (token) {
-    return { Authorization: `Bearer ${token}` };
+    // Rely on HttpOnly cookies sent automatically via credentials: 'include'
+    return {};
   }
   return { 'x-user': 'admin', 'x-roles': 'super_admin' };
 }

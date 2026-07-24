@@ -15,15 +15,7 @@ type StreamOptions = {
 };
 
 function resolveHeaders(): Record<string, string> {
-  if (typeof window === 'undefined') {
-    return { 'Content-Type': 'application/json' };
-  }
-
-  const token = getStoredToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  return { 'Content-Type': 'application/json' };
 }
 
 export async function streamAgentResponse({
@@ -34,6 +26,7 @@ export async function streamAgentResponse({
 }: StreamOptions): Promise<void> {
   const response = await fetch(url, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       Accept: 'application/x-ndjson',
       ...resolveHeaders(),

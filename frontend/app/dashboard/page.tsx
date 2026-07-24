@@ -511,7 +511,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!NEXT_PUBLIC_BE_API_URL) return;
-    const wsUrl = NEXT_PUBLIC_BE_API_URL.replace(/^http/i, 'ws').replace(/\/+$/, '') + '/ws/health';
+    
+    // The Next.js API proxy doesn't support WebSockets. 
+    // We construct the WS URL to hit the backend directly.
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const wsHost = isLocalhost ? 'localhost:8000' : window.location.host;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${wsHost}/ws/health`;
 
     const connect = () => {
       if (wsRef.current) {

@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
 from app.env import ENV
@@ -37,6 +37,17 @@ class ToolUpdate(BaseModel):
     is_enabled: bool | None = None
     admin_enabled: bool | None = None
     owner_enabled: bool | None = None
+
+
+class ToolDescriptionByEndpoint(BaseModel):
+    """Used by PATCH /tools/by-endpoint to update a tool description without needing the tool DB id."""
+    model_config = ConfigDict(extra="forbid")
+
+    owner_id: str       # e.g. 'app:inventory-api'
+    method: str         # e.g. 'GET'
+    path: str           # e.g. '/items'
+    description: str    # new description text
+    version: str = "1.0.0"
 
 
 def create_tools_router(
@@ -82,7 +93,8 @@ def create_tools_router(
                         base_url_model.is_deleted == False,  # noqa: E712
                         base_url_model.is_enabled == True,  # noqa: E712
                         base_url_model.admin_allowed == True,  # noqa: E712
-                        base_url_model.health_status.in_(["healthy", "degraded"]),
+                        # Allow 'unknown' (never health-checked / newly registered) alongside healthy/degraded
+                        base_url_model.health_status.in_(["healthy", "degraded", "unknown"]),
                     )
                 ).all()
             }
@@ -245,6 +257,141 @@ def create_tools_router(
             db.commit()
             cache_delete_prefix("status:")
             return {"status": "created", "id": tool.id}
+
+    @router.patch(
+        "/tools/by-endpoint",
+        summary="Update Tool Description by Endpoint",
+        description="Upsert a tool's description by owner_id + method + path. Creates the tool row if missing. Source: backend/app/routers/tools.py",
+    )
+    def update_tool_description_by_endpoint(
+        payload: ToolDescriptionByEndpoint,
+        actor: dict[str, Any] = Depends(require_permission_fn("tool:manage")),
+    ) -> dict[str, Any]:
+        if not payload.description.strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="description cannot be empty")
+
+        method = payload.method.upper()
+        norm_path = payload.path.rstrip('/') or '/'
+
+        with session_local_factory() as db:
+            # Search including soft-deleted — we restore them if they're in selected_endpoints.
+            tool = db.scalar(
+                select(mcp_tool_model).where(
+                    mcp_tool_model.owner_id == payload.owner_id,
+                    mcp_tool_model.method == method,
+                    mcp_tool_model.source_type == "openapi",
+                    or_(
+                        mcp_tool_model.path == payload.path,
+                        mcp_tool_model.path == norm_path,
+                    ),
+                )
+            )
+
+            if tool is None:
+                # Tool row missing — upsert it directly from the app's registration.
+                # This handles: legacy apps, catalog sync failures, endpoints enabled after initial registration.
+                app_name = payload.owner_id.split(":", 1)[1] if ":" in payload.owner_id else payload.owner_id
+                raw_api = db.scalar(select(base_url_model).where(base_url_model.name == app_name))
+                if raw_api is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Application '{app_name}' not found. Register the application first.",
+                    )
+
+                import hashlib, json as _json
+                discovery_hash = hashlib.sha256(
+                    _json.dumps(
+                        {"source_type": "openapi", "owner_id": payload.owner_id, "method": method, "path": payload.path},
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()
+
+                tool = mcp_tool_model(
+                    source_type="openapi",
+                    owner_id=payload.owner_id,
+                    name=f"{app_name}__{method.lower()}_{norm_path.lstrip('/').replace('/', '_').replace('{', '').replace('}', '') or 'root'}",
+                    method=method,
+                    path=payload.path,
+                    description=payload.description.strip(),
+                    display_name=f"{app_name}: {method} {payload.path}",
+                    external_id=f"{method}:{payload.path}",
+                    registration_state="selected",
+                    exposure_state="active",
+                    raw_api_id=raw_api.id,
+                    admin_enabled=True,
+                    owner_enabled=True,
+                    is_enabled=True,
+                    is_deleted=False,
+                    current_version=payload.version,
+                    discovery_hash=discovery_hash,
+                )
+                db.add(tool)
+                db.flush()
+                db.add(
+                    tool_version_model(
+                        tool_id=tool.id,
+                        version=payload.version,
+                        description=payload.description.strip(),
+                        input_schema=None,
+                        output_schema=None,
+                    )
+                )
+                write_audit_log_fn(
+                    db, audit_log_model,
+                    actor=actor.get("username", "system"),
+                    action="tool.upsert.by_endpoint",
+                    resource_type="tool",
+                    resource_id=str(tool.id),
+                    before_state=None,
+                    after_state={"owner_id": tool.owner_id, "method": method, "path": payload.path, "description": tool.description},
+                )
+                db.commit()
+                cache_delete_prefix("status:")
+                return {"status": "created", "id": tool.id, "description": tool.description}
+
+            # Tool row found — update description and restore if soft-deleted.
+            before_state = {"description": tool.description, "current_version": tool.current_version, "is_deleted": tool.is_deleted}
+            tool.description = payload.description.strip()
+            tool.current_version = payload.version
+            # Restore soft-deleted tool when user explicitly saves description.
+            if tool.is_deleted:
+                tool.is_deleted = False
+                tool.owner_enabled = True
+                tool.is_enabled = bool(getattr(tool, "admin_enabled", True))
+                tool.registration_state = "selected"
+                tool.exposure_state = "active"
+
+            version_row = db.scalar(
+                select(tool_version_model).where(
+                    tool_version_model.tool_id == tool.id,
+                    tool_version_model.version == payload.version,
+                )
+            )
+            if version_row:
+                version_row.description = tool.description
+            else:
+                db.add(
+                    tool_version_model(
+                        tool_id=tool.id,
+                        version=payload.version,
+                        description=tool.description,
+                        input_schema=None,
+                        output_schema=None,
+                    )
+                )
+
+            write_audit_log_fn(
+                db, audit_log_model,
+                actor=actor.get("username", "system"),
+                action="tool.update.description_by_endpoint",
+                resource_type="tool",
+                resource_id=str(tool.id),
+                before_state=before_state,
+                after_state={"description": tool.description, "current_version": tool.current_version},
+            )
+            db.commit()
+            cache_delete_prefix("status:")
+            return {"status": "updated", "id": tool.id, "description": tool.description}
 
     @router.patch(
         "/tools/{tool_id}",

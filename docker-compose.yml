@@ -20,12 +20,8 @@ services:
       - "8099:8099"
     volumes:
       - ./backend/app:/app
-    environment:
-      - ENV=development
-      - PYTHONUNBUFFERED=1
-      - KEYCLOAK_URL=http://host.docker.internal:8080
-      - KEYCLOAK_REALM=mcp-realm
-      - KEYCLOAK_CLIENT_ID=mcp_secure1
+    env_file:
+      - ./backend/.env
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -47,11 +43,8 @@ services:
       # Prevent host OS node_modules & .next from overwriting container build
       - /app/node_modules
       - /app/.next
-    environment:
-      - NODE_ENV=development
-      - WATCHPACK_POLLING=true
-      - CHOKIDAR_USEPOLLING=true
-      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
+    env_file:
+      - ./frontend/.env
     command: npm run dev
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -69,9 +62,57 @@ services:
       - "8001:8001"
     volumes:
       - ./mock-mcp-server:/app
-    environment:
-      - ENV=development
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    env_file:
+      - ./mock-mcp-server/.env
+    command: uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  mock-inventory-app:
+    image: mcp-mock-server:latest
+    container_name: mcp-inventory-app
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./mock-mcp-server:/app
+    env_file:
+      - ./mock-mcp-server/.env
+    command: uvicorn inventory_app:app --host 0.0.0.0 --port 8002 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  mock-portal-app:
+    image: mcp-mock-server:latest
+    container_name: mcp-portal-app
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./mock-mcp-server:/app
+    env_file:
+      - ./mock-mcp-server/.env
+    command: uvicorn portal_app:app --host 0.0.0.0 --port 8003 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  mock-analytics-app:
+    image: mcp-mock-server:latest
+    container_name: mcp-analytics-app
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./mock-mcp-server:/app
+    env_file:
+      - ./mock-mcp-server/.env
+    command: uvicorn analytics_app:app --host 0.0.0.0 --port 8004 --reload
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

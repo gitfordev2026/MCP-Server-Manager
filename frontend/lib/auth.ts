@@ -52,11 +52,20 @@ export async function fetchAuthConfig(apiBase: string): Promise<AuthConfig> {
   }
 
   const request = fetch(`${apiBase}/auth/config`)
-    .then((res) => {
+    .then(async (res) => {
       if (!res.ok) {
-        throw new Error(`Failed to fetch auth config: ${res.status}`);
+        const errorText = await res.text().catch(() => "No text");
+        console.error("Proxy returned error:", errorText);
+        throw new Error(`Failed to fetch auth config: ${res.status} - ${errorText}`);
       }
-      return res.json() as Promise<AuthConfig>;
+      const config = await res.json();
+      if (config.token_endpoint) {
+        config.token_endpoint = `${apiBase}/auth/token`;
+      }
+      if (config.logout_endpoint) {
+        config.logout_endpoint = `${apiBase}/auth/logout`;
+      }
+      return config as AuthConfig;
     })
     .catch((err) => {
       authConfigCache.delete(apiBase);
@@ -69,76 +78,24 @@ export async function fetchAuthConfig(apiBase: string): Promise<AuthConfig> {
 
 // ---------- Token storage ----------
 
-// ---------- Cookie Storage Helpers ----------
-
-export function getCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, "\\$1") + "=([^;]*)"));
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-export function setCookie(name: string, value: string, maxAgeSec: number): void {
-  if (typeof document === "undefined") return;
-  const secureFlag = typeof window !== "undefined" && window.location.protocol === "https:" ? "Secure;" : "";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax; ${secureFlag}`;
-}
-
-export function deleteCookie(name: string): void {
-  if (typeof document === "undefined") return;
-  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax;`;
-}
+// We now use secure HttpOnly cookies set by the backend.
+// The frontend only tracks a non-sensitive boolean flag for UI state.
+const AUTH_FLAG_KEY = "mcp_is_authenticated";
 
 export function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-
-  // 1. Try Cookie first
-  let token = getCookie(TOKEN_KEY);
-  let expiryStr = getCookie(EXPIRY_KEY);
-
-  // 2. Fallback to localStorage
-  if (!token) {
-    token = localStorage.getItem(TOKEN_KEY);
-    expiryStr = localStorage.getItem(EXPIRY_KEY);
-  }
-
-  if (!token) return null;
-
-  if (expiryStr) {
-    const expiry = parseInt(expiryStr, 10);
-    // Consider expired 30 s early to avoid edge-case failures.
-    if (Date.now() >= expiry - 30_000) return null;
-  }
-
-  return token;
+  return localStorage.getItem(AUTH_FLAG_KEY) === "true" ? "[SECURE_COOKIE]" : null;
 }
 
-export function storeTokens(response: TokenResponse): void {
-  const maxAge = response.expires_in || 3600;
-  setCookie(TOKEN_KEY, response.access_token, maxAge);
-  if (response.refresh_token) {
-    setCookie(REFRESH_KEY, response.refresh_token, 30 * 24 * 3600);
-  }
-  const expiryMs = Date.now() + maxAge * 1000;
-  setCookie(EXPIRY_KEY, expiryMs.toString(), maxAge);
-
+export function storeTokens(response: any): void {
   try {
-    localStorage.setItem(TOKEN_KEY, response.access_token);
-    if (response.refresh_token) {
-      localStorage.setItem(REFRESH_KEY, response.refresh_token);
-    }
-    localStorage.setItem(EXPIRY_KEY, expiryMs.toString());
+    localStorage.setItem(AUTH_FLAG_KEY, "true");
   } catch (_) {}
 }
 
 export function clearTokens(): void {
-  deleteCookie(TOKEN_KEY);
-  deleteCookie(REFRESH_KEY);
-  deleteCookie(EXPIRY_KEY);
-
   try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    localStorage.removeItem(EXPIRY_KEY);
+    localStorage.removeItem(AUTH_FLAG_KEY);
     LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
   } catch (_) {}
 }
@@ -305,33 +262,9 @@ export async function exchangeCodeForToken(
 export async function refreshAccessToken(
   config: AuthConfig
 ): Promise<TokenResponse | null> {
-  const refreshToken = localStorage.getItem(REFRESH_KEY);
-  if (!refreshToken) return null;
-
-  const body = new URLSearchParams({
-    grant_type: "refresh_token",
-    client_id: config.client_id,
-    refresh_token: refreshToken,
-  });
-  if (config.client_secret) {
-    body.append("client_secret", config.client_secret);
-  }
-
-  const res = await fetch(config.token_endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-
-  if (!res.ok) {
-    // Refresh token expired or revoked — user must re-authenticate.
-    clearTokens();
-    return null;
-  }
-
-  const data: TokenResponse = await res.json();
-  storeTokens(data);
-  return data;
+  // With HttpOnly cookies, silent refresh requires a dedicated backend endpoint.
+  // For now, we return null to force a re-login when the cookie expires.
+  return null;
 }
 
 // ---------- Logout ----------

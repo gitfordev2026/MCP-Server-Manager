@@ -131,7 +131,11 @@ export default function PlaygroundPage() {
                 const models = Array.isArray(payload?.models) ? payload.models : [];
                 setOllamaModels(models);
                 const defaultModel = typeof payload?.default_model === 'string' ? payload.default_model : '';
-                setSelectedModel((prev) => prev || defaultModel || models[0] || '');
+                setSelectedModel((prev) => {
+                    if (prev && (models.includes(prev) || prev === defaultModel)) return prev;
+                    if (defaultModel && models.includes(defaultModel)) return defaultModel;
+                    return models[0] || defaultModel || '';
+                });
                 setModelError(null);
             } else if (modelsRes.status === 'fulfilled' && !modelsRes.value.ok) {
                 setModelError(`Failed to load models (${modelsRes.value.status})`);
@@ -245,7 +249,7 @@ export default function PlaygroundPage() {
             }
 
             await streamAgentResponse({
-                url: `${NEXT_PUBLIC_BE_API_URL}/agent/playground/query/stream`,
+                url: `/api/proxy/agent/playground/query/stream`,
                 body: payload,
                 onMeta: (event) => {
                     if (event.status === 'thinking') {

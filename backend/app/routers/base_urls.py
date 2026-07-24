@@ -25,6 +25,7 @@ def create_base_urls_router(
     write_audit_log_fn,
     audit_log_model,
     get_actor_dep,
+    build_openapi_tool_catalog_fn=None,
 ) -> APIRouter:
     router = APIRouter()
     allowed_domains = {"ADM", "OPS"}
@@ -105,6 +106,7 @@ def create_base_urls_router(
         owner_id = f"app:{app_name}"
         selected_set = {str(item).strip() for item in selected_endpoints if str(item).strip()}
         all_enabled_by_default = (len(selected_set) == 0)
+        selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_set}
 
         tools = db.scalars(
             select(mcp_tool_model).where(mcp_tool_model.owner_id == owner_id)
@@ -114,9 +116,13 @@ def create_base_urls_router(
             method = (getattr(tool, "method", "") or "").upper()
             path = getattr(tool, "path", "") or ""
             endpoint_key = f"{method} {path}".strip()
+            norm_path = path.rstrip('/') or '/'
 
             is_selected = all_enabled_by_default or (
-                endpoint_key in selected_set or tool.name in selected_set
+                endpoint_key in selected_set
+                or tool.name in selected_set
+                or path in selected_set
+                or norm_path in selected_paths
             )
 
             if is_selected:
@@ -137,7 +143,7 @@ def create_base_urls_router(
         summary="Register Application",
         description="Create or update an application base URL registration. Source: backend/app/routers/base_urls.py",
     )
-    def register_base_url(
+    async def register_base_url(
         data: base_url_registration_model,
         actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
@@ -169,6 +175,9 @@ def create_base_urls_router(
                     existing.include_unreachable_tools = include_unreachable
                     existing.is_enabled = True
                     existing.is_deleted = False
+                    # Mark as healthy immediately so tools are exposed right after registration
+                    if existing.health_status in ("unknown", None, ""):
+                        existing.health_status = "healthy"
                     db.flush()
                     ensure_default_access_policy_for_owner_fn(
                         db,
@@ -189,6 +198,8 @@ def create_base_urls_router(
                         include_unreachable_tools=include_unreachable,
                         is_enabled=True,
                         is_deleted=False,
+                        # Mark as healthy immediately so tools are exposed right after registration
+                        health_status="healthy",
                     )
                     db.add(base_url)
                     db.flush()
@@ -223,6 +234,14 @@ def create_base_urls_router(
             sync_api_server_links_by_host_fn()
             reset_openapi_catalog_fn()
             cache_delete_prefix("status:")
+
+            # Immediately sync tools to DB so they are queryable right after registration.
+            # This ensures PATCH /tools/by-endpoint works without a separate syncCatalog round-trip.
+            if build_openapi_tool_catalog_fn is not None:
+                try:
+                    await build_openapi_tool_catalog_fn(force_refresh=True)
+                except Exception:
+                    pass  # non-fatal: tools will sync on next catalog request
 
             return {
                 "message": "Base URL registered successfully",
@@ -321,7 +340,7 @@ def create_base_urls_router(
         summary="Update Application",
         description="Update application metadata/settings by name. Source: backend/app/routers/base_urls.py",
     )
-    def update_base_url(
+    async def update_base_url(
         name: str,
         payload: BaseURLUpdate,
         actor: dict[str, Any] = Depends(get_actor_dep),
@@ -400,8 +419,20 @@ def create_base_urls_router(
             )
             db.commit()
 
+        # Track whether selected_endpoints changed so we know to rebuild the catalog.
+        endpoints_changed = payload.selected_endpoints is not None
+
         reset_openapi_catalog_fn()
         cache_delete_prefix("status:")
+
+        # If endpoint selection changed, sync catalog immediately so newly enabled
+        # tools get their mcp_tool DB rows created before the response returns.
+        if endpoints_changed and build_openapi_tool_catalog_fn is not None:
+            try:
+                await build_openapi_tool_catalog_fn(force_refresh=True)
+            except Exception:
+                pass  # non-fatal: tools will sync on next catalog request
+
         return {"status": "updated", "name": name}
 
     @router.delete(
