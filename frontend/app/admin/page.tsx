@@ -88,6 +88,7 @@ type Tool = {
   method: string | null;
   path: string | null;
   current_version: string;
+  input_schema?: any;
   is_enabled: boolean;
   admin_enabled: boolean;
   owner_enabled: boolean;
@@ -104,6 +105,7 @@ type Endpoint = {
   description: string;
   mcp_tool_id: number | null;
   current_version: string;
+  schema?: any;
   is_enabled: boolean;
   admin_enabled: boolean;
   owner_enabled: boolean;
@@ -158,6 +160,113 @@ function ConfirmDialog({
   );
 }
 
+function SchemaViewer({ schema }: { schema: any }) {
+  if (!schema) return null;
+  
+  let properties: Record<string, any> = {};
+  let required: string[] = [];
+  let queryParams: any[] = [];
+  
+  // Is this an MCP Tool schema?
+  if (schema.properties) {
+    properties = schema.properties;
+    required = schema.required || [];
+  } 
+  // Is this an OpenAPI endpoint schema?
+  else if (schema.requestBody || schema.parameters) {
+    // Extract query parameters
+    if (schema.parameters && Array.isArray(schema.parameters)) {
+      queryParams = schema.parameters.filter((p: any) => p.in === 'query' || p.in === 'path');
+    }
+    
+    // Extract body properties
+    try {
+      const bodySchema = schema.requestBody?.content?.['application/json']?.schema;
+      if (bodySchema) {
+        if (bodySchema.properties) {
+          properties = bodySchema.properties;
+          required = bodySchema.required || [];
+        } else if (bodySchema.$ref) {
+           properties = { "$ref": { type: "reference", description: bodySchema.$ref } };
+        }
+      }
+    } catch (e) {}
+  }
+  
+  const hasProperties = Object.keys(properties).length > 0;
+  const hasQueryParams = queryParams.length > 0;
+  
+  if (!hasProperties && !hasQueryParams) {
+    return (
+      <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3 text-xs font-mono overflow-auto border border-slate-200 dark:border-slate-800">
+        <pre className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+          {JSON.stringify(schema, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {hasQueryParams && (
+        <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+          <div className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            Path/Query Parameters
+          </div>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Name</th>
+                <th className="px-3 py-2 font-semibold">In</th>
+                <th className="px-3 py-2 font-semibold">Required</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900/50">
+              {queryParams.map((param: any, idx: number) => (
+                <tr key={idx}>
+                  <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">
+                    {param.name}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{param.in}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-500 text-xs">{param.required ? 'Yes' : 'No'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasProperties && (
+        <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+          <div className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            Request Body (JSON)
+          </div>
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Field</th>
+                <th className="px-3 py-2 font-semibold">Type</th>
+                <th className="px-3 py-2 font-semibold">Description</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900/50">
+              {Object.entries(properties).map(([key, val]: [string, any]) => (
+                <tr key={key}>
+                  <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">
+                    {key} {required.includes(key) && <span className="text-red-500 ml-1" title="Required">*</span>}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{val.type || 'any'}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-500 text-xs">{val.description || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-slate-400">
@@ -185,6 +294,14 @@ export default function AdminPanelPage() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  
+  // ── Testing Palette State ─────────────────────────────────────────────────
+  const [testSidebarOpen, setTestSidebarOpen] = useState(false);
+  const [selectedEndpointForTest, setSelectedEndpointForTest] = useState<Endpoint | Tool | null>(null);
+  const [testRequestBody, setTestRequestBody] = useState('');
+  const [testQueryParams, setTestQueryParams] = useState('');
+  const [testResponse, setTestResponse] = useState<{ status: number; statusText: string; data: any; timeMs?: number } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
   // Role is read from env/session — not switchable from UI in production.
   // In dev, it's read from localStorage (set externally via settings page or env).
@@ -506,7 +623,62 @@ export default function AdminPanelPage() {
     }
   }, [resolveOwnerContext]);
 
-  // ── Filtered data ─────────────────────────────────────────────────────────
+  // ── Testing Palette Actions ───────────────────────────────────────────────
+
+  const handleOpenTest = (item: Endpoint | Tool) => {
+    setSelectedEndpointForTest(item);
+    setTestRequestBody('');
+    setTestQueryParams('');
+    setTestResponse(null);
+    setTestSidebarOpen(true);
+  };
+
+  const handleSubmitTest = async () => {
+    if (!selectedEndpointForTest || !selectedEndpointForTest.path) return;
+    setIsTesting(true);
+    setTestResponse(null);
+    try {
+      const pathWithQuery = testQueryParams
+        ? `${selectedEndpointForTest.path}${testQueryParams.startsWith('?') ? '' : '?'}${testQueryParams}`
+        : selectedEndpointForTest.path;
+      
+      const method = (selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET';
+      const isGet = method === 'GET' || method === 'HEAD';
+      
+      const start = Date.now();
+      const res = await fetch(`/api/proxy${pathWithQuery}`, {
+        method,
+        headers: !isGet ? { 'Content-Type': 'application/json' } : undefined,
+        body: !isGet && testRequestBody ? testRequestBody : undefined,
+      });
+      const end = Date.now();
+      
+      let data;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        data = await res.text();
+      }
+      
+      setTestResponse({
+        status: res.status,
+        statusText: res.statusText,
+        data,
+        timeMs: end - start,
+      });
+    } catch (err: any) {
+      setTestResponse({
+        status: 0,
+        statusText: 'Network Error',
+        data: err.message || String(err),
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // ── Filters & Computed ─────────────────────────────────────────────────────────
 
   const filteredApps = useMemo(() => {
     const q = appSearch.toLowerCase();
@@ -518,14 +690,21 @@ export default function AdminPanelPage() {
     return servers.filter((s) => !q || s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q));
   }, [servers, serverSearch]);
 
+  const mcpTools = useMemo(
+    () => tools.filter((t) => t.source_type === 'mcp'),
+    [tools]
+  );
+
   const filteredTools = useMemo(() => {
     const q = toolSearch.toLowerCase();
-    return tools.filter(
+    return mcpTools.filter(
       (t) =>
-        t.source_type === 'mcp' &&
-        (!q || t.name.toLowerCase().includes(q) || t.owner_id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+        !q ||
+        (t.name || '').toLowerCase().includes(q) ||
+        (t.owner_id || '').toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q)
     );
-  }, [tools, toolSearch]);
+  }, [mcpTools, toolSearch]);
 
   const rawApiTools = useMemo(
     () => tools.filter((t) => t.source_type === 'openapi'),
@@ -558,8 +737,8 @@ export default function AdminPanelPage() {
     { id: 'overview',      label: 'Overview' },
     { id: 'applications',  label: 'Applications', count: apps.length },
     { id: 'servers',       label: 'MCP Servers',  count: servers.length },
-    { id: 'tools',         label: 'Tools',        count: tools.length },
-    { id: 'endpoints',     label: 'API Endpoints',count: endpoints.length },
+    { id: 'tools',         label: 'Tools',        count: mcpTools.length },
+    { id: 'endpoints',     label: 'API Endpoints',count: endpoints.length + rawApiTools.length },
     { id: 'audit',         label: 'Audit Logs',   count: auditLogs.length },
   ];
 
@@ -1184,6 +1363,15 @@ export default function AdminPanelPage() {
                             ⛔ parent inactive
                           </span>
                         )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="!bg-blue-50 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-100 dark:hover:!bg-blue-900/50 border border-blue-200 dark:border-blue-800"
+                          onClick={() => handleOpenTest(ep)}
+                        >
+                          <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          Test
+                        </Button>
                         {canManageEndpoints && (
                           <>
                             {ep.is_deleted && (
@@ -1312,6 +1500,15 @@ export default function AdminPanelPage() {
                               ⛔ parent inactive
                             </span>
                           )}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="!bg-blue-50 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-100 dark:hover:!bg-blue-900/50 border border-blue-200 dark:border-blue-800"
+                            onClick={() => handleOpenTest(tool)}
+                          >
+                            <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            Test
+                          </Button>
                           {canManageTools && (
                             <>
                               {tool.is_deleted && (
@@ -1449,6 +1646,101 @@ export default function AdminPanelPage() {
         )}
 
       </main>
+
+      {/* ── Test Sidebar ──────────────────────────────────────────────────────── */}
+      {testSidebarOpen && selectedEndpointForTest && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setTestSidebarOpen(false)} />
+          <div className="relative w-full max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <span>Test Endpoint</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-mono">
+                  {((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET')}
+                </span>
+              </h2>
+              <button onClick={() => setTestSidebarOpen(false)} className="p-2 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 transition-colors">
+                ✕
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto">
+                <span className={`px-3 py-1 rounded font-bold text-xs tracking-wide uppercase ${
+                  ((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET') === 'GET' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-400' :
+                  ((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET') === 'POST' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-400' :
+                  ((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET') === 'PUT' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-400' :
+                  ((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET') === 'DELETE' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-400' :
+                  'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                }`}>
+                  {((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET')}
+                </span>
+                <span className="font-mono text-sm text-slate-800 dark:text-slate-200 font-semibold break-all">
+                  {selectedEndpointForTest.path}
+                </span>
+              </div>
+
+              {(((selectedEndpointForTest as Tool).input_schema) || ((selectedEndpointForTest as Endpoint).schema)) && (
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Parameters & Schema</label>
+                  <SchemaViewer schema={(selectedEndpointForTest as Tool).input_schema || (selectedEndpointForTest as Endpoint).schema} />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Query Parameters (Optional)</label>
+                <input 
+                  type="text" 
+                  value={testQueryParams} 
+                  onChange={(e) => setTestQueryParams(e.target.value)} 
+                  placeholder="?key=value&id=123" 
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+
+              {((selectedEndpointForTest as Endpoint).method || (selectedEndpointForTest as Tool).method || 'GET') !== 'GET' && (
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Request Body (JSON)</label>
+                  <textarea
+                    value={testRequestBody}
+                    onChange={(e) => setTestRequestBody(e.target.value)}
+                    placeholder='{"key": "value"}'
+                    rows={6}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-y"
+                  />
+                </div>
+              )}
+
+              <Button onClick={handleSubmitTest} disabled={isTesting} className="w-full justify-center">
+                {isTesting ? 'Sending...' : 'Send Request'}
+              </Button>
+
+              {testResponse && (
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold">Response</label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded font-medium ${testResponse.status >= 200 && testResponse.status < 300 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {testResponse.status} {testResponse.statusText}
+                      </span>
+                      {testResponse.timeMs !== undefined && (
+                        <span className="text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-mono">
+                          {testResponse.timeMs}ms
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 text-slate-300 rounded-lg p-3 text-xs font-mono overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap">
+                    {typeof testResponse.data === 'object' 
+                      ? JSON.stringify(testResponse.data, null, 2) 
+                      : testResponse.data}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

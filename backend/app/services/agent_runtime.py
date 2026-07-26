@@ -89,6 +89,7 @@ def build_agent_with_model(
     max_steps: int | None = None,
     retry_on_error: bool | None = None,
     memory_enabled: bool | None = None,
+    extra_callbacks: list[Any] | None = None,
 ) -> MCPAgent:
     config = {
         "mcpServers": {
@@ -100,6 +101,8 @@ def build_agent_with_model(
 
     client = MCPClient(config)
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
+    if extra_callbacks:
+        callbacks.extend(extra_callbacks)
 
     resolved_model = model or ENV.agent_ollama_model or "gemma4:31b-cloud"
     llm = ChatOllama(
@@ -107,6 +110,7 @@ def build_agent_with_model(
         base_url=ENV.agent_ollama_base_url,
         temperature=ENV.agent_ollama_temperature,
         callbacks=callbacks,
+        streaming=True,
     )
 
     return MCPAgent(

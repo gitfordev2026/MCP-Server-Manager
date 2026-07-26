@@ -3,3 +3,8 @@ node_modules/
 *.log
 .venv/
 *.pyc
+*.db
+.gitignore
+.DS_Store
+.gitignore
+backend/app/servers.db

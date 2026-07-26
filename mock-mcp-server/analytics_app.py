@@ -239,6 +239,9 @@ def get_reports(user: dict[str, Any] = Depends(verify_analytics_token)):
         "reports": [
             {"id": "rep-901", "title": "Q3 Infrastructure Efficiency Report", "status": "Final", "generated_by": user.get("preferred_username")},
             {"id": "rep-902", "title": "Security & Compliance Audit 2026", "status": "In-Progress", "generated_by": user.get("preferred_username")},
+            {"id": "rep-903", "title": "Annual Marketing Spend Analysis", "status": "Final", "generated_by": user.get("preferred_username")},
+            {"id": "rep-904", "title": "Customer Retention Metrics Q1-Q2", "status": "Draft", "generated_by": user.get("preferred_username")},
+            {"id": "rep-905", "title": "Platform Reliability and Uptime", "status": "Final", "generated_by": user.get("preferred_username")},
         ]
     }
 
@@ -249,9 +252,14 @@ def get_telemetry_logs(user: dict[str, Any] = Depends(verify_analytics_token)):
         "logs": [
             {"timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z", "level": "INFO", "message": "Keycloak token validated successfully"},
             {"timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z", "level": "INFO", "message": "Telemetry stream synced"},
+            {"timestamp": (datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=5)).isoformat() + "Z", "level": "WARN", "message": "High memory usage detected on node worker-04"},
+            {"timestamp": (datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=15)).isoformat() + "Z", "level": "INFO", "message": "Scheduled background job completed"},
+            {"timestamp": (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)).isoformat() + "Z", "level": "ERROR", "message": "Failed to connect to primary database cluster, retrying..."},
+            {"timestamp": (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1, minutes=1)).isoformat() + "Z", "level": "INFO", "message": "Database failover triggered successfully"},
         ]
     }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("analytics_app:app", host="0.0.0.0", port=8004, reload=True)
+    port = int(os.getenv("PORT", 8004))
+    uvicorn.run("analytics_app:app", host="0.0.0.0", port=port, reload=True)

@@ -43,18 +43,25 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       headers.set('X-Signature', signature);
     }
     
-    let resolvedBackendIp = "mcp-backend";
-    try {
-      const dns = require('dns/promises');
-      const lookup = await dns.lookup('mcp-backend', { family: 4 });
-      resolvedBackendIp = lookup.address;
-      console.log(`[Proxy] Resolved mcp-backend to ${resolvedBackendIp}`);
-    } catch (e: any) {
-      console.error(`[Proxy] DNS lookup failed: ${e.message}`);
+    const backendUrlParsed = new URL(backendUrl);
+    const backendHostname = backendUrlParsed.hostname;
+    const backendPort = backendUrlParsed.port ? `:${backendUrlParsed.port}` : '';
+    let resolvedBackendIp = backendHostname;
+    
+    // In some environments, the backend might be explicitly defined for DNS resolution
+    const overrideDns = process.env.BACKEND_DNS_NAME;
+    if (overrideDns) {
+      try {
+        const dns = require('dns/promises');
+        const lookup = await dns.lookup(overrideDns, { family: 4 });
+        resolvedBackendIp = lookup.address;
+        console.log(`[Proxy] Resolved ${overrideDns} to ${resolvedBackendIp}`);
+      } catch (e: any) {
+        console.error(`[Proxy] DNS lookup failed: ${e.message}`);
+      }
     }
 
-    const backendUrlParsed = new URL(backendUrl);
-    const targetUrl = `http://${resolvedBackendIp}:${backendUrlParsed.port || 8000}${urlSuffix}`;
+    const targetUrl = `${backendUrlParsed.protocol}//${resolvedBackendIp}${backendPort}${urlSuffix}`;
     console.log(`[Proxy] Fetching: ${targetUrl}`);
     
     // Ensure Host header is set correctly so the backend doesn't reject it

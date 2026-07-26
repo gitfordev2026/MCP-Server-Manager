@@ -7,7 +7,10 @@ from app.core.logger import get_logger
 logger = get_logger(__name__)
 
 
-SQLITE_DB_PATH = "servers.db"
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SQLITE_DB_PATH = os.path.join(BASE_DIR, "servers.db")
 SQLITE_DATABASE_URL = f"sqlite:///{SQLITE_DB_PATH}"
 
 _configured_db_url = ENV.database_url

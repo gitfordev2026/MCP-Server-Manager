@@ -514,11 +514,27 @@ export default function Home() {
     
     // The Next.js API proxy doesn't support WebSockets. 
     // We construct the WS URL to hit the backend directly.
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const wsHost = isLocalhost ? 'localhost:8000' : window.location.host;
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${wsHost}/ws/health`;
-
+    
+    // Check if an explicit WebSocket URL is provided in the environment
+    const envWsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    let wsUrl = '';
+    
+    if (envWsUrl) {
+      wsUrl = envWsUrl;
+    } else {
+      // Fallback: derive it from NEXT_PUBLIC_BE_API_URL if possible, or use current location
+      const beUrlStr = process.env.NEXT_PUBLIC_BE_API_URL || '';
+      let derivedHost = window.location.host;
+      if (beUrlStr) {
+        try {
+          const parsed = new URL(beUrlStr);
+          derivedHost = parsed.host; // includes port
+        } catch (e) {}
+      }
+      wsUrl = `${wsProtocol}//${derivedHost}/ws/health`;
+    }
+    
     const connect = () => {
       if (wsRef.current) {
         wsRef.current.close();

@@ -238,11 +238,11 @@ def get_dashboard(user: dict[str, Any] = Depends(verify_portal_token)):
         "app": "Customer Portal API",
         "user": user.get("preferred_username"),
         "dashboard": {
-            "active_services": 4,
-            "monthly_bandwidth_used_gb": 482.5,
-            "api_quota_remaining": 95180,
-            "security_alerts": 0,
-            "status": "All Systems Normal"
+            "active_services": 12,
+            "monthly_bandwidth_used_gb": 1250.75,
+            "api_quota_remaining": 450000,
+            "security_alerts": 2,
+            "status": "Degraded - High Load"
         }
     }
 
@@ -253,6 +253,9 @@ def get_subscriptions(user: dict[str, Any] = Depends(verify_portal_token)):
         "subscriptions": [
             {"id": "sub-01", "name": "MCP Enterprise Pro Tier", "status": "Active", "renewal_date": "2026-12-31"},
             {"id": "sub-02", "name": "Real-time Telemetry Stream", "status": "Active", "renewal_date": "2026-12-31"},
+            {"id": "sub-03", "name": "Global CDN Add-on", "status": "Active", "renewal_date": "2027-01-15"},
+            {"id": "sub-04", "name": "Dedicated Support Sandbox", "status": "Expired", "renewal_date": "2025-10-10"},
+            {"id": "sub-05", "name": "AI Analytics Package", "status": "Active", "renewal_date": "2027-05-20"},
         ]
     }
 

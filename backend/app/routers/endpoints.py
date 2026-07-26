@@ -116,6 +116,11 @@ def create_endpoints_router(
                 )
             rows = db.scalars(stmt).all()
 
+            endpoint_versions = {
+                (row.endpoint_id, row.version): row.schema
+                for row in db.scalars(select(endpoint_version_model)).all()
+            }
+
         visible_rows = []
         for row in rows:
             if include_inactive:
@@ -142,6 +147,7 @@ def create_endpoints_router(
                     "description": row.description,
                     "mcp_tool_id": row.mcp_tool_id,
                     "current_version": row.current_version,
+                    "schema": endpoint_versions.get((row.id, row.current_version)),
                     "is_enabled": bool(row.admin_enabled and row.owner_enabled),
                     "admin_allowed": bool(getattr(row, "admin_allowed", row.admin_enabled)),
                     "admin_enabled": row.admin_enabled,

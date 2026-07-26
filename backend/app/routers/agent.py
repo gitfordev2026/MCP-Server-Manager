@@ -252,14 +252,13 @@ def _build_tool_only_instructions(selected_tools: List[str]) -> str:
 
     return (
         "You are an MCP tool-using agent.\n"
-        "Use tools whenever they are relevant.\n"
-        "Do not return JSON tool calls, function-call plans, or parameter objects to the user.\n"
-        "If you decide to use a tool, actually call it and then answer in normal readable text.\n"
-        "If you use any tool, your final answer must clearly include:\n"
-        "Tool used: <tool name>\n"
-        "Arguments: <JSON object with the arguments you used>\n"
-        "Result: <what the tool returned or what you concluded from it>\n"
-        "If multiple tools were used, list them in order under 'Tools used:'.\n"
+        "Use the provided tools whenever they are relevant to answer the user's request.\n"
+        "Before calling a tool, you MUST wrap your reasoning inside <think>...</think> tags. "
+        "To execute a tool, output exactly ONE JSON block in this format to call a tool:\n"
+        "```json\n"
+        '{"name": "<tool_name>", "arguments": {}}\n'
+        "```\n"
+        "Do not hallucinate tool results. Call the tool first, and wait for the system to return the result.\n"
         "Only the following tools are available:\n"
         f"{lines}\n"
         "If none of these tools apply, say: "
@@ -527,32 +526,30 @@ def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
         return None
 
     candidate = text.strip()
-    if candidate.startswith("```"):
-        lines = candidate.splitlines()
-        if len(lines) >= 3 and lines[-1].startswith("```"):
-            candidate = "\n".join(lines[1:-1]).strip()
-
-    if candidate.startswith("{") and candidate.endswith("}"):
-        try:
-            payload = json.loads(candidate)
-            if isinstance(payload, dict) and "name" in payload:
-                name = str(payload.get("name") or "").strip()
-                args = payload.get("parameters") or payload.get("arguments") or {}
-                if name and isinstance(args, dict):
-                    return name, args
-        except Exception:
-            pass
-
-    match = re.search(r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*\}', candidate, re.DOTALL)
+    
+    # Extract json block if present
+    import re
+    import json
+    
+    # Try to find ```json ... ``` block
+    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', candidate, re.DOTALL)
     if match:
-        try:
-            payload = json.loads(match.group(0))
+        candidate = match.group(1).strip()
+    else:
+        # Fallback: try to find any { "name": ... } block
+        match = re.search(r'(\{.*?"name"\s*:.*?\})', candidate, re.DOTALL)
+        if match:
+            candidate = match.group(1).strip()
+
+    try:
+        payload = json.loads(candidate)
+        if isinstance(payload, dict) and "name" in payload:
             name = str(payload.get("name") or "").strip()
             args = payload.get("parameters") or payload.get("arguments") or {}
             if name and isinstance(args, dict):
                 return name, args
-        except Exception:
-            pass
+    except Exception:
+        pass
 
     return None
 
@@ -896,11 +893,57 @@ async def _stream_agent_query(
             return
 
         yield _jsonl_event("meta", mode="mcp_agent", status="thinking")
-        result = await runner(request, build_agent_with_model)
-        response_text = str(result.get("response") or "").strip()
-        if response_text:
-            async for chunk in _stream_text_chunks(response_text):
-                yield chunk
+        
+        import asyncio
+        from langchain_core.callbacks import AsyncCallbackHandler
+
+        queue = asyncio.Queue()
+
+        class StreamCallback(AsyncCallbackHandler):
+            async def on_llm_new_token(self, token: str, **kwargs):
+                if token:
+                    await queue.put(token)
+            async def on_llm_end(self, response, **kwargs):
+                await queue.put(None)
+            async def on_llm_error(self, error, **kwargs):
+                await queue.put(None)
+
+        def custom_builder(*args, **kwargs):
+            kwargs["extra_callbacks"] = [StreamCallback()]
+            return build_agent_with_model(*args, **kwargs)
+
+        task = asyncio.create_task(runner(request, custom_builder))
+        
+        streamed_text = ""
+        while not task.done() or not queue.empty():
+            try:
+                token = await asyncio.wait_for(queue.get(), timeout=0.1)
+                if token is not None:
+                    streamed_text += token
+                    yield _jsonl_event("chunk", content=token)
+            except asyncio.TimeoutError:
+                pass
+
+        result = await task
+        final_text = str(result.get("response") or "")
+        
+        if final_text.startswith(streamed_text):
+            remainder = final_text[len(streamed_text):]
+            if remainder:
+                async for chunk in _stream_text_chunks(remainder):
+                    yield chunk
+        else:
+            # If the final text was modified in a way that doesn't match the stream exactly
+            # We just append the missing parts or the whole thing if it's completely different
+            if streamed_text not in final_text:
+                async for chunk in _stream_text_chunks("\n\n" + final_text):
+                    yield chunk
+            else:
+                remainder = final_text.split(streamed_text)[-1]
+                if remainder:
+                    async for chunk in _stream_text_chunks(remainder):
+                        yield chunk
+
         yield _jsonl_event("end", mode=result.get("mode"))
 
     except HTTPException as exc:

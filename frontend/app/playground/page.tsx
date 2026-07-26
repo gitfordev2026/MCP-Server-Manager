@@ -70,6 +70,9 @@ export default function PlaygroundPage() {
     const [appTools, setAppTools] = useState<CatalogTool[]>([]);
     const [selectedToolNames, setSelectedToolNames] = useState<Set<string>>(new Set());
     const [isModalOpen, setIsModalOpen] = useState(false);
+    
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+    const [editInput, setEditInput] = useState('');
 
     // Chat State
     const [messages, setMessages] = useState<Message[]>([
@@ -204,22 +207,18 @@ export default function PlaygroundPage() {
         ]);
     };
 
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!input.trim()) return;
-        const prompt = input.trim();
-
+    const submitMessage = async (promptText: string, currentMessages: Message[]) => {
         const userMessage: Message = {
             id: Date.now().toString(),
             role: 'user',
-            content: prompt,
+            content: promptText,
             timestamp: new Date(),
         };
         const assistantMessageId = `${Date.now()}-assistant`;
         const assistantTimestamp = new Date();
 
         const nextMessages: Message[] = [
-            ...messages,
+            ...currentMessages,
             userMessage,
             {
                 id: assistantMessageId,
@@ -235,8 +234,8 @@ export default function PlaygroundPage() {
 
         try {
             const payload: PlaygroundPayload = {
-                prompt,
-                history: buildHistory(messages),
+                prompt: promptText,
+                history: buildHistory(currentMessages),
             };
 
             if (selectedModel) {
@@ -293,6 +292,26 @@ export default function PlaygroundPage() {
         } finally {
             setChatLoading(false);
         }
+    };
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!input.trim()) return;
+        await submitMessage(input.trim(), messages);
+    };
+
+    const handleEditSubmit = async (messageId: string) => {
+        if (!editInput.trim()) return;
+        const index = messages.findIndex((m) => m.id === messageId);
+        if (index === -1) return;
+        
+        const promptText = editInput.trim();
+        const historyBeforeEdit = messages.slice(0, index);
+        
+        setEditingMessageId(null);
+        setEditInput('');
+        
+        await submitMessage(promptText, historyBeforeEdit);
     };
 
     // Get unique app names from the catalog tools
@@ -381,26 +400,66 @@ export default function PlaygroundPage() {
                                                 <span className="text-white text-xs font-bold">AI</span>
                                             </div>
                                         )}
+                                        {message.role === 'user' && editingMessageId !== message.id && (
+                                            <button
+                                                onClick={() => {
+                                                    setEditingMessageId(message.id);
+                                                    setEditInput(message.content);
+                                                }}
+                                                className="self-center p-2 mr-1 text-slate-400 hover:text-rose-600 bg-white/50 dark:bg-slate-800/50 rounded-full transition-all hover:bg-white dark:hover:bg-slate-700 shadow-sm opacity-60 hover:opacity-100"
+                                                title="Edit message"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                            </button>
+                                        )}
                                         <div
-                                            className={`px-5 py-4 rounded-2xl transition-all duration-200 ${message.role === 'user'
+                                            className={`relative group px-5 py-4 rounded-2xl transition-all duration-200 ${message.role === 'user'
                                                     ? 'bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-br-none shadow-md'
                                                     : 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-bl-none border border-slate-200 dark:border-slate-700 shadow-xs'
                                                 }`}
                                         >
-                                            <div className="text-sm sm:text-base leading-relaxed prose prose-sm max-w-none dark:prose-invert">
-                                                {message.content ? (
-                                                    <MessageContent content={message.content} />
-                                                ) : (
-                                                    <div className="flex gap-2 py-1">
-                                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce"></div>
-                                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
-                                                        <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                            {editingMessageId === message.id ? (
+                                                <div className="flex flex-col gap-2 min-w-[200px] sm:min-w-[300px]">
+                                                    <textarea
+                                                        value={editInput}
+                                                        onChange={(e) => setEditInput(e.target.value)}
+                                                        className="w-full bg-white/10 border border-white/20 rounded-xl p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/50 resize-none"
+                                                        rows={3}
+                                                        autoFocus
+                                                    />
+                                                    <div className="flex justify-end gap-2 mt-1">
+                                                        <button 
+                                                            onClick={() => setEditingMessageId(null)}
+                                                            className="px-3 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleEditSubmit(message.id)}
+                                                            className="px-3 py-1.5 text-xs font-semibold bg-white text-slate-800 hover:bg-slate-100 rounded-lg transition-colors shadow-sm"
+                                                        >
+                                                            Save & Resend
+                                                        </button>
                                                     </div>
-                                                )}
-                                            </div>
-                                            <span className={`text-xs mt-2 block opacity-60 ${message.role === 'user' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
-                                                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm sm:text-base leading-relaxed prose prose-sm max-w-none dark:prose-invert">
+                                                    {message.content ? (
+                                                        <MessageContent content={message.content} />
+                                                    ) : (
+                                                        <div className="flex gap-2 py-1">
+                                                            <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce"></div>
+                                                            <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                                                            <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {editingMessageId !== message.id && (
+                                                <span className={`text-xs mt-2 block opacity-60 ${message.role === 'user' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

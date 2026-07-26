@@ -107,6 +107,9 @@ _inventory_items: dict[str, dict] = {
     "inv-101": {"id": "inv-101", "name": "Server Rack Cabinet 42U", "quantity": 14, "warehouse": "A-12", "unit_price": 1200.0},
     "inv-102": {"id": "inv-102", "name": "Fiber Optic Patch Cable 10m", "quantity": 350, "warehouse": "B-04", "unit_price": 25.5},
     "inv-103": {"id": "inv-103", "name": "Gigabit Ethernet Switch 48-Port", "quantity": 28, "warehouse": "A-08", "unit_price": 850.0},
+    "inv-104": {"id": "inv-104", "name": "UPS Battery Backup 1500VA", "quantity": 42, "warehouse": "C-01", "unit_price": 150.0},
+    "inv-105": {"id": "inv-105", "name": "Cat6 Ethernet Cable 1000ft", "quantity": 12, "warehouse": "B-15", "unit_price": 115.0},
+    "inv-106": {"id": "inv-106", "name": "Wireless Access Point WiFi 6", "quantity": 65, "warehouse": "A-02", "unit_price": 299.99},
 }
 
 class UserLoginRequest(BaseModel):
@@ -261,4 +264,5 @@ def create_item(req: CreateItemRequest, user: dict[str, Any] = Depends(verify_in
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("inventory_app:app", host="0.0.0.0", port=8002, reload=True)
+    port = int(os.getenv("PORT", 8002))
+    uvicorn.run("inventory_app:app", host="0.0.0.0", port=port, reload=True)

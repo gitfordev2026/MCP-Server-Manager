@@ -2,9 +2,10 @@ import React from 'react';
 
 type Segment =
   | { type: 'text'; value: string }
-  | { type: 'code'; value: string; language: string };
+  | { type: 'code'; value: string; language: string }
+  | { type: 'think'; value: string };
 
-function parseSegments(content: string): Segment[] {
+function parseCodeSegments(content: string): Segment[] {
   const segments: Segment[] = [];
   const pattern = /```([\w-]*)\n?([\s\S]*?)```/g;
   let lastIndex = 0;
@@ -24,6 +25,27 @@ function parseSegments(content: string): Segment[] {
 
   if (lastIndex < content.length) {
     segments.push({ type: 'text', value: content.slice(lastIndex) });
+  }
+
+  return segments;
+}
+
+function parseSegments(content: string): Segment[] {
+  const segments: Segment[] = [];
+  const thinkPattern = /<think>([\s\S]*?)(?:<\/think>|$)/gi;
+  let lastThinkIndex = 0;
+  let thinkMatch: RegExpExecArray | null;
+
+  while ((thinkMatch = thinkPattern.exec(content)) !== null) {
+    if (thinkMatch.index > lastThinkIndex) {
+      segments.push(...parseCodeSegments(content.slice(lastThinkIndex, thinkMatch.index)));
+    }
+    segments.push({ type: 'think', value: (thinkMatch[1] || '').trim() });
+    lastThinkIndex = thinkPattern.lastIndex;
+  }
+
+  if (lastThinkIndex < content.length) {
+    segments.push(...parseCodeSegments(content.slice(lastThinkIndex)));
   }
 
   return segments;
@@ -228,6 +250,26 @@ function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode 
   return <div key={keyPrefix} className="space-y-1">{elements}</div>;
 }
 
+function renderThinkBlock(value: string, key: string) {
+  if (!value.trim()) return null;
+
+  return (
+    <details key={key} open className="my-2 rounded-xl border border-slate-300/40 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/30 overflow-hidden shadow-sm">
+      <summary className="px-4 py-2 cursor-pointer text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors select-none flex items-center gap-2">
+        <span>🤔</span> <span>Thinking Process</span>
+      </summary>
+      <div className="p-4 pt-2 border-t border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 text-sm">
+        {parseCodeSegments(value).map((segment, index) => {
+          if (segment.type === 'code') {
+            return renderCodeBlock(segment.value, `${key}-code-${index}`, segment.language);
+          }
+          return renderMarkdownBlock(segment.value, `${key}-md-${index}`);
+        })}
+      </div>
+    </details>
+  );
+}
+
 export default function MessageContent({ content }: { content: string }) {
   if (!content) return null;
 
@@ -236,6 +278,9 @@ export default function MessageContent({ content }: { content: string }) {
   return (
     <div className="space-y-2">
       {segments.map((segment, index) => {
+        if (segment.type === 'think') {
+          return renderThinkBlock(segment.value, `think-${index}`);
+        }
         if (segment.type === 'code') {
           return renderCodeBlock(segment.value, `code-${index}`, segment.language);
         }

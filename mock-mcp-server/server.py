@@ -163,11 +163,17 @@ _users: dict[str, dict] = {
     "u1": {"id": "u1", "name": "Alice",   "email": "alice@example.com",   "role": "admin"},
     "u2": {"id": "u2", "name": "Bob",     "email": "bob@example.com",     "role": "editor"},
     "u3": {"id": "u3", "name": "Charlie", "email": "charlie@example.com", "role": "viewer"},
+    "u4": {"id": "u4", "name": "Diana",   "email": "diana@example.com",   "role": "viewer"},
+    "u5": {"id": "u5", "name": "Edward",  "email": "edward@example.com",  "role": "editor"},
+    "u6": {"id": "u6", "name": "Fiona",   "email": "fiona@example.com",   "role": "admin"},
 }
 
 _notes: dict[str, dict] = {
     "n1": {"id": "n1", "title": "Meeting Notes", "body": "Discuss Q3 roadmap.",   "author": "u1"},
     "n2": {"id": "n2", "title": "Ideas",          "body": "Build a cool MCP app.", "author": "u2"},
+    "n3": {"id": "n3", "title": "System Architecture", "body": "Draft for new microservices.", "author": "u6"},
+    "n4": {"id": "n4", "title": "Bug Report #45", "body": "Login fails on mobile app.", "author": "u4"},
+    "n5": {"id": "n5", "title": "Weekly Status", "body": "Completed the backend refactor.", "author": "u5"},
 }
 
 # ─────────────────────────────────────────────────────────────

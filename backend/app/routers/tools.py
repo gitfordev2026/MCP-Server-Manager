@@ -125,6 +125,11 @@ def create_tools_router(
                 )
             rows = db.scalars(stmt).all()
 
+            tool_versions = {
+                (row.tool_id, row.version): row.input_schema
+                for row in db.scalars(select(tool_version_model)).all()
+            }
+
         visible_rows = []
         for row in rows:
             if include_inactive:
@@ -147,6 +152,7 @@ def create_tools_router(
                     "method": row.method,
                     "path": row.path,
                     "current_version": row.current_version,
+                    "input_schema": tool_versions.get((row.id, row.current_version)),
                     "is_enabled": bool(row.admin_enabled and row.owner_enabled),
                     "admin_enabled": row.admin_enabled,
                     "owner_enabled": row.owner_enabled,
@@ -154,9 +160,11 @@ def create_tools_router(
                     "parent_is_enabled": (
                         server_states.get(row.server_id, {}).get("is_enabled")
                         if row.source_type == "mcp" and row.server_id is not None
-                        else base_url_states.get(row.raw_api_id, {}).get("is_enabled")
-                        if row.source_type == "openapi" and row.raw_api_id is not None
-                        else True
+                        else (
+                            base_url_states.get(row.raw_api_id, {}).get("is_enabled")
+                            if row.source_type == "openapi" and row.raw_api_id is not None
+                            else True
+                        )
                     ),
                     "parent_is_deleted": (
                         server_states.get(row.server_id, {}).get("is_deleted")

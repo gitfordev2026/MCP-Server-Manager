@@ -41,6 +41,8 @@ export default function ChatPage() {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState('');
   const [modelError, setModelError] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInput, setEditInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -78,23 +80,18 @@ export default function ChatPage() {
     }
   }, []);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim()) return;
-    const prompt = input.trim();
-
-    // Add user message
+  const submitMessage = async (promptText: string, currentMessages: Message[]) => {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: prompt,
+      content: promptText,
       timestamp: new Date(),
     };
     const assistantMessageId = `${Date.now()}-assistant`;
     const assistantTimestamp = new Date();
 
     const nextMessages = [
-      ...messages,
+      ...currentMessages,
       userMessage,
       {
         id: assistantMessageId,
@@ -115,9 +112,9 @@ export default function ChatPage() {
       await streamAgentResponse({
         url: `/api/proxy/agent/query/stream`,
         body: {
-          prompt,
+          prompt: promptText,
           model,
-          history: buildHistory(messages),
+          history: buildHistory(currentMessages),
         },
         onMeta: (event) => {
           if (event.status === 'thinking') {
@@ -163,6 +160,26 @@ export default function ChatPage() {
     }
   };
 
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    await submitMessage(input.trim(), messages);
+  };
+
+  const handleEditSubmit = async (messageId: string) => {
+    if (!editInput.trim()) return;
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index === -1) return;
+    
+    const promptText = editInput.trim();
+    const historyBeforeEdit = messages.slice(0, index);
+    
+    setEditingMessageId(null);
+    setEditInput('');
+    
+    await submitMessage(promptText, historyBeforeEdit);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col overflow-hidden transition-colors duration-200">
       {/* Navigation */}
@@ -186,14 +203,51 @@ export default function ChatPage() {
                         <span className="text-white text-sm font-bold">AI</span>
                       </div>
                     )}
+                    {message.role === 'user' && editingMessageId !== message.id && (
+                      <button
+                        onClick={() => {
+                          setEditingMessageId(message.id);
+                          setEditInput(message.content);
+                        }}
+                        className="self-center p-2 mr-1 text-slate-400 hover:text-blue-600 bg-white/50 dark:bg-slate-800/50 rounded-full transition-all hover:bg-white dark:hover:bg-slate-700 shadow-sm opacity-60 hover:opacity-100"
+                        title="Edit message"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                      </button>
+                    )}
                     <div
-                      className={`px-5 py-4 rounded-2xl transition-all duration-300 hover:scale-105 ${
+                      className={`relative group px-5 py-4 rounded-2xl transition-all duration-300 ${
                         message.role === 'user'
                           ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-br-none shadow-lg shadow-blue-500/30'
                           : 'bg-slate-100 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 rounded-bl-none border border-slate-200/90 dark:border-amber-500/30 shadow-xs dark:shadow-lg'
                       }`}
                     >
-                      {message.content ? (
+                      
+                      {editingMessageId === message.id ? (
+                        <div className="flex flex-col gap-2 min-w-[200px] sm:min-w-[300px]">
+                          <textarea
+                            value={editInput}
+                            onChange={(e) => setEditInput(e.target.value)}
+                            className="w-full bg-white/10 border border-white/20 rounded-xl p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/50 resize-none"
+                            rows={3}
+                            autoFocus
+                          />
+                          <div className="flex justify-end gap-2 mt-1">
+                            <button 
+                              onClick={() => setEditingMessageId(null)}
+                              className="px-3 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              onClick={() => handleEditSubmit(message.id)}
+                              className="px-3 py-1.5 text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 rounded-lg transition-colors shadow-sm"
+                            >
+                              Save & Resend
+                            </button>
+                          </div>
+                        </div>
+                      ) : message.content ? (
                         <div className="text-sm sm:text-base leading-relaxed font-medium">
                           <MessageContent content={message.content} />
                         </div>
@@ -204,9 +258,11 @@ export default function ChatPage() {
                           <div className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
                         </div>
                       )}
-                      <span className={`text-xs mt-2 block opacity-70 ${message.role === 'user' ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      {editingMessageId !== message.id && (
+                        <span className={`text-xs mt-2 block opacity-70 ${message.role === 'user' ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
                     </div>
                     {message.role === 'user' && (
                       <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-600 to-blue-700 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30">
