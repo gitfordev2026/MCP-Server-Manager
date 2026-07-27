@@ -149,16 +149,93 @@ export function consumePostLoginRedirect(stateParam?: string | null): string | n
 
 function generateRandomString(length: number): string {
   const array = new Uint8Array(length);
-  crypto.getRandomValues(array);
+  if (typeof globalThis.crypto !== "undefined" && globalThis.crypto.getRandomValues) {
+    globalThis.crypto.getRandomValues(array);
+  } else {
+    for (let i = 0; i < length; i++) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
+  }
   return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function sha256(plain: string): Promise<ArrayBuffer> {
-  const encoder = new TextEncoder();
-  return crypto.subtle.digest("SHA-256", encoder.encode(plain));
+function rightRotate(value: number, amount: number): number {
+  return (value >>> amount) | (value << (32 - amount));
 }
 
-function base64UrlEncode(buffer: ArrayBuffer): string {
+function sha256PureJS(ascii: string): Uint8Array {
+  const mathPow = Math.pow;
+  const maxWord = mathPow(2, 32);
+  const K: number[] = [];
+  const isPrime = (n: number) => {
+    for (let f = 2; f * f <= n; f++) if (n % f === 0) return false;
+    return true;
+  };
+  let candidate = 2;
+  while (K.length < 64) {
+    if (isPrime(candidate)) K.push((mathPow(candidate, 1 / 3) * maxWord) | 0);
+    candidate++;
+  }
+  const H: number[] = [];
+  candidate = 2;
+  while (H.length < 8) {
+    if (isPrime(candidate)) H.push((mathPow(candidate, 1 / 2) * maxWord) | 0);
+    candidate++;
+  }
+  const words: number[] = [];
+  const asciiLength = ascii.length * 8;
+  for (let i = 0; i < ascii.length; i++) {
+    words[i >> 2] |= ascii.charCodeAt(i) << (24 - (i % 4) * 8);
+  }
+  words[asciiLength >> 5] |= 0x80 << (24 - (asciiLength % 32));
+  words[(((asciiLength + 64) >> 9) << 4) + 15] = asciiLength;
+  const w = new Array(64);
+  for (let i = 0; i < words.length; i += 16) {
+    const wSub = words.slice(i, i + 16);
+    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (let j = 0; j < 64; j++) {
+      if (j < 16) {
+        w[j] = wSub[j] | 0;
+      } else {
+        const s0 = rightRotate(w[j - 15], 7) ^ rightRotate(w[j - 15], 18) ^ (w[j - 15] >>> 3);
+        const s1 = rightRotate(w[j - 2], 17) ^ rightRotate(w[j - 2], 19) ^ (w[j - 2] >>> 10);
+        w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0;
+      }
+      const ch = (e & f) ^ (~e & g);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const s0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);
+      const s1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);
+      const temp1 = (h + s1 + ch + K[j] + w[j]) | 0;
+      const temp2 = (s0 + maj) | 0;
+      h = g; g = f; f = e; e = (d + temp1) | 0; d = c; c = b; b = a; a = (temp1 + temp2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  const result = new Uint8Array(32);
+  for (let i = 0; i < 8; i++) {
+    result[i * 4] = (H[i] >> 24) & 0xff;
+    result[i * 4 + 1] = (H[i] >> 16) & 0xff;
+    result[i * 4 + 2] = (H[i] >> 8) & 0xff;
+    result[i * 4 + 3] = H[i] & 0xff;
+  }
+  return result;
+}
+
+async function sha256(plain: string): Promise<ArrayBuffer> {
+  if (typeof globalThis.crypto !== "undefined" && globalThis.crypto.subtle && typeof globalThis.crypto.subtle.digest === "function") {
+    try {
+      const encoder = new TextEncoder();
+      return await globalThis.crypto.subtle.digest("SHA-256", encoder.encode(plain));
+    } catch {
+      // Fallback to pure JS sha256 if crypto.subtle fails
+    }
+  }
+  const uint8 = sha256PureJS(plain);
+  return uint8.buffer as ArrayBuffer;
+}
+
+function base64UrlEncode(buffer: ArrayBuffer | ArrayBufferLike): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));

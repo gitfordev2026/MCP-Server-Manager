@@ -9,8 +9,10 @@ import {
   consumePostLoginRedirect,
   getStoredToken,
   storeTokens,
+  clearTokens,
 } from '@/lib/auth';
 import { publicEnv } from '@/lib/env';
+import { authenticatedFetch } from '@/services/http';
 
 function CallbackContent() {
   const searchParams = useSearchParams();
@@ -32,14 +34,29 @@ function CallbackContent() {
 
     (async () => {
       try {
-        if (getStoredToken()) {
-          router.replace(consumePostLoginRedirect(state) || '/');
+        const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
+
+        // 1. Exchange code if not already stored
+        if (!getStoredToken()) {
+          const tokenResponse = await exchangeCodeForToken(config, code);
+          storeTokens(tokenResponse);
+        }
+
+        // 2. --- STRICT PRE-CHECK: Verify DB Role BEFORE Redirecting to Dashboard ---
+        const meRes = await authenticatedFetch('/api/proxy/api/me');
+        if (meRes.status === 403) {
+          // Unregistered user / No DB role assigned -> Go straight to /access-denied
+          window.location.href = '/access-denied';
+          return;
+        } else if (meRes.status === 401) {
+          clearTokens();
+          window.location.href = '/login';
           return;
         }
-        const config = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
-        const tokenResponse = await exchangeCodeForToken(config, code);
-        storeTokens(tokenResponse);
-        router.replace(consumePostLoginRedirect(state) || '/');
+
+        // 3. Allowed user -> Go to target destination
+        const target = consumePostLoginRedirect(state);
+        window.location.href = target && target !== '/' ? target : '/dashboard';
       } catch (err) {
         console.error('Auth callback error:', err);
         const message = err instanceof Error ? err.message : 'Token exchange failed';
@@ -89,7 +106,7 @@ function CallbackContent() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="text-center">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4" />
-        <p className="text-slate-600">Completing authentication...</p>
+        <p className="text-slate-600">Completing authentication and checking permissions...</p>
       </div>
     </div>
   );

@@ -1,74 +1,105 @@
-"use client"
+"use client";
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import { usePathname } from 'next/navigation';
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   fetchAuthConfig,
   getStoredToken,
   redirectToLogin,
-  refreshAccessToken,
+  clearTokens,
   type AuthConfig,
-} from '@/lib/auth';
-import { publicEnv } from '@/lib/env';
+} from "@/lib/auth";
+import { publicEnv } from "@/lib/env";
+import { authenticatedFetch } from "@/services/http";
 
-/** Paths that should never trigger the auth guard. */
-const EXACT_PUBLIC_PATHS = ['/', '/new'];
-const PREFIX_PUBLIC_PATHS = ['/auth/callback', '/auth/register', '/login'];
+/** Paths that do not require authentication or DB role check. */
+const PUBLIC_PATHS = [
+  "/",
+  "/login",
+  "/auth/callback",
+  "/auth/register",
+  "/unauthorized",
+  "/access-denied",
+];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [readyPath, setReadyPath] = useState<string | null>(null);
+  const router = useRouter();
+  const [roleVerified, setRoleVerified] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [bypassAuth, setBypassAuth] = useState(false);
+
   const hydrated = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   );
-  const isPublicPath = EXACT_PUBLIC_PATHS.includes(pathname) || PREFIX_PUBLIC_PATHS.some((p) => pathname.startsWith(p));
-  const hasToken = hydrated && Boolean(getStoredToken());
+
+  const isPublicPath = PUBLIC_PATHS.some((p) => (p === "/" ? pathname === "/" : pathname.startsWith(p)));
 
   useEffect(() => {
-    if (!hydrated || isPublicPath) return;
-    if (isPublicPath) return;
-    if (hasToken) return;
+    if (!hydrated || isPublicPath) {
+      setLoading(false);
+      return;
+    }
 
     let cancelled = false;
 
     (async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        if (!cancelled) setError(null);
         const config: AuthConfig = await fetchAuthConfig(publicEnv.NEXT_PUBLIC_BE_API_URL);
 
+        // If auth is disabled globally in config, allow access
         if (!config.auth_enabled) {
-          // Auth is disabled (dev mode) - render the app directly.
-          if (!cancelled) setReadyPath(pathname);
+          if (!cancelled) {
+            setRoleVerified(true);
+            setLoading(false);
+          }
           return;
         }
 
-        // Check for a valid stored token.
-        if (getStoredToken()) {
-          if (!cancelled) setReadyPath(pathname);
+        // Check if user has an active session flag
+        if (!getStoredToken()) {
+          if (!cancelled) {
+            await redirectToLogin(config);
+          }
           return;
         }
 
-        // Attempt a silent refresh before redirecting.
-        const refreshed = await refreshAccessToken(config);
-        if (refreshed && !cancelled) {
-          setReadyPath(pathname);
-          return;
-        }
+        // --- STRICT GATEKEEPER: Call /api/me to verify DB role BEFORE rendering ---
+        const res = await authenticatedFetch("/api/proxy/api/me");
 
-        // No valid session - redirect to Keycloak login.
-        if (!cancelled) {
+        if (cancelled) return;
+
+        if (res.ok) {
+          const profile = await res.json();
+          // User exists in DB and has an active primary_role ("admin" | "developer")
+          if (profile.primary_role) {
+            setRoleVerified(true);
+            setLoading(false);
+          } else {
+            // Authenticated but no role assigned in DB
+            router.replace("/access-denied");
+          }
+        } else if (res.status === 403) {
+          // No application role assigned -> Redirect immediately to /access-denied
+          router.replace("/access-denied");
+        } else if (res.status === 401) {
+          // Token/cookie invalid or expired -> Clear and redirect to login
+          clearTokens();
           await redirectToLogin(config);
+        } else {
+          throw new Error(`HTTP ${res.status}: Failed to verify access role`);
         }
       } catch (err) {
-        console.error('AuthGuard error:', err);
+        console.error("AuthGuard verification error:", err);
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to reach auth service');
-          setReadyPath(pathname);
+          setError(err instanceof Error ? err.message : "Failed to verify authorization");
+          setLoading(false);
         }
       }
     })();
@@ -76,51 +107,52 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [hasToken, hydrated, isPublicPath, pathname, attempt]);
+  }, [hydrated, isPublicPath, pathname, attempt, router]);
 
-  if (isPublicPath || (hydrated && (hasToken || readyPath === pathname || bypassAuth))) {
+  // Render public pages immediately without blocking
+  if (isPublicPath) {
     return <>{children}</>;
   }
 
+  // Show loading spinner while verifying authorization (prevents UI flashing)
+  if (!hydrated || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-slate-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500 mx-auto mb-4" />
+          <p className="text-slate-300 font-medium text-sm">Verifying access permissions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error UI if backend is unreachable
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-        <div className="max-w-md w-full rounded-2xl border border-red-200 bg-white shadow-sm p-6 text-center">
-          <h2 className="text-lg font-semibold text-red-600 mb-2">Authentication Unavailable</h2>
-          <p className="text-sm text-slate-600 mb-4">
-            Unable to reach the backend authentication service. Please start the backend and try again.
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+        <div className="max-w-md w-full rounded-2xl border border-red-500/30 bg-slate-800 shadow-xl p-6 text-center text-slate-100">
+          <h2 className="text-lg font-semibold text-red-400 mb-2">Authentication Unavailable</h2>
+          <p className="text-sm text-slate-300 mb-4">
+            Unable to verify your authorization with the server.
           </p>
-          <p className="text-xs text-slate-400 mb-4 break-words">{error}</p>
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => setAttempt((v) => v + 1)}
-              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-            >
-              Retry
-            </button>
-            <button
-              onClick={() => setBypassAuth(true)}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors"
-            >
-              Continue Without Auth
-            </button>
-          </div>
+          <p className="text-xs font-mono text-red-300/80 mb-6 bg-slate-900/60 p-3 rounded-lg break-words">
+            {error}
+          </p>
+          <button
+            onClick={() => setAttempt((v) => v + 1)}
+            className="w-full inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2.5 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors shadow-md cursor-pointer"
+          >
+            Retry Verification
+          </button>
         </div>
       </div>
     );
   }
 
-  if (!hydrated || readyPath !== pathname) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4" />
-          <p className="text-slate-600">Checking authentication...</p>
-        </div>
-      </div>
-    );
+  // Only render protected children after role verification succeeds
+  if (roleVerified) {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  return null;
 }
-

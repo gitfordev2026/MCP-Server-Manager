@@ -8,7 +8,7 @@ import { toast } from '@/lib/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Role = 'super_admin' | 'admin' | 'operator' | 'read_only';
+type Role = 'super_admin' | 'admin' | 'developer' | 'operator' | 'read_only';
 
 type DashboardCards = {
   total_applications: number;
@@ -305,20 +305,26 @@ export default function AdminPanelPage() {
 
   // Role is read from env/session — not switchable from UI in production.
   // In dev, it's read from localStorage (set externally via settings page or env).
-  const [actorRole, setActorRole] = useState<Role>(() => {
-    if (typeof window === 'undefined') return 'read_only';
-    const stored = window.localStorage.getItem('mcp_admin_roles');
-    return (['super_admin', 'admin', 'operator', 'read_only'].includes(stored ?? '')
-      ? (stored as Role)
-      : 'read_only');
-  });
+  const [actorRole, setActorRole] = useState<Role>('admin');
+  const [currentUser, setCurrentUser] = useState<{ username: string; sub: string } | null>(null);
 
-  const handleRoleChange = (nextRole: Role) => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('mcp_admin_roles', nextRole);
+  useEffect(() => {
+    async function loadCurrentUser() {
+      try {
+        const res = await authenticatedFetch('/api/proxy/api/me');
+        if (res.ok) {
+          const profile = await res.json();
+          setCurrentUser({ username: profile.username, sub: profile.sub });
+          if (profile.primary_role) {
+            setActorRole(profile.primary_role as Role);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load user role for admin panel:', err);
+      }
     }
-    setActorRole(nextRole);
-  };
+    void loadCurrentUser();
+  }, []);
 
   const [stats, setStats] = useState<DashboardCards | null>(null);
   const [syncHealth, setSyncHealth] = useState<SyncHealthResponse | null>(null);
@@ -371,10 +377,10 @@ export default function AdminPanelPage() {
   */
 
   // Permissions
-  const canManageApps      = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
-  const canManageServers   = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
-  const canManageTools     = useMemo(() => ['super_admin', 'admin', 'operator'].includes(actorRole), [actorRole]);
-  const canManageEndpoints = useMemo(() => ['super_admin', 'admin', 'operator'].includes(actorRole), [actorRole]);
+  const canManageApps      = useMemo(() => ['super_admin', 'admin', 'developer'].includes(actorRole), [actorRole]);
+  const canManageServers   = useMemo(() => ['super_admin', 'admin', 'developer'].includes(actorRole), [actorRole]);
+  const canManageTools     = useMemo(() => ['super_admin', 'admin', 'developer', 'operator'].includes(actorRole), [actorRole]);
+  const canManageEndpoints = useMemo(() => ['super_admin', 'admin', 'developer', 'operator'].includes(actorRole), [actorRole]);
   const canHardDelete      = useMemo(() => actorRole === 'super_admin', [actorRole]);
   const canApproveExposure = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
 
@@ -773,19 +779,14 @@ export default function AdminPanelPage() {
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
-              <span className="uppercase tracking-wide">Role</span>
-              <select
-                className="border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800"
-                value={actorRole}
-                onChange={(e) => handleRoleChange(e.target.value as Role)}
-              >
-                <option value="super_admin">Super Admin</option>
-                <option value="admin">Admin</option>
-                <option value="operator">Operator</option>
-                <option value="read_only">Read Only</option>
-              </select>
-            </div>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border shadow-sm ${
+              actorRole === 'admin' || actorRole === 'super_admin'
+                ? 'bg-purple-500/10 text-purple-600 dark:text-purple-300 border-purple-500/30'
+                : 'bg-blue-500/10 text-blue-600 dark:text-blue-300 border-blue-500/30'
+            }`}>
+              <span className="w-2 h-2 rounded-full bg-current animate-pulse" />
+              DATABASE ROLE: {actorRole.toUpperCase()}
+            </span>
           </div>
         </div>
 

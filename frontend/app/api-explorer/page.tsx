@@ -131,7 +131,7 @@ function ApiExplorerContent() {
         
         // Pre-fill request body template
         try {
-          const bodySchema = resolveSchema(methodObj.requestBody?.content?.['application/json']?.schema);
+          const bodySchema = resolveSchema((methodObj as any).requestBody?.content?.['application/json']?.schema);
           if (bodySchema && bodySchema.properties) {
             setTestRequestBody(generateExampleJson(bodySchema.properties));
           }

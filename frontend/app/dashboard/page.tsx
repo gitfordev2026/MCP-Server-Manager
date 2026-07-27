@@ -525,11 +525,13 @@ export default function Home() {
     } else {
       // Fallback: derive it from NEXT_PUBLIC_BE_API_URL if possible, or use current location
       const beUrlStr = process.env.NEXT_PUBLIC_BE_API_URL || '';
-      let derivedHost = window.location.host;
+      let derivedHost = `${window.location.hostname}:8000`;
       if (beUrlStr) {
         try {
           const parsed = new URL(beUrlStr);
-          derivedHost = parsed.host; // includes port
+          if (!['backend', 'mcp-backend'].includes(parsed.hostname)) {
+            derivedHost = parsed.host;
+          }
         } catch (e) {}
       }
       wsUrl = `${wsProtocol}//${derivedHost}/ws/health`;

@@ -1,36 +1,26 @@
 import { publicEnv } from '@/lib/env';
-import { getStoredToken, clearTokens, storePostLoginRedirect } from '@/lib/auth';
+import { clearTokens, storePostLoginRedirect } from '@/lib/auth';
 
 // Use the local Next.js proxy for all API requests to ensure HMAC signing
 const API_BASE = '/api/proxy';
 
-export function resolveAuthHeaders(): Record<string, string> {
-  if (typeof window === 'undefined') {
-    return { 'x-user': 'admin', 'x-roles': 'super_admin' };
-  }
-  const token = getStoredToken();
-  if (token) {
-    // Rely on HttpOnly cookies sent automatically via credentials: 'include'
-    return {};
-  }
-  return { 'x-user': 'admin', 'x-roles': 'super_admin' };
-}
-
 /**
- * Drop-in replacement for `fetch()` that injects the JWT Authorization header.
- * Use this wherever raw `fetch()` is used to call the backend API.
+ * Drop-in replacement for `fetch()` that sends credentials (HttpOnly cookies).
+ *
+ * The auth system uses HttpOnly cookies set by the backend `/auth/token` proxy.
+ * We do NOT inject any Authorization header — the real JWT lives in the
+ * `access_token` HttpOnly cookie, which `credentials: 'include'` attaches
+ * automatically on same-origin requests.
  */
 export function authenticatedFetch(
   input: string | URL | Request,
   init?: RequestInit
 ): Promise<Response> {
-  const authHeaders = resolveAuthHeaders();
   const existingHeaders = init?.headers || {};
   return fetch(input, {
     credentials: 'include',
     ...init,
     headers: {
-      ...authHeaders,
       ...(existingHeaders as Record<string, string>),
     },
   });
@@ -40,23 +30,28 @@ export async function http<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const authHeaders = resolveAuthHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders,
       ...(options.headers || {}),
     },
     ...options,
   });
 
   if (res.status === 401 && typeof window !== 'undefined') {
-    clearTokens();
-    storePostLoginRedirect(
-      `${window.location.pathname}${window.location.search}${window.location.hash}`
-    );
-    window.location.href = '/login';
+    const currentPath = window.location.pathname;
+    if (
+      !currentPath.startsWith('/login') &&
+      !currentPath.startsWith('/auth/callback') &&
+      !currentPath.startsWith('/access-denied')
+    ) {
+      clearTokens();
+      storePostLoginRedirect(
+        `${window.location.pathname}${window.location.search}${window.location.hash}`
+      );
+      window.location.href = '/login';
+    }
     throw new Error('Authentication expired — redirecting to login');
   }
 

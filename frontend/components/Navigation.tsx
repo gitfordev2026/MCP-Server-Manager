@@ -15,6 +15,8 @@ import {
   type AuthConfig,
 } from '@/lib/auth';
 
+import UserHeader from '@/components/UserHeader';
+
 interface NavigationProps {
   pageTitle?: string;
   isDark?: boolean;
@@ -181,20 +183,10 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
               ))}
             </div>
 
-            {/* Theme Toggle Button */}
-            <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+            {/* Theme Toggle & User Profile Header */}
+            <div className="flex items-center gap-3 pl-2 border-l border-slate-200 dark:border-slate-800">
               <ThemeToggle />
-
-              {showLogout && (
-                <button
-                  type="button"
-                  className={`inline-flex items-center justify-center flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-xl transition-all duration-200 cursor-pointer ${baseInactiveClass}`}
-                  onClick={handleLogout}
-                  disabled={loggingOut}
-                >
-                  {loggingOut ? 'Logging out...' : 'Logout'}
-                </button>
-              )}
+              <UserHeader />
             </div>
           </div>
 

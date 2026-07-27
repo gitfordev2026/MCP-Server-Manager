@@ -11,7 +11,7 @@ COPY package.json package-lock.json* ./
 
 # Install ALL dependencies (including devDependencies like typescript needed for build)
 COPY node_modules* ./node_modules/
-RUN if [ ! -d "./node_modules/next" ] || [ ! -d "./node_modules/typescript" ]; then npm ci ; fi
+RUN if [ ! -d "./node_modules/next" ] || [ ! -d "./node_modules/typescript" ]; then npm install ; fi
 
 # Copy application source code
 COPY . .
