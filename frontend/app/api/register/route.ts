@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 // Mock user database (replace with real database)
 const users: Record<string, { id: string; email: string; password: string; name: string; createdAt: string }> = {};

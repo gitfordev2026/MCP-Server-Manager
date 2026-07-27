@@ -123,7 +123,23 @@ type AuditLog = {
   created_on: string | null;
 };
 
-type Tab = 'overview' | 'applications' | 'servers' | 'tools' | 'endpoints' | 'audit';
+type Tab = 'overview' | 'applications' | 'servers' | 'tools' | 'endpoints' | 'rbac' | 'audit';
+
+type FeatureInfo = {
+  key: string;
+  name: string;
+  description: string;
+};
+
+type RoleInfo = {
+  name: string;
+  description: string;
+};
+
+type UserRoleInfo = {
+  username: string;
+  role_name: string;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -210,6 +226,11 @@ export default function AdminPanelPage() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [rbacMatrix, setRbacMatrix] = useState<Record<string, Record<string, boolean>>>({});
+  const [rbacFeatures, setRbacFeatures] = useState<FeatureInfo[]>([]);
+  const [rbacRoles, setRbacRoles] = useState<RoleInfo[]>([]);
+  const [rbacUsers, setRbacUsers] = useState<UserRoleInfo[]>([]);
+  const [togglingFeature, setTogglingFeature] = useState<string | null>(null);
 
   // Search/filter state
   const [appSearch, setAppSearch] = useState('');
@@ -236,23 +257,6 @@ export default function AdminPanelPage() {
   const [generatingToolDescId, setGeneratingToolDescId] = useState<number | null>(null);
   const [generatingEndpointDescId, setGeneratingEndpointDescId] = useState<number | null>(null);
 
-  // Forms (create forms currently commented out — kept here for future use)
-  const [appForm, setAppForm] = useState({
-    name: '', url: '', description: '', openapi_path: '/openapi.json', include_unreachable_tools: false,
-  });
-  const [serverForm, setServerForm] = useState({ name: '', url: '', description: '' });
-  /* toolForm — not in use while create tool form is commented out
-  const [toolForm, setToolForm] = useState({
-    owner_id: 'app:', name: '', description: '', version: '1.0.0', source_type: 'openapi',
-  });
-  */
-  /* endpointForm — not in use while register endpoint form is commented out
-  const [endpointForm, setEndpointForm] = useState({
-    owner_id: 'app:', method: 'GET', path: '', description: '', version: '1.0.0',
-    exposed_to_mcp: false, exposure_approved: false,
-  });
-  */
-
   // Permissions
   const canManageApps      = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
   const canManageServers   = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
@@ -267,7 +271,7 @@ export default function AdminPanelPage() {
     try {
       setLoading(true);
       setGlobalError(null);
-      const [statsRes, syncHealthRes, appsRes, serversRes, toolsRes, endpointsRes, auditRes] = await Promise.all([
+      const [statsRes, syncHealthRes, appsRes, serversRes, toolsRes, endpointsRes, auditRes, rbacRes, usersRes] = await Promise.all([
         http<{ cards: DashboardCards }>('/dashboard/stats'),
         http<SyncHealthResponse>('/dashboard/sync-health'),
         http<{ base_urls: AppItem[] }>('/base-urls?include_inactive=true'),
@@ -275,14 +279,20 @@ export default function AdminPanelPage() {
         http<{ tools: Tool[] }>('/tools?include_inactive=true'),
         http<{ endpoints: Endpoint[] }>('/endpoints?include_inactive=true'),
         http<{ logs: AuditLog[] }>('/audit-logs?limit=500'),
+        http<{ matrix: Record<string, Record<string, boolean>>; features: FeatureInfo[]; roles: RoleInfo[] }>('/rbac/matrix'),
+        http<{ users: UserRoleInfo[] }>('/rbac/users'),
       ]);
       setStats(statsRes.cards);
       setSyncHealth(syncHealthRes);
-      setApps(appsRes.base_urls || []);
-      setServers(serversRes.servers || []);
-      setTools(toolsRes.tools || []);
-      setEndpoints(endpointsRes.endpoints || []);
-      setAuditLogs(auditRes.logs || []);
+      setApps(Array.isArray(appsRes?.base_urls) ? appsRes.base_urls : []);
+      setServers(Array.isArray(serversRes?.servers) ? serversRes.servers : []);
+      setTools(Array.isArray(toolsRes?.tools) ? toolsRes.tools : []);
+      setEndpoints(Array.isArray(endpointsRes?.endpoints) ? endpointsRes.endpoints : []);
+      setAuditLogs(Array.isArray(auditRes?.logs) ? auditRes.logs : []);
+      setRbacMatrix(rbacRes?.matrix || {});
+      setRbacFeatures(Array.isArray(rbacRes?.features) ? rbacRes.features : []);
+      setRbacRoles(Array.isArray(rbacRes?.roles) ? rbacRes.roles : []);
+      setRbacUsers(Array.isArray(usersRes?.users) ? usersRes.users : []);
     } catch (err) {
       setGlobalError(err instanceof Error ? err.message : 'Failed to load admin data');
     } finally {
@@ -506,6 +516,46 @@ export default function AdminPanelPage() {
     }
   }, [resolveOwnerContext]);
 
+  // ── RBAC Actions ──────────────────────────────────────────────────────────
+
+  const handleToggleFeature = async (roleName: string, featureKey: string, currentVal: boolean) => {
+    const nextVal = !currentVal;
+    setTogglingFeature(`${roleName}:${featureKey}`);
+    try {
+      await http('/rbac/matrix/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ role_name: roleName, feature_key: featureKey, is_allowed: nextVal }),
+      });
+      setRbacMatrix((prev) => ({
+        ...prev,
+        [roleName]: {
+          ...(prev[roleName] || {}),
+          [featureKey]: nextVal,
+        },
+      }));
+      toast.success(`Feature '${featureKey}' ${nextVal ? 'enabled' : 'disabled'} for ${roleName}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update feature permission');
+    } finally {
+      setTogglingFeature(null);
+    }
+  };
+
+  const handleUpdateUserRole = async (username: string, newRole: string) => {
+    try {
+      await http('/rbac/users/role', {
+        method: 'POST',
+        body: JSON.stringify({ username, role_name: newRole }),
+      });
+      setRbacUsers((prev) =>
+        prev.map((u) => (u.username === username ? { ...u, role_name: newRole } : u))
+      );
+      toast.success(`User '${username}' assigned role '${newRole}'`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to assign user role');
+    }
+  };
+
   // ── Filtered data ─────────────────────────────────────────────────────────
 
   const filteredApps = useMemo(() => {
@@ -519,17 +569,26 @@ export default function AdminPanelPage() {
   }, [servers, serverSearch]);
 
   const filteredTools = useMemo(() => {
-    const q = toolSearch.toLowerCase();
-    return tools.filter(
-      (t) =>
-        !q ||
-        t.name.toLowerCase().includes(q) ||
-        t.owner_id.toLowerCase().includes(q) ||
-        (t.description || '').toLowerCase().includes(q) ||
-        (t.source_type || '').toLowerCase().includes(q) ||
-        (t.method || '').toLowerCase().includes(q) ||
-        (t.path || '').toLowerCase().includes(q)
-    );
+    const list = Array.isArray(tools) ? tools : [];
+    const q = toolSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((t) => {
+      if (!t) return false;
+      const name = String(t.name || '').toLowerCase();
+      const owner = String(t.owner_id || '').toLowerCase();
+      const desc = String(t.description || '').toLowerCase();
+      const source = String(t.source_type || '').toLowerCase();
+      const method = String(t.method || '').toLowerCase();
+      const path = String(t.path || '').toLowerCase();
+      return (
+        name.includes(q) ||
+        owner.includes(q) ||
+        desc.includes(q) ||
+        source.includes(q) ||
+        method.includes(q) ||
+        path.includes(q)
+      );
+    });
   }, [tools, toolSearch]);
 
   const rawApiTools = useMemo(
@@ -565,6 +624,7 @@ export default function AdminPanelPage() {
     { id: 'servers',       label: 'MCP Servers',  count: servers.length },
     { id: 'tools',         label: 'Tools',        count: tools.length },
     { id: 'endpoints',     label: 'API Endpoints',count: endpoints.length },
+    { id: 'rbac',          label: 'RBAC & Feature Access' },
     { id: 'audit',         label: 'Audit Logs',   count: auditLogs.length },
   ];
 
@@ -1389,6 +1449,147 @@ export default function AdminPanelPage() {
               </div>
             </div>
           </section>
+        )}
+
+        {/* ── RBAC & ACCESS CONTROL TAB ──────────────────────────────────── */}
+        {activeTab === 'rbac' && (
+          <div className="space-y-6">
+            {/* Feature Access Matrix Card */}
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    </span>
+                    Feature Access Control Matrix
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                    Configure feature-level permissions per role. Toggle access to hide or restrict system modules.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wide border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th className="text-left px-4 py-3">System Feature</th>
+                      {['super_admin', 'admin', 'operator', 'read_only'].map((roleName) => (
+                        <th key={roleName} className="text-center px-4 py-3 font-semibold">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-mono ${
+                            roleName === 'super_admin' ? 'bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300' :
+                            roleName === 'admin' ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300' :
+                            roleName === 'operator' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300' :
+                            'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                          }`}>
+                            {roleName}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {rbacFeatures.map((feat) => (
+                      <tr key={feat.key} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-4 py-3.5">
+                          <p className="font-semibold text-slate-900 dark:text-white text-sm">{feat.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{feat.description}</p>
+                          <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-900 mt-1 inline-block">
+                            key: {feat.key}
+                          </span>
+                        </td>
+                        {['super_admin', 'admin', 'operator', 'read_only'].map((roleName) => {
+                          const isAllowed = rbacMatrix[roleName]?.[feat.key] ?? true;
+                          const isPending = togglingFeature === `${roleName}:${feat.key}`;
+                          return (
+                            <td key={roleName} className="text-center px-4 py-3.5">
+                              <button
+                                type="button"
+                                disabled={isPending || (roleName === 'super_admin' && feat.key === 'admin_panel')}
+                                onClick={() => void handleToggleFeature(roleName, feat.key, isAllowed)}
+                                className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all cursor-pointer shadow-xs disabled:opacity-50 ${
+                                  isAllowed
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+                                    : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+                                }`}
+                              >
+                                {isPending ? (
+                                  <span className="inline-block animate-spin">⚙️</span>
+                                ) : isAllowed ? (
+                                  '✓ Enabled'
+                                ) : (
+                                  '✕ Disabled'
+                                )}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* User Role Assignment Card */}
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                    </span>
+                    User Role Management
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                    Assign system roles to users to enforce access policies across the application.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wide border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th className="text-left px-4 py-2.5">User</th>
+                      <th className="text-left px-4 py-2.5">Current Role</th>
+                      <th className="text-right px-4 py-2.5">Reassign Role</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {rbacUsers.map((u) => (
+                      <tr key={u.username} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-slate-200">
+                            {u.username[0].toUpperCase()}
+                          </div>
+                          {u.username}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-mono px-2.5 py-1 rounded-full font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                            {u.role_name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <select
+                            value={u.role_name}
+                            onChange={(e) => void handleUpdateUserRole(u.username, e.target.value)}
+                            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs font-medium rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                          >
+                            <option value="super_admin">super_admin</option>
+                            <option value="admin">admin</option>
+                            <option value="operator">operator</option>
+                            <option value="read_only">read_only</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
         )}
 
         {/* ── AUDIT LOGS TAB ───────────────────────────────────────────────── */}

@@ -34,50 +34,84 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
   const baseInactiveClass =
     'bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-900 border border-slate-200/90 shadow-2xs dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white dark:border-slate-700';
 
-  const navItems = [
+  const [featurePerms, setFeaturePerms] = useState<Record<string, boolean>>({
+    playground: true,
+    chat: true,
+    api_explorer: true,
+    mcp_endpoints: true,
+    admin_panel: true,
+  });
+
+  useEffect(() => {
+    let role = 'super_admin';
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem('mcp_admin_roles');
+      if (stored) role = stored;
+    }
+    const apiUrl = publicEnv.NEXT_PUBLIC_BE_API_URL || 'http://10.196.167.176:8000';
+    fetch(`${apiUrl}/rbac/permissions?role=${role}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.permissions) {
+          setFeaturePerms(data.permissions);
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
+
+  const rawNavItems = [
     {
       href: '/dashboard',
       label: 'Dashboard',
+      featureKey: 'dashboard',
       isActive: pathname === '/dashboard',
       activeClass: 'bg-blue-600 text-white hover:bg-blue-700 hover:text-white shadow-md shadow-blue-500/25 font-bold',
     },
     {
       href: '/register-server',
       label: 'Register MCP',
+      featureKey: 'mcp_endpoints',
       isActive: pathname === '/register-server' || pathname.includes('/servers/'),
       activeClass: 'bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white shadow-md shadow-emerald-500/25 font-bold',
     },
     {
       href: '/register-app',
       label: 'Register App',
+      featureKey: 'api_explorer',
       isActive: pathname === '/register-app' || pathname.includes('/register-app/'),
       activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700 hover:text-white shadow-md shadow-indigo-500/25 font-bold',
     },
     {
       href: '/mcp-endpoints',
       label: 'MCP Endpoints',
+      featureKey: 'mcp_endpoints',
       isActive: pathname === '/mcp-endpoints',
       activeClass: 'bg-purple-600 text-white hover:bg-purple-700 hover:text-white shadow-md shadow-purple-500/25 font-bold',
     },
     {
       href: '/playground',
       label: 'Playground',
+      featureKey: 'playground',
       isActive: pathname === '/playground',
       activeClass: 'bg-amber-600 text-white hover:bg-amber-700 hover:text-white shadow-md shadow-amber-500/25 font-bold',
     },
     {
       href: '/chat',
       label: 'Chat',
+      featureKey: 'chat',
       isActive: pathname === '/chat',
       activeClass: 'bg-violet-600 text-white hover:bg-violet-700 hover:text-white shadow-md shadow-violet-500/25 font-bold',
     },
     {
       href: '/admin',
       label: 'Admin',
+      featureKey: 'admin_panel',
       isActive: pathname === '/admin',
       activeClass: 'bg-rose-600 text-white hover:bg-rose-700 hover:text-white shadow-md shadow-rose-500/25 font-bold',
     },
   ];
+
+  const navItems = rawNavItems.filter((item) => featurePerms[item.featureKey] !== false);
 
   const getPageName = () => {
     if (pageTitle) return pageTitle;

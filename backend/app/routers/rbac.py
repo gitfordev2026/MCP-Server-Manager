@@ -5,12 +5,21 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.core.db import SessionLocal
 from app.models.db_models import FeatureAccessModel, RoleModel, UserRoleAssignmentModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rbac", tags=["RBAC & Access Control"])
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 ALL_FEATURES = [
     {"key": "playground", "name": "LLM Playground", "description": "Interactive testing environment for LLM tools"},

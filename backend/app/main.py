@@ -2100,6 +2100,9 @@ app.include_router(
     prefix="/api/v1",
 )
 
+from app.routers.rbac import router as rbac_router
+app.include_router(rbac_router)
+
 
 
 if __name__ == "__main__":

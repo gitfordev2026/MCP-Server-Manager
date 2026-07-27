@@ -274,12 +274,6 @@ function sha256PureJs(ascii: string): Uint8Array {
 }
 
 async function sha256(plain: string): Promise<ArrayBuffer> {
-  const encoder = new TextEncoder();
-  if (typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function") {
-    try {
-      return await crypto.subtle.digest("SHA-256", encoder.encode(plain));
-    } catch (_) {}
-  }
   const u8 = sha256PureJs(plain);
   return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer;
 }
@@ -292,13 +286,6 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
 }
 
 function generateRandomString(length: number): string {
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-    try {
-      const array = new Uint8Array(length);
-      crypto.getRandomValues(array);
-      return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
-    } catch (_) {}
-  }
   let result = "";
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   for (let i = 0; i < length; i++) {
