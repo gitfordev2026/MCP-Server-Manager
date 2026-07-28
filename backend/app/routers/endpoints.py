@@ -7,6 +7,8 @@ from sqlalchemy import select
 from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
 from app.env import ENV
 
+from app.core.rbac import get_request_actor
+
 class EndpointCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,6 +53,7 @@ def create_endpoints_router(
     write_audit_log_fn,
     audit_log_model,
     require_permission_fn,
+    get_actor_dep=get_request_actor,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -61,34 +64,38 @@ def create_endpoints_router(
     )
     def list_endpoints(
         include_inactive: bool = Query(default=False),
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
-        cache_key = f"status:endpoints:include_inactive={str(include_inactive).lower()}"
+        role = actor.get("primary_role") or "developer"
+        sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+        username = actor.get("username")
+        user_ids = [u for u in (sub, username) if u]
+
+        cache_key = f"status:endpoints:include_inactive={str(include_inactive).lower()}:{sub}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
         with session_local_factory() as db:
-            active_server_names = {
-                row.name
-                for row in db.scalars(
-                    select(server_model).where(
-                        server_model.is_deleted == False,  # noqa: E712
-                        server_model.is_enabled == True,  # noqa: E712
-                        server_model.admin_allowed == True,  # noqa: E712
-                        server_model.health_status.in_(["healthy", "degraded"]),
-                    )
-                ).all()
-            }
-            active_base_url_names = {
-                row.name
-                for row in db.scalars(
-                    select(base_url_model).where(
-                        base_url_model.is_deleted == False,  # noqa: E712
-                        base_url_model.is_enabled == True,  # noqa: E712
-                        base_url_model.admin_allowed == True,  # noqa: E712
-                        base_url_model.health_status.in_(["healthy", "degraded"]),
-                    )
-                ).all()
-            }
+            srv_query = select(server_model).where(
+                server_model.is_deleted == False,  # noqa: E712
+                server_model.is_enabled == True,  # noqa: E712
+                server_model.admin_allowed == True,  # noqa: E712
+                server_model.health_status.in_(["healthy", "degraded"]),
+            )
+            app_query = select(base_url_model).where(
+                base_url_model.is_deleted == False,  # noqa: E712
+                base_url_model.is_enabled == True,  # noqa: E712
+                base_url_model.admin_allowed == True,  # noqa: E712
+                base_url_model.health_status.in_(["healthy", "degraded"]),
+            )
+            if role != "admin":
+                srv_query = srv_query.where(server_model.created_by_user_id.in_(user_ids))
+                app_query = app_query.where(base_url_model.created_by_user_id.in_(user_ids))
+
+            active_server_names = {row.name for row in db.scalars(srv_query).all()}
+            active_base_url_names = {row.name for row in db.scalars(app_query).all()}
+            active_base_url_ids = {row.id for row in db.scalars(app_query).all()}
+
             server_states = {
                 row.name: {
                     "is_enabled": bool(row.is_enabled),
@@ -113,6 +120,12 @@ def create_endpoints_router(
                     api_endpoint_model.is_deleted == False,  # noqa: E712
                     api_endpoint_model.admin_enabled == True,  # noqa: E712
                     api_endpoint_model.owner_enabled == True,  # noqa: E712
+                )
+            if role != "admin":
+                owner_prefixes = [f"app:{name}" for name in active_base_url_names] + [f"mcp:{name}" for name in active_server_names]
+                stmt = stmt.where(
+                    (api_endpoint_model.owner_id.in_(owner_prefixes)) |
+                    (api_endpoint_model.created_by_user_id.in_(user_ids))
                 )
             rows = db.scalars(stmt).all()
 

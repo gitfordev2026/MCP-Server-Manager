@@ -102,27 +102,28 @@ PUBLIC_PATHS = {
     "/health",
     "/mcp/runtime",
     "/auth/config",
+    "/auth/token",
+    "/auth/logout",
     "/docs",
     "/openapi.json",
-    "/agent/query",
-    "/agent/query/stream",
-    "/agent/models",
-    "/agent/playground/query",
-    "/agent/playground/query/stream",
+    "/api/ws-ticket",
+    "/ws",
+    "/api/me",
+    "/api/admin/users",
 }
 
 
-def global_auth_dependency(request: Request) -> None:
+def global_auth_dependency(request: Any = None) -> None:
     """Enforce JWT auth on all routes except public paths.
 
     Attached as a top-level FastAPI dependency so every router is
     automatically protected when ``AUTH_ENABLED=true``.
     """
-    if not AUTH_ENABLED:
+    if not AUTH_ENABLED or request is None:
         return
-    if request.url.path in PUBLIC_PATHS:
+    url_path = getattr(getattr(request, "url", None), "path", "")
+    if url_path in PUBLIC_PATHS or url_path.startswith("/ws"):
         return
-    # get_request_actor raises HTTP 401 when token is missing/invalid.
     get_request_actor(request)
 
 
@@ -159,7 +160,7 @@ async def lifespan(_: FastAPI):
             await asyncio.gather(monitor_task, return_exceptions=True)
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, dependencies=[Depends(global_auth_dependency)])
 
 # Add CORS middleware
 app.add_middleware(
@@ -172,6 +173,12 @@ app.add_middleware(
 )
 
 from app.core.hmac_middleware import HMACVerificationMiddleware
+from app.core.rate_limiter import limiter, SlowAPIMiddleware, custom_rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, custom_rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(HMACVerificationMiddleware)
 
 
@@ -197,6 +204,48 @@ def get_mcp_runtime() -> dict[str, Any]:
     return MCP_RUNTIME_INFO
 
 
+def ensure_dynamic_schema_migrations() -> None:
+    """
+    Inspects all tables and columns declared in Base.metadata against the live DB.
+    If a table exists but is missing any column declared in SQLAlchemy models,
+    it automatically executes ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...
+    """
+    Base.metadata.create_all(bind=engine)
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    with engine.begin() as conn:
+        for table_name, table in Base.metadata.tables.items():
+            if table_name not in existing_tables:
+                continue
+
+            existing_cols = {col["name"] for col in inspector.get_columns(table_name)}
+            for col in table.columns:
+                if col.name not in existing_cols:
+                    col_type_str = str(col.type.compile(engine.dialect)).upper()
+                    if "JSON" in col_type_str or "JSONB" in col_type_str:
+                        type_sql = "JSON"
+                    elif "VARCHAR" in col_type_str or "STRING" in col_type_str:
+                        type_sql = col_type_str if "(" in col_type_str else "VARCHAR(255)"
+                    elif "BOOLEAN" in col_type_str or "BOOL" in col_type_str:
+                        type_sql = "BOOLEAN"
+                    elif "TIMESTAMP" in col_type_str or "DATETIME" in col_type_str:
+                        type_sql = "TIMESTAMP"
+                    elif "INT" in col_type_str:
+                        type_sql = "INTEGER"
+                    elif "TEXT" in col_type_str:
+                        type_sql = "TEXT"
+                    else:
+                        type_sql = col_type_str
+
+                    sql = f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS "{col.name}" {type_sql}'
+                    print(f"[DB Auto-Migration] Adding missing column '{col.name}' ({type_sql}) to table '{table_name}'...")
+                    try:
+                        conn.exec_driver_sql(sql)
+                    except Exception as exc:
+                        print(f"[DB Auto-Migration Warning] Table '{table_name}' column '{col.name}' migration warning: {exc}")
+
+
 def init_db() -> None:
     expected_tables = set(Base.metadata.tables.keys())
     if not expected_tables:
@@ -205,6 +254,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_access_policy_schema_columns()
     ensure_phase2_schema_columns()
+    ensure_dynamic_schema_migrations()
     ensure_domain_defaults()
     sync_rbac_baseline()
     sync_domain_auth_profiles()
@@ -285,7 +335,17 @@ def sync_rbac_baseline() -> None:
                 if pair in existing_pairs:
                     continue
                 db.add(RolePermissionModel(role_id=role.id, permission_id=permission.id))
-                existing_pairs.add(pair)
+        # Seed default admin user in UserModel table if not existing
+        admin_user = db.scalar(select(UserModel).where(UserModel.username == "admin"))
+        if not admin_user:
+            admin_user = UserModel(
+                username="admin",
+                keycloak_sub="admin",
+                email="admin@example.com",
+                role="admin",
+            )
+            db.add(admin_user)
+            logger.info("[DB Seed] Default admin user seeded in database: username=admin, role=admin")
 
         db.commit()
 
@@ -364,6 +424,10 @@ def ensure_phase2_schema_columns() -> None:
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     table_to_columns: dict[str, list[tuple[str, str]]] = {
+        UserModel.__tablename__: [
+            ("keycloak_sub", "VARCHAR(255)"),
+            ("role", "VARCHAR(50) DEFAULT 'developer'"),
+        ],
         MCPToolModel.__tablename__: [
             ("description", "TEXT"),
             ("current_version", "VARCHAR(64)"),
@@ -380,6 +444,8 @@ def ensure_phase2_schema_columns() -> None:
             ("owner_enabled", "BOOLEAN"),
             ("is_enabled", "BOOLEAN"),
             ("is_deleted", "BOOLEAN"),
+            ("created_by_user_id", "VARCHAR(255)"),
+            ("created_by_email", "VARCHAR(255)"),
         ],
         ServerModel.__tablename__: [
             ("description", "TEXT"),
@@ -392,6 +458,8 @@ def ensure_phase2_schema_columns() -> None:
             ("health_status", "VARCHAR(16)"),
             ("last_health_check_at", "TIMESTAMP"),
             ("consecutive_failures", "INTEGER"),
+            ("created_by_user_id", "VARCHAR(255)"),
+            ("created_by_email", "VARCHAR(255)"),
         ],
         BaseURLModel.__tablename__: [
             ("description", "TEXT"),
@@ -411,6 +479,8 @@ def ensure_phase2_schema_columns() -> None:
             ("last_sync_completed_on", "TIMESTAMP"),
             ("last_discovered_on", "TIMESTAMP"),
             ("last_sync_error", "TEXT"),
+            ("created_by_user_id", "VARCHAR(255)"),
+            ("created_by_email", "VARCHAR(255)"),
         ],
         EndpointVersionModel.__tablename__: [
             ("endpoint_id", "INTEGER"),
@@ -1959,7 +2029,13 @@ class JWTAuthASGIMiddleware:
                 if not token:
                     from starlette.requests import Request
                     req = Request(scope)
-                    token = req.cookies.get("mcp_access_token") or req.cookies.get("access_token") or ""
+                    token = (
+                        req.cookies.get("mcp_access_token")
+                        or req.cookies.get("access_token")
+                        or req.query_params.get("token")
+                        or req.query_params.get("access_token")
+                        or ""
+                    )
                 if not token:
                     response = JSONResponse(
                         status_code=401,
@@ -1980,8 +2056,9 @@ class JWTAuthASGIMiddleware:
         await self.app(scope, receive, send)
 
 
-app.mount("/mcp/apps", combined_mcp_asgi_app)
-app.mount("/mcp/apps/", combined_mcp_asgi_app)
+secured_mcp_asgi_app = JWTAuthASGIMiddleware(combined_mcp_asgi_app)
+app.mount("/mcp/apps", secured_mcp_asgi_app)
+app.mount("/mcp/apps/", secured_mcp_asgi_app)
 MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
 MCP_RUNTIME_INFO["mounted_paths"] = ["/mcp/apps", "/mcp/apps/"]
 require_permission = build_require_permission(
@@ -2141,6 +2218,14 @@ app.include_router(
     ),
     prefix="/api/v1",
 )
+
+from app.routers.ws_ticket_router import create_ws_ticket_router
+from app.routers.admin_users import create_admin_users_router
+from app.routers.feedback import create_feedback_router
+
+app.include_router(create_ws_ticket_router(), tags=["WebSocket Auth Ticket"])
+app.include_router(create_admin_users_router(SessionLocal), tags=["User Management"])
+app.include_router(create_feedback_router(SessionLocal), tags=["User Feedback"])
 
 
 

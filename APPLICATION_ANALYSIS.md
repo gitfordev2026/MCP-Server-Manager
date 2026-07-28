@@ -974,7 +974,7 @@ sequenceDiagram
 ## 14. Session & Development Changelog (Recent Upgrades)
 
 ### 14.1 OpenAPI Spec Candidate Fetching & Docker Host Networking
-- **Host Network Mode (`docker-compose-offline.yml`)**: Set `network_mode: host` and `command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload` for the backend service. This prevents Docker bridge network isolation from dropping packets destined for host processes (e.g., student API on `http://10.196.167.176:5555/openapi.json`).
+- **Host Network Mode (`docker-compose-offline.yml`)**: Set `network_mode: host` and `command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload` for the backend service. This prevents Docker bridge network isolation from dropping packets destined for host processes (e.g., student API on `http://10.139.10.176:5555/openapi.json`).
 - **URL Candidate Building & Diagnostic Fetch (`backend/app/main.py`)**: Added `.rstrip(":")` in `build_openapi_candidates()` to sanitize input URLs and path candidates, automatically generating `host.docker.internal` fallbacks and unauthenticated GET attempts for public specs.
 
 ### 14.2 Secure HTTP Cookie Authentication & Dev Admin Fallback

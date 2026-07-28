@@ -36,6 +36,8 @@ class ServerModel(Base):
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    created_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 
@@ -66,6 +68,8 @@ class BaseURLModel(Base):
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    created_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 
@@ -92,10 +96,22 @@ class UserModel(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    keycloak_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="developer")
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class FeedbackModel(Base):
+    __tablename__ = "user_feedbacks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
 
 
 class GroupModel(Base):
@@ -146,6 +162,8 @@ class MCPToolModel(Base):
     owner_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    created_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     server_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("mcp_servers.id"), nullable=True)
     raw_api_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("raw_apis.id"), nullable=True)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)

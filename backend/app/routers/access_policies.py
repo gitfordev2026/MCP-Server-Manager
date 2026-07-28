@@ -77,7 +77,7 @@ def create_access_policy_router(
         description="List default and per-tool access policies grouped by owner. Source: backend/app/routers/access_policies.py",
     )
     def list_access_policies(
-        current_user: dict[str, Any] | None = Depends(_optional_current_user),
+        current_user: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
         _ = current_user
         with session_local_factory() as db:

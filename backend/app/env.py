@@ -70,6 +70,9 @@ class BackendEnv:
     ops_keycloak_realm: str
     ops_keycloak_client_id: str
     ops_keycloak_client_secret: str
+    rate_limit_enabled: bool
+    rate_limit_default: str
+    rate_limit_auth: str
 
 
 def load_backend_env() -> BackendEnv:
@@ -126,6 +129,9 @@ def load_backend_env() -> BackendEnv:
         ops_keycloak_realm=os.getenv("OPS_KEYCLOAK_REALM", "").strip(),
         ops_keycloak_client_id=os.getenv("OPS_KEYCLOAK_CLIENT_ID", "").strip(),
         ops_keycloak_client_secret=os.getenv("OPS_KEYCLOAK_CLIENT_SECRET", "").strip(),
+        rate_limit_enabled=os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() == "true",
+        rate_limit_default=os.getenv("RATE_LIMIT_DEFAULT", "120/minute").strip(),
+        rate_limit_auth=os.getenv("RATE_LIMIT_AUTH", "20/minute").strip(),
     )
 
 

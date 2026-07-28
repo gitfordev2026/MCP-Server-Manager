@@ -122,6 +122,7 @@ six
 sortedcontainers
 SQLAlchemy
 sse-starlette
+slowapi
 starlette
 tenacity
 typer

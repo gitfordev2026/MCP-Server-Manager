@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_, select
 
 from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.core.rbac import get_request_actor
 from app.env import ENV
 
 class ToolCreate(BaseModel):
@@ -59,6 +60,7 @@ def create_tools_router(
     write_audit_log_fn,
     audit_log_model,
     require_permission_fn,
+    get_actor_dep=get_request_actor,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -69,35 +71,37 @@ def create_tools_router(
     )
     def list_tools(
         include_inactive: bool = Query(default=False),
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
-        cache_key = f"status:tools:include_inactive={str(include_inactive).lower()}"
+        role = actor.get("primary_role") or "developer"
+        sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+        username = actor.get("username")
+        user_ids = [u for u in (sub, username) if u]
+
+        cache_key = f"status:tools:include_inactive={str(include_inactive).lower()}:{sub}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
         with session_local_factory() as db:
-            active_server_ids = {
-                row.id
-                for row in db.scalars(
-                    select(server_model).where(
-                        server_model.is_deleted == False,  # noqa: E712
-                        server_model.is_enabled == True,  # noqa: E712
-                        server_model.admin_allowed == True,  # noqa: E712
-                        server_model.health_status.in_(["healthy", "degraded"]),
-                    )
-                ).all()
-            }
-            active_base_url_ids = {
-                row.id
-                for row in db.scalars(
-                    select(base_url_model).where(
-                        base_url_model.is_deleted == False,  # noqa: E712
-                        base_url_model.is_enabled == True,  # noqa: E712
-                        base_url_model.admin_allowed == True,  # noqa: E712
-                        # Allow 'unknown' (never health-checked / newly registered) alongside healthy/degraded
-                        base_url_model.health_status.in_(["healthy", "degraded", "unknown"]),
-                    )
-                ).all()
-            }
+            srv_query = select(server_model).where(
+                server_model.is_deleted == False,  # noqa: E712
+                server_model.is_enabled == True,  # noqa: E712
+                server_model.admin_allowed == True,  # noqa: E712
+                server_model.health_status.in_(["healthy", "degraded"]),
+            )
+            app_query = select(base_url_model).where(
+                base_url_model.is_deleted == False,  # noqa: E712
+                base_url_model.is_enabled == True,  # noqa: E712
+                base_url_model.admin_allowed == True,  # noqa: E712
+                base_url_model.health_status.in_(["healthy", "degraded", "unknown"]),
+            )
+            if role != "admin":
+                srv_query = srv_query.where(server_model.created_by_user_id.in_(user_ids))
+                app_query = app_query.where(base_url_model.created_by_user_id.in_(user_ids))
+
+            active_server_ids = {row.id for row in db.scalars(srv_query).all()}
+            active_base_url_ids = {row.id for row in db.scalars(app_query).all()}
+
             server_states = {
                 row.id: {
                     "is_enabled": bool(row.is_enabled),
@@ -123,6 +127,13 @@ def create_tools_router(
                     mcp_tool_model.admin_enabled == True,  # noqa: E712
                     mcp_tool_model.owner_enabled == True,  # noqa: E712
                 )
+            if role != "admin":
+                stmt = stmt.where(
+                    (mcp_tool_model.server_id.in_(active_server_ids)) |
+                    (mcp_tool_model.raw_api_id.in_(active_base_url_ids)) |
+                    (mcp_tool_model.created_by_user_id.in_(user_ids))
+                )
+
             rows = db.scalars(stmt).all()
 
             tool_versions = {

@@ -1,7 +1,8 @@
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from sqlalchemy import select
+from app.core.rbac import require_role
 
 
 def create_audit_router(session_local_factory, audit_log_model) -> APIRouter:
@@ -14,6 +15,7 @@ def create_audit_router(session_local_factory, audit_log_model) -> APIRouter:
     )
     def list_audit_logs(
         limit: int = Query(default=100, ge=1, le=1000),
+        actor: dict[str, Any] = Depends(require_role(["admin"])),
     ) -> dict[str, Any]:
         with session_local_factory() as db:
             rows = db.scalars(

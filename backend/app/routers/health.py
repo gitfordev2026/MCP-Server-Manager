@@ -16,6 +16,9 @@ from app.core.db import engine
 from app.env import ENV
 
 
+from app.core.rate_limiter import limiter
+
+
 def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audience_check: bool) -> APIRouter:
     router = APIRouter()
 
@@ -157,6 +160,7 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
         summary="Proxy Token Exchange",
         description="Proxies token exchange to Keycloak and sets secure HttpOnly cookies.",
     )
+    @limiter.limit(ENV.rate_limit_auth)
     async def auth_token_proxy(request: Request, response: Response) -> Any:
         form = await request.form()
         data = dict(form)

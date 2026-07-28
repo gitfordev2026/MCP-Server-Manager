@@ -9,14 +9,17 @@ from sqlalchemy import delete, select
 from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
 from app.env import ENV
 
+from app.core.rbac import verify_resource_ownership
+
+
 def create_servers_router(
     session_local_factory,
     server_model,
-    access_policy_model,
+    raw_api_model,
     mcp_tool_model,
     api_endpoint_model,
+    access_policy_model,
     api_server_link_model,
-    tool_version_model,
     endpoint_version_model,
     server_registration_model,
     probe_server_status_fn,
@@ -152,8 +155,16 @@ def create_servers_router(
         data: server_registration_model,
         actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
+        import re
+        if not re.match(r"^(https?|wss?)://[a-zA-Z0-9.-]+(?::[0-9]+)?(?:/[^\s]*)?$", data.url):
+            raise HTTPException(status_code=400, detail="Invalid URL format. Must start with http://, https://, ws:// or wss://")
+
+        normalized_url = data.url
+        if normalized_url.endswith("/mcp"):
+            normalized_url += "/"
+
         try:
-            probe_result = await probe_server_status(data.name, data.url, timeout_sec=8.0)
+            probe_result = await probe_server_status(data.name, normalized_url, timeout_sec=8.0)
             if probe_result["status"] != "alive":
                 error_detail = probe_result.get("error") or "Unknown connection error"
                 raise HTTPException(
@@ -162,9 +173,24 @@ def create_servers_router(
                 )
 
             with session_local_factory() as db:
+                # Check for duplicate URL
+                url_dup = db.scalar(
+                    select(server_model).where(
+                        server_model.url == normalized_url,
+                        server_model.name != data.name,
+                        server_model.is_deleted == False
+                    )
+                )
+                if url_dup:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"An MCP server is already registered with the URL: {data.url}"
+                    )
+
                 existing = db.scalar(select(server_model).where(server_model.name == data.name))
                 before_state = None
                 if existing:
+                    verify_resource_ownership(getattr(existing, "created_by_user_id", None), actor)
                     before_state = {
                         "name": existing.name,
                         "url": existing.url,
@@ -174,9 +200,6 @@ def create_servers_router(
                         "is_enabled": bool(existing.is_enabled),
                         "is_deleted": bool(existing.is_deleted),
                     }
-                    normalized_url = data.url
-                    if normalized_url.endswith("/mcp"):
-                        normalized_url += "/"
                     existing.url = normalized_url
                     existing.description = (getattr(data, "description", "") or "").strip()
                     existing.domain_type = _normalize_domain_type(getattr(data, "domain_type", "ADM"))
@@ -190,9 +213,8 @@ def create_servers_router(
                         server_id=existing.id,
                     )
                 else:
-                    normalized_url = data.url
-                    if normalized_url.endswith("/mcp"):
-                        normalized_url += "/"
+                    user_sub = actor.get("sub") or actor.get("subject") or actor.get("username")
+                    user_email = actor.get("email") or f"{actor.get('username')}@example.com"
                     server = server_model(
                         name=data.name,
                         url=normalized_url,
@@ -201,6 +223,8 @@ def create_servers_router(
                         selected_tools=_normalize_selected_tools(getattr(data, "selected_tools", [])),
                         is_enabled=True,
                         is_deleted=False,
+                        created_by_user_id=user_sub,
+                        created_by_email=user_email,
                     )
                     db.add(server)
                     db.flush()
@@ -318,10 +342,14 @@ def create_servers_router(
     )
     def list_servers(
         include_inactive: bool = Query(default=False),
-        current_user: dict[str, Any] | None = None,
+        current_user: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, list[dict[str, Any]]]:
-        _ = current_user
-        cache_key = f"status:servers:include_inactive={str(include_inactive).lower()}"
+        role = current_user.get("primary_role", "developer")
+        user_sub = current_user.get("sub") or current_user.get("subject") or current_user.get("username")
+        username = current_user.get("username")
+        user_ids = [u for u in (user_sub, username) if u]
+
+        cache_key = f"status:servers:include_inactive={str(include_inactive).lower()}:{user_sub}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
@@ -333,6 +361,10 @@ def create_servers_router(
                         server_model.is_deleted == False,  # noqa: E712
                         server_model.is_enabled == True,  # noqa: E712
                     )
+
+                if role != "admin":
+                    stmt = stmt.where(server_model.created_by_user_id.in_(user_ids))
+
                 rows = db.scalars(stmt).all()
                 servers = [
                     {
@@ -347,6 +379,8 @@ def create_servers_router(
                         "health_status": str(getattr(row, "health_status", "unknown")),
                         "last_health_check_at": getattr(row, "last_health_check_at", None),
                         "consecutive_failures": int(getattr(row, "consecutive_failures", 0) or 0),
+                        "created_by_user_id": getattr(row, "created_by_user_id", None),
+                        "created_by_email": getattr(row, "created_by_email", None),
                     }
                     for row in rows
                 ]
@@ -444,6 +478,8 @@ def create_servers_router(
             if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
+            verify_resource_ownership(getattr(server, "created_by_user_id", None), actor)
+
             before_state = {
                 "name": server.name,
                 "url": server.url,
@@ -520,6 +556,7 @@ def create_servers_router(
             server = db.scalar(select(server_model).where(server_model.name == server_name))
             if not server or server.is_deleted or not server.is_enabled:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+            verify_resource_ownership(getattr(server, "created_by_user_id", None), actor)
             owner_id = f"mcp:{server.name}"
             before_state = {
                 "name": server.name,

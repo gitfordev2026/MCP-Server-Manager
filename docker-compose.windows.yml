@@ -47,7 +47,7 @@ services:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
-      - NEXT_PUBLIC_BE_API_URL=http://localhost:8000
+      # - NEXT_PUBLIC_BE_API_URL=http://backend:8000
     command: npm run dev
     extra_hosts:
       - "host.docker.internal:host-gateway"

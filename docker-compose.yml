@@ -15,6 +15,7 @@ services:
       dockerfile: Dockerfile
     image: mcp-backend:latest
     container_name: mcp-backend
+    network_mode: host
     ports:
       - "8000:8000"
       - "8099:8099"
@@ -26,8 +27,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - mcp-network
+    # networks:
+    #   - mcp-network
 
   frontend:
     build:
@@ -35,6 +36,7 @@ services:
       dockerfile: Dockerfile.dev
     image: mcp-frontend:latest
     container_name: mcp-frontend
+    network_mode: host
     ports:
       - "3000:3000"
     volumes:
@@ -43,14 +45,16 @@ services:
       # Prevent host OS node_modules & .next from overwriting container build
       - /app/node_modules
       - /app/.next
+    # environment:
+      # - NEXT_PUBLIC_BE_API_URL=http://backend:8000
     env_file:
       - ./frontend/.env
     command: npm run dev
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - mcp-network
+    # networks:
+    #   - mcp-network
 
   mock-server:
     build:
@@ -58,6 +62,7 @@ services:
       dockerfile: Dockerfile
     image: mcp-mock-server:latest
     container_name: mcp-mock-server
+    network_mode: host
     ports:
       - "8001:8001"
     volumes:
@@ -68,12 +73,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - mcp-network
+    # networks:
+    #   - mcp-network
 
   mock-inventory-app:
     image: mcp-mock-server:latest
     container_name: mcp-inventory-app
+    network_mode: host
     ports:
       - "8002:8002"
     volumes:
@@ -84,12 +90,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - mcp-network
+    # networks:
+    #   - mcp-network
 
   mock-portal-app:
     image: mcp-mock-server:latest
     container_name: mcp-portal-app
+    network_mode: host
     ports:
       - "8003:8003"
     volumes:
@@ -100,12 +107,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - mcp-network
+    # networks:
+      # - mcp-network
 
   mock-analytics-app:
     image: mcp-mock-server:latest
     container_name: mcp-analytics-app
+    network_mode: host
     ports:
       - "8004:8004"
     volumes:
@@ -116,9 +124,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    networks:
-      - mcp-network
+    # networks:
+    #   - mcp-network
 
-networks:
-  mcp-network:
-    driver: bridge
+# networks:
+#   mcp-network:
+#     driver: bridge

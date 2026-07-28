@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from typing import Any, Callable, Optional, List, Dict, Tuple
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 import httpx
 from mcp_use import MCPClient
@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.db import SessionLocal
+from app.core.rbac import get_request_actor
 from app.env import ENV
 from app.models.db_models import (
     AccessPolicyModel,
@@ -67,54 +68,57 @@ def _build_mcp_client() -> MCPClient:
     )
 
 
-async def _list_combined_tool_names() -> List[str]:
+async def _list_combined_tool_names(actor: Optional[Dict[str, Any]] = None) -> List[str]:
     try:
-        catalog = _list_exposed_tool_catalog()
+        catalog = _list_exposed_tool_catalog(actor)
         tool_names = sorted({str(item.get("name", "")).strip() for item in catalog if str(item.get("name", "")).strip()})
         if tool_names:
             return tool_names
     except Exception as exc:
         logger.warning(f"Could not fetch catalog tools from DB: {exc}")
 
-    client = _build_mcp_client()
-    try:
-        await client.create_all_sessions(auto_initialize=True)
-        session = client.get_session(ENV.agent_mcp_server_name)
-        if session is None:
-            return []
-        tools = await session.list_tools()
-        return sorted({tool.name for tool in tools})
-    except Exception as exc:
-        logger.warning(f"Fallback MCPClient tool list failed: {exc}")
-        return []
-    finally:
-        if hasattr(client, "aclose"):
-            await client.aclose()
-        elif hasattr(client, "close"):
-            close_fn = getattr(client, "close")
-            if callable(close_fn):
-                close_fn()
+    return []
 
 
 # =========================================================
 # Database Utilities
 # =========================================================
 
-def _list_exposed_tool_catalog() -> List[Dict[str, Any]]:
+def _list_exposed_tool_catalog(actor: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Returns tool metadata grouped by application from DB.
     """
     db = SessionLocal()
     try:
-        tools_list, _ = resolve_exposable_tools(
-            db,
-            MCPToolModel,
-            AccessPolicyModel,
-            ServerModel,
-            BaseURLModel,
-            public_only=False,
-        )
-        if not tools_list:
+        role = actor.get("primary_role") if actor else "developer"
+        sub = actor.get("subject") or actor.get("sub") or actor.get("username") if actor else None
+        username = actor.get("username") if actor else None
+
+        if actor and role != "admin":
+            user_ids = [uid for uid in (sub, username) if uid]
+            # Query only servers and applications this developer created or are public (created_by_user_id is None)
+            srv_ids = db.scalars(
+                select(ServerModel.id).where(
+                    (ServerModel.created_by_user_id.in_(user_ids)) | (ServerModel.created_by_user_id == None)
+                )
+            ).all()
+            app_ids = db.scalars(
+                select(BaseURLModel.id).where(
+                    (BaseURLModel.created_by_user_id.in_(user_ids)) | (BaseURLModel.created_by_user_id == None)
+                )
+            ).all()
+
+            tools = db.scalars(
+                select(MCPToolModel).where(
+                    MCPToolModel.is_deleted == False,
+                    MCPToolModel.admin_enabled == True,
+                    MCPToolModel.owner_enabled == True,
+                    (MCPToolModel.server_id.in_(srv_ids)) |
+                    (MCPToolModel.raw_api_id.in_(app_ids)) |
+                    (MCPToolModel.created_by_user_id.in_(user_ids))
+                )
+            ).all()
+        else:
             tools = db.scalars(
                 select(MCPToolModel).where(
                     MCPToolModel.is_deleted == False,
@@ -122,13 +126,15 @@ def _list_exposed_tool_catalog() -> List[Dict[str, Any]]:
                     MCPToolModel.owner_enabled == True,
                 )
             ).all()
-            for t in tools:
-                tools_list.append({
-                    "name": t.name,
-                    "title": t.display_name or t.name,
-                    "description": t.description or "",
-                    "app": t.owner_id or "default",
-                })
+
+        tools_list = []
+        for t in tools:
+            tools_list.append({
+                "name": t.name,
+                "title": t.display_name or t.name,
+                "description": t.description or "",
+                "app": t.owner_id or "default",
+            })
         return tools_list
     except Exception as exc:
         logger.warning(f"Error querying tool catalog from DB: {exc}")
@@ -680,13 +686,14 @@ def _append_tool_usage_note(response_text: Any, agent: Any) -> str:
 async def _run_agent_query(
     request: PlaygroundQueryRequest,
     build_agent_with_model: Callable[..., Any],
+    actor: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     model = _normalize_model(request.model)
     effective_prompt = _effective_prompt(request)
 
     if _is_capability_prompt(request.prompt):
-        all_tools = await _list_combined_tool_names()
-        catalog = _list_exposed_tool_catalog()
+        all_tools = await _list_combined_tool_names(actor)
+        catalog = _list_exposed_tool_catalog(actor)
         return {
             "response": _build_capability_summary_from_catalog(catalog, all_tools),
             "mode": "capability_summary",
@@ -709,7 +716,7 @@ async def _run_agent_query(
         )
         return {"response": result, "mode": "direct_llm"}
 
-    all_tools = await _list_combined_tool_names()
+    all_tools = await _list_combined_tool_names(actor)
 
     if not all_tools:
         result = await generate_direct_response(
@@ -720,7 +727,7 @@ async def _run_agent_query(
         return {"response": result, "mode": "direct_llm"}
 
     if _is_tool_inventory_prompt(request.prompt):
-        catalog = _list_exposed_tool_catalog()
+        catalog = _list_exposed_tool_catalog(actor)
         return {
             "response": _build_tool_inventory_response_from_catalog(
                 catalog,
@@ -773,12 +780,13 @@ async def _run_agent_query(
 async def _run_playground_query(
     request: PlaygroundQueryRequest,
     build_agent_with_model: Callable[..., Any],
+    actor: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     model = _normalize_model(request.model)
 
     effective_prompt = _effective_prompt(request)
 
-    all_tools = await _list_combined_tool_names()
+    all_tools = await _list_combined_tool_names(actor)
 
     if not all_tools:
         result = await generate_direct_response(
@@ -802,7 +810,7 @@ async def _run_playground_query(
         selected_tools = all_tools
 
     if _is_capability_prompt(request.prompt):
-        catalog = _list_exposed_tool_catalog()
+        catalog = _list_exposed_tool_catalog(actor)
         return {
             "response": _build_capability_summary_from_catalog(catalog, selected_tools),
             "mode": "capability_summary",
@@ -826,7 +834,7 @@ async def _run_playground_query(
         return {"response": result, "mode": "direct_llm"}
 
     if _is_tool_inventory_prompt(request.prompt) or _wants_descriptions(request):
-        catalog = _list_exposed_tool_catalog()
+        catalog = _list_exposed_tool_catalog(actor)
         return {
             "response": _build_tool_inventory_response_from_catalog(
                 catalog,
@@ -874,7 +882,8 @@ async def _stream_agent_query(
     build_agent_with_model: Callable[..., Any],
     *,
     direct_instructions: str,
-    runner: Callable[[PlaygroundQueryRequest, Callable[..., Any]], Any],
+    runner: Callable[[PlaygroundQueryRequest, Callable[..., Any], Optional[Dict[str, Any]]], Any],
+    actor: Optional[Dict[str, Any]] = None,
 ):
     yield _jsonl_event("start")
 
@@ -912,7 +921,7 @@ async def _stream_agent_query(
             kwargs["extra_callbacks"] = [StreamCallback()]
             return build_agent_with_model(*args, **kwargs)
 
-        task = asyncio.create_task(runner(request, custom_builder))
+        task = asyncio.create_task(runner(request, custom_builder, actor))
         
         streamed_text = ""
         while not task.done() or not queue.empty():
@@ -966,9 +975,12 @@ def create_agent_router(
     # -----------------------------------------------------
 
     @router.post("/agent/query")
-    async def query(request: PlaygroundQueryRequest) -> Dict[str, Any]:
+    async def query(
+        request: PlaygroundQueryRequest,
+        actor: dict[str, Any] = Depends(get_request_actor),
+    ) -> Dict[str, Any]:
         try:
-            return await _run_agent_query(request, build_agent_with_model)
+            return await _run_agent_query(request, build_agent_with_model, actor)
         except HTTPException:
             raise
         except Exception as exc:
@@ -978,13 +990,17 @@ def create_agent_router(
             ) from exc
 
     @router.post("/agent/query/stream")
-    async def query_stream(request: PlaygroundQueryRequest) -> StreamingResponse:
+    async def query_stream(
+        request: PlaygroundQueryRequest,
+        actor: dict[str, Any] = Depends(get_request_actor),
+    ) -> StreamingResponse:
         return StreamingResponse(
             _stream_agent_query(
                 request,
                 build_agent_with_model,
                 direct_instructions="Answer directly without tools.",
                 runner=_run_agent_query,
+                actor=actor,
             ),
             media_type="application/x-ndjson",
             headers={
@@ -998,7 +1014,9 @@ def create_agent_router(
     # -----------------------------------------------------
 
     @router.get("/agent/models")
-    async def list_models() -> Dict[str, Any]:
+    async def list_models(
+        actor: dict[str, Any] = Depends(get_request_actor),
+    ) -> Dict[str, Any]:
         base_url = (ENV.agent_ollama_base_url or "").rstrip("/")
 
         if not base_url:
@@ -1047,9 +1065,10 @@ def create_agent_router(
     @router.post("/agent/playground/query")
     async def playground_query(
         request: PlaygroundQueryRequest,
+        actor: dict[str, Any] = Depends(get_request_actor),
     ) -> Dict[str, Any]:
         try:
-            return await _run_playground_query(request, build_agent_with_model)
+            return await _run_playground_query(request, build_agent_with_model, actor)
         except HTTPException:
             raise
         except Exception as exc:
@@ -1061,6 +1080,7 @@ def create_agent_router(
     @router.post("/agent/playground/query/stream")
     async def playground_query_stream(
         request: PlaygroundQueryRequest,
+        actor: dict[str, Any] = Depends(get_request_actor),
     ) -> StreamingResponse:
         return StreamingResponse(
             _stream_agent_query(
@@ -1068,6 +1088,7 @@ def create_agent_router(
                 build_agent_with_model,
                 direct_instructions="Answer directly.",
                 runner=_run_playground_query,
+                actor=actor,
             ),
             media_type="application/x-ndjson",
             headers={

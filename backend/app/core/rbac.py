@@ -47,9 +47,14 @@ def _extract_bearer_token(request: Request) -> str | None:
     """Extract the raw JWT from Authorization header or HTTP cookies."""
     auth_header = request.headers.get("authorization", "")
     if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
+        raw = auth_header[7:].strip()
+        # Reject the placeholder "[SECURE_COOKIE]" injected by earlier buggy
+        # frontend code — it's not a real JWT.
+        if raw and raw != "[SECURE_COOKIE]":
+            return raw
 
-    cookie_token = request.cookies.get("mcp_access_token") or request.cookies.get("access_token")
+    # HttpOnly cookie is the primary auth mechanism
+    cookie_token = request.cookies.get("access_token") or request.cookies.get("mcp_access_token")
     if cookie_token and cookie_token.strip():
         return cookie_token.strip()
 
@@ -65,65 +70,146 @@ def get_request_actor(request: Request) -> dict[str, Any]:
         return cached
 
     if not AUTH_ENABLED:
-        # Dev mode — trust headers as before.
         username = (request.headers.get("x-user") or "system").strip() or "system"
         roles = _parse_roles(request.headers.get("x-roles"))
         if not roles:
-            roles = ["super_admin"]
-        return {"username": username, "roles": roles}
+            roles = ["admin"]
+        primary = resolve_primary_role(roles) or "admin"
+        return {"username": username, "roles": roles, "primary_role": primary, "subject": username, "sub": username, "email": f"{username}@local"}
 
     # --- AUTH_ENABLED=true: require a valid JWT ---
     token = _extract_bearer_token(request)
-    if not token:
-        # Fall back to dev headers or local admin if running in development mode
-        is_dev = os.getenv("ENV", "development").lower() in {"dev", "development"}
-        if is_dev or request.headers.get("x-user"):
-            username = (request.headers.get("x-user") or "admin").strip() or "admin"
-            roles = _parse_roles(request.headers.get("x-roles"))
-            if not roles:
-                roles = ["super_admin"]
-            actor = {"username": username, "roles": roles}
-            request.state._validated_actor = actor
-            return actor
 
+    # Allow X-User header fallback in testing/dev environments (for test suites)
+    is_test_env = os.getenv("ENV", "development").lower() in {"dev", "development", "testing", "test"}
+    x_user_header = request.headers.get("x-user", "").strip()
+
+    if not token and not (is_test_env and x_user_header):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    try:
-        claims = validate_token(token)
-    except TokenValidationError as exc:
-        is_dev = os.getenv("ENV", "development").lower() in {"dev", "development"}
-        if is_dev or request.headers.get("x-user"):
-            logger.warning(f"Token validation failed in dev mode ({exc}); falling back to dev admin actor")
-            username = (request.headers.get("x-user") or "admin").strip() or "admin"
-            roles = _parse_roles(request.headers.get("x-roles"))
-            if not roles:
-                roles = ["super_admin"]
-            actor = {"username": username, "roles": roles}
-            request.state._validated_actor = actor
-            return actor
+    username = None
+    sub = None
 
+    if token:
+        try:
+            claims = validate_token(token)
+            username = claims.username
+            sub = claims.subject
+        except TokenValidationError as exc:
+            # In test/dev, fall back to X-User header if token validation fails
+            if is_test_env and x_user_header:
+                username = x_user_header
+                sub = f"sub-{username}"
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=str(exc),
+                    headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+                )
+    elif is_test_env and x_user_header:
+        # No token but X-User header present in test/dev mode
+        username = x_user_header
+        sub = f"sub-{username}"
+
+    if not username:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+            detail="Could not resolve user identity",
         )
 
-    roles = claims.roles if claims.roles else ["read_only"]
+    # --- Fetch application role exclusively from Database UserModel table ---
+    # Match by username (case-insensitive) OR by keycloak_sub.
+    # On first login, update keycloak_sub if it was a placeholder.
+    db_role = ""
+    try:
+        from app.core.db import SessionLocal
+        from app.models.db_models import UserModel
+
+        with SessionLocal() as db:
+            # Try matching by username first (primary key for identity)
+            user_row = db.scalar(
+                select(UserModel).where(
+                    func.lower(UserModel.username) == username.lower()
+                )
+            )
+            # Fallback: try matching by keycloak_sub
+            if not user_row and sub:
+                user_row = db.scalar(
+                    select(UserModel).where(UserModel.keycloak_sub == sub)
+                )
+
+            if user_row:
+                # Update keycloak_sub if it was a placeholder or different
+                if sub and user_row.keycloak_sub != sub:
+                    user_row.keycloak_sub = sub
+                    db.commit()
+                db_role = (user_row.role or "").strip().lower()
+            elif x_user_header and not token:
+                # Only for unit test suite using X-User header without JWT
+                db_role = "admin" if (username and username.lower() == "admin") or request.headers.get("x-roles") == "super_admin" else "developer"
+
+    except Exception as exc:
+        logger.warning(f"Database role lookup error: {exc}")
+
+    primary_role = resolve_primary_role([db_role]) if db_role else None
+
+    if not primary_role:
+        logger.warning(f"Access denied for user {username} ({sub}): No DB role assigned")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No application role assigned. Contact Support and Application Owner to request access.",
+        )
 
     actor = {
-        "username": claims.username,
-        "roles": roles,
-        "email": claims.email,
-        "subject": claims.subject,
+        "username": username,
+        "roles": [primary_role],
+        "primary_role": primary_role,
+        "subject": sub,
+        "sub": sub,
     }
-
-    # Cache on request so subsequent calls in the same cycle are free.
     request.state._validated_actor = actor
     return actor
+
+
+def resolve_primary_role(roles: list[str]) -> str | None:
+    norm_roles = [r.lower() for r in roles]
+    if "admin" in norm_roles or "super_admin" in norm_roles:
+        return "admin"
+    if "developer" in norm_roles or "dev" in norm_roles or "operator" in norm_roles:
+        return "developer"
+    return None
+
+
+def verify_resource_ownership(resource_created_by_user_id: str | None, actor: dict[str, Any]) -> bool:
+    role = actor.get("primary_role") or "developer"
+    roles = [r.lower() for r in actor.get("roles", [])]
+    if role == "admin" or "admin" in roles or "super_admin" in roles:
+        return True
+
+    sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+    if not resource_created_by_user_id or resource_created_by_user_id == sub:
+        return True
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied: You do not own this resource.",
+    )
+
+
+def require_role(allowed_roles: list[str]):
+    def _check(actor: dict[str, Any] = Depends(get_request_actor)) -> dict[str, Any]:
+        role = actor.get("primary_role")
+        if role not in allowed_roles and "admin" not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required role: {allowed_roles}. Your role: {role}",
+            )
+        return actor
+    return _check
 
 
 def build_require_permission(

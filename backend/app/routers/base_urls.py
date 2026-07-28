@@ -150,11 +150,31 @@ def create_base_urls_router(
         normalized_openapi_path = normalize_openapi_path_fn(data.openapi_path)
         include_unreachable = 1 if data.include_unreachable_tools else 0
         description = (getattr(data, "description", "") or "").strip()
+
+        import re
+        if not re.match(r"^https?://[a-zA-Z0-9.-]+(?::[0-9]+)?(?:/[^\s]*)?$", data.url):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid URL format. Must start with http:// or https://")
+
         try:
             with session_local_factory() as db:
+                # Check for duplicate URL
+                url_dup = db.scalar(
+                    select(base_url_model).where(
+                        base_url_model.url == data.url,
+                        base_url_model.name != data.name,
+                        base_url_model.is_deleted == False
+                    )
+                )
+                if url_dup:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"An application is already registered with the URL: {data.url}"
+                    )
+
                 existing = db.scalar(select(base_url_model).where(base_url_model.name == data.name))
                 before_state = None
                 if existing:
+                    verify_resource_ownership(existing.created_by_user_id, actor)
                     before_state = {
                         "name": existing.name,
                         "url": existing.url,
@@ -198,6 +218,7 @@ def create_base_urls_router(
                         include_unreachable_tools=include_unreachable,
                         is_enabled=True,
                         is_deleted=False,
+                        created_by_user_id=actor.get("subject") or actor.get("sub") or actor.get("username"),
                         # Mark as healthy immediately so tools are exposed right after registration
                         health_status="healthy",
                     )
@@ -265,14 +286,8 @@ def create_base_urls_router(
     )
     def list_base_urls(
         include_inactive: bool = Query(default=True),
-        current_user: dict[str, Any] | None = None,
+        actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
-        _ = current_user
-        cache_key = f"status:list_base_urls:{include_inactive}"
-        cached = cache_get_json(cache_key)
-        if cached is not None:
-            return cached
-
         try:
             with session_local_factory() as db:
                 query = select(base_url_model)
@@ -281,6 +296,14 @@ def create_base_urls_router(
                         base_url_model.is_enabled == True,  # noqa: E712
                         base_url_model.is_deleted == False,  # noqa: E712
                     )
+
+                role = actor.get("primary_role") or "developer"
+                sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+                username = actor.get("username")
+
+                if role != "admin":
+                    user_ids = [id_val for id_val in (sub, username) if id_val]
+                    query = query.where(base_url_model.created_by_user_id.in_(user_ids))
 
                 rows = db.scalars(query).all()
                 base_urls = [
@@ -300,9 +323,7 @@ def create_base_urls_router(
                     for row in rows
                 ]
 
-            result = {"base_urls": base_urls}
-            cache_set_json(cache_key, result, ENV.redis_list_ttl_sec)
-            return result
+            return {"base_urls": base_urls}
 
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -349,6 +370,8 @@ def create_base_urls_router(
             row = db.scalar(select(base_url_model).where(base_url_model.name == name))
             if not row:
                 raise HTTPException(status_code=404, detail=f"Base URL '{name}' not found")
+
+            verify_resource_ownership(row.created_by_user_id, actor)
 
             before_state = {
                 "name": row.name,
@@ -449,6 +472,8 @@ def create_base_urls_router(
             row = db.scalar(select(base_url_model).where(base_url_model.name == name))
             if not row:
                 raise HTTPException(status_code=404, detail=f"Base URL '{name}' not found")
+
+            verify_resource_ownership(row.created_by_user_id, actor)
             owner_id = f"app:{row.name}"
             before_state = {
                 "name": row.name,

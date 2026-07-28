@@ -3,10 +3,11 @@ from time import perf_counter
 from typing import Any
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from app.core.cache import cache_get_json, cache_set_json
+from app.core.rbac import get_request_actor
 from app.env import ENV
 
 def create_dashboard_router(
@@ -15,6 +16,7 @@ def create_dashboard_router(
     server_model,
     mcp_tool_model,
     probe_server_status_fn,
+    get_actor_dep=get_request_actor,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -46,15 +48,31 @@ def create_dashboard_router(
         summary="Get Dashboard Stats",
         description="Return dashboard cards and live status checks for apps and MCP servers. Source: backend/app/routers/dashboard.py",
     )
-    async def get_dashboard_stats() -> dict[str, Any]:
-        cache_key = "status:dashboard:stats"
+    async def get_dashboard_stats(
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        role = actor.get("primary_role") or "developer"
+        sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+        username = actor.get("username")
+        user_ids = [u for u in (sub, username) if u]
+
+        cache_key = f"status:dashboard:stats:{sub}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
+
         with session_local_factory() as db:
-            apps = db.scalars(select(base_url_model).where(base_url_model.is_deleted == False)).all()  # noqa: E712
-            servers = db.scalars(select(server_model).where(server_model.is_deleted == False)).all()  # noqa: E712
-            tools = db.scalars(select(mcp_tool_model).where(mcp_tool_model.is_deleted == False)).all()  # noqa: E712
+            app_stmt = select(base_url_model).where(base_url_model.is_deleted == False)  # noqa: E712
+            srv_stmt = select(server_model).where(server_model.is_deleted == False)  # noqa: E712
+            tool_stmt = select(mcp_tool_model).where(mcp_tool_model.is_deleted == False)  # noqa: E712
+
+            if role != "admin":
+                app_stmt = app_stmt.where(base_url_model.created_by_user_id.in_(user_ids))
+                srv_stmt = srv_stmt.where(server_model.created_by_user_id.in_(user_ids))
+
+            apps = db.scalars(app_stmt).all()
+            servers = db.scalars(srv_stmt).all()
+            tools = db.scalars(tool_stmt).all()
 
         active_server_ids = {server.id for server in servers if getattr(server, "is_enabled", True)}
         active_api_ids = {app.id for app in apps if getattr(app, "is_enabled", True)}
@@ -90,7 +108,7 @@ def create_dashboard_router(
                 "total_tools": sum(1 for t in visible_tools if getattr(t, "source_type", "") == "mcp"),
                 "total_api_endpoints": sum(1 for t in visible_tools if getattr(t, "source_type", "") == "openapi"),
             },
-            "applications": app_statuses,
+            "apps": app_statuses,
             "mcp_servers": server_statuses,
         }
         cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
@@ -98,18 +116,34 @@ def create_dashboard_router(
 
     @router.get(
         "/dashboard/sync-health",
-        summary="Get Registry Sync Health",
-        description="Return raw API sync lifecycle state and stale tool counters from DB registry. Source: backend/app/routers/dashboard.py",
+        summary="Get Sync Health Summary",
+        description="Return catalog sync metrics and stale/failed tools by owner. Source: backend/app/routers/dashboard.py",
     )
-    def get_sync_health() -> dict[str, Any]:
-        cache_key = "status:dashboard:sync-health"
+    async def get_sync_health(
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        role = actor.get("primary_role") or "developer"
+        sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+        username = actor.get("username")
+        user_ids = [u for u in (sub, username) if u]
+
+        cache_key = f"status:dashboard:sync_health:{sub}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
+
         with session_local_factory() as db:
-            apps = db.scalars(select(base_url_model)).all()
-            servers = db.scalars(select(server_model)).all()
-            tools = db.scalars(select(mcp_tool_model)).all()
+            app_stmt = select(base_url_model)
+            srv_stmt = select(server_model)
+            tool_stmt = select(mcp_tool_model)
+
+            if role != "admin":
+                app_stmt = app_stmt.where(base_url_model.created_by_user_id.in_(user_ids))
+                srv_stmt = srv_stmt.where(server_model.created_by_user_id.in_(user_ids))
+
+            apps = db.scalars(app_stmt).all()
+            servers = db.scalars(srv_stmt).all()
+            tools = db.scalars(tool_stmt).all()
 
         tool_rows_by_owner: dict[str, list[Any]] = {}
         for tool in tools:
