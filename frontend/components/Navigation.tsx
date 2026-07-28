@@ -36,6 +36,23 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
   const baseInactiveClass =
     'bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-900 border border-slate-200/90 shadow-2xs dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white dark:border-slate-700';
 
+  const [role, setRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadRole() {
+      try {
+        const res = await fetch('/api/proxy/api/me');
+        if (res.ok) {
+          const data = await res.json();
+          setRole(data.primary_role);
+        }
+      } catch (err) {
+        console.error('Navigation: failed to load user role', err);
+      }
+    }
+    loadRole();
+  }, []);
+
   const navItems = [
     {
       href: '/dashboard',
@@ -73,12 +90,12 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
       isActive: pathname === '/chat',
       activeClass: 'bg-violet-600 text-white hover:bg-violet-700 hover:text-white shadow-md shadow-violet-500/25 font-bold',
     },
-    {
+    ...(role === 'admin' || role === 'developer' ? [{
       href: '/admin',
       label: 'Admin',
       isActive: pathname === '/admin',
       activeClass: 'bg-rose-600 text-white hover:bg-rose-700 hover:text-white shadow-md shadow-rose-500/25 font-bold',
-    },
+    }] : []),
   ];
 
   const getPageName = () => {

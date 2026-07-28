@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Navigation from '@/components/Navigation';
 import Button from '@/components/ui/Button';
-import { http } from '@/services/http';
+import { http, authenticatedFetch } from '@/services/http';
 import { toast } from '@/lib/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -318,6 +318,8 @@ export default function AdminPanelPage() {
           if (profile.primary_role) {
             setActorRole(profile.primary_role as Role);
           }
+        } else if (res.status === 403) {
+          window.location.href = '/access-denied';
         }
       } catch (err) {
         console.error('Failed to load user role for admin panel:', err);
@@ -390,14 +392,13 @@ export default function AdminPanelPage() {
     try {
       setLoading(true);
       setGlobalError(null);
-      const [statsRes, syncHealthRes, appsRes, serversRes, toolsRes, endpointsRes, auditRes] = await Promise.all([
+      const [statsRes, syncHealthRes, appsRes, serversRes, toolsRes, endpointsRes] = await Promise.all([
         http<{ cards: DashboardCards }>('/dashboard/stats'),
         http<SyncHealthResponse>('/dashboard/sync-health'),
         http<{ base_urls: AppItem[] }>('/base-urls?include_inactive=true'),
         http<{ servers: ServerItem[] }>('/servers?include_inactive=true'),
         http<{ tools: Tool[] }>('/tools?include_inactive=true'),
         http<{ endpoints: Endpoint[] }>('/endpoints?include_inactive=true'),
-        http<{ logs: AuditLog[] }>('/audit-logs?limit=500'),
       ]);
       setStats(statsRes.cards);
       setSyncHealth(syncHealthRes);
@@ -405,13 +406,23 @@ export default function AdminPanelPage() {
       setServers(serversRes.servers || []);
       setTools(toolsRes.tools || []);
       setEndpoints(endpointsRes.endpoints || []);
-      setAuditLogs(auditRes.logs || []);
+
+      if (['super_admin', 'admin'].includes(actorRole)) {
+        try {
+          const auditRes = await http<{ logs: AuditLog[] }>('/audit-logs?limit=500');
+          setAuditLogs(auditRes.logs || []);
+        } catch {
+          setAuditLogs([]);
+        }
+      } else {
+        setAuditLogs([]);
+      }
     } catch (err) {
       setGlobalError(err instanceof Error ? err.message : 'Failed to load admin data');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [actorRole]);
 
   useEffect(() => { void fetchAll(); }, [fetchAll]);
 
@@ -745,7 +756,7 @@ export default function AdminPanelPage() {
     { id: 'servers',       label: 'MCP Servers',  count: servers.length },
     { id: 'tools',         label: 'Tools',        count: mcpTools.length },
     { id: 'endpoints',     label: 'API Endpoints',count: endpoints.length + rawApiTools.length },
-    { id: 'audit',         label: 'Audit Logs',   count: auditLogs.length },
+    ...(['super_admin', 'admin'].includes(actorRole) ? [{ id: 'audit' as Tab, label: 'Audit Logs', count: auditLogs.length }] : []),
   ];
 
   // ── Render ────────────────────────────────────────────────────────────────

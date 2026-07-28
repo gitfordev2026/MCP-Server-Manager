@@ -84,8 +84,13 @@ export default function McpEndpointsPage() {
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   /* --- derived --- */
-  const backendOrigin = NEXT_PUBLIC_BE_API_URL?.replace(/\/+$/, '') ?? '';
-  const combinedMcpUrl = backendOrigin ? `${backendOrigin}/mcp/apps` : '/mcp/apps';
+  const [combinedMcpUrl, setCombinedMcpUrl] = useState('/api/proxy/mcp/apps');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setCombinedMcpUrl(`${window.location.origin}/api/proxy/mcp/apps`);
+    }
+  }, []);
 
   const combinedToolsByApp = useMemo(() => {
     const map: Record<string, CatalogTool[]> = {};
@@ -176,11 +181,42 @@ export default function McpEndpointsPage() {
 
   /* --- copy url --- */
   const copyUrl = useCallback((url: string) => {
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedUrl(url);
-      setTimeout(() => setCopiedUrl(null), 2000);
-    });
+    const absoluteUrl = url.startsWith('/') ? `${window.location.origin}${url}` : url;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(absoluteUrl)
+        .then(() => {
+          setCopiedUrl(url);
+          setTimeout(() => setCopiedUrl(null), 2000);
+        })
+        .catch((err) => {
+          console.error('Clipboard API failed, trying fallback:', err);
+          fallbackCopy(absoluteUrl, url);
+        });
+    } else {
+      fallbackCopy(absoluteUrl, url);
+    }
   }, []);
+
+  const fallbackCopy = (text: string, displayUrl: string) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        setCopiedUrl(displayUrl);
+        setTimeout(() => setCopiedUrl(null), 2000);
+      }
+    } catch (err) {
+      console.error('Fallback copy failed', err);
+    }
+    document.body.removeChild(textArea);
+  };
 
   /* --- render --- */
   return (
