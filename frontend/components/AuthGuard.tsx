@@ -20,6 +20,9 @@ const PUBLIC_PATHS = [
   "/auth/register",
   "/unauthorized",
   "/access-denied",
+  "/_not-found",
+  "/_global-error",
+  "/404",
 ];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -36,7 +39,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     () => false
   );
 
-  const isPublicPath = PUBLIC_PATHS.some((p) => (p === "/" ? pathname === "/" : pathname.startsWith(p)));
+  const currentPath = pathname || "/";
+  const isPublicPath = PUBLIC_PATHS.some((p) => (p === "/" ? currentPath === "/" : currentPath.startsWith(p)));
 
   // --- GLOBAL INACTIVITY TIMER (15 minutes idle timeout shared across tabs) ---
   useEffect(() => {
@@ -133,11 +137,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             setLoading(false);
           } else {
             // Authenticated but no role assigned in DB
-            router.replace("/access-denied");
+            router?.replace("/access-denied");
           }
         } else if (res.status === 403) {
           // No application role assigned -> Redirect immediately to /access-denied
-          router.replace("/access-denied");
+          router?.replace("/access-denied");
         } else if (res.status === 401) {
           // Token/cookie invalid or expired -> Clear and redirect to login
           clearTokens();
@@ -159,13 +163,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, [hydrated, isPublicPath, pathname, attempt, router]);
 
-  // Render public pages immediately without blocking
-  if (isPublicPath) {
+  // Render public pages or server-side SSR pass immediately without blocking
+  if (typeof window === "undefined" || !hydrated || isPublicPath) {
     return <>{children}</>;
   }
 
-  // Show loading spinner while verifying authorization (prevents UI flashing)
-  if (!hydrated || loading) {
+  // Show loading spinner while verifying authorization on client (prevents UI flashing)
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-slate-100">
         <div className="text-center">

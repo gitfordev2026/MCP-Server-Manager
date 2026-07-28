@@ -105,8 +105,6 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
     }] : []),
   ];
 
-  const navItems = rawNavItems.filter((item) => featurePerms[item.featureKey] !== false);
-
   const getPageName = () => {
     if (pageTitle) return pageTitle;
 

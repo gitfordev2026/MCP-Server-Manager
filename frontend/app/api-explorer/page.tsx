@@ -266,8 +266,6 @@ function ApiExplorerContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
-      {/* Animated background elements */}
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 relative overflow-hidden">
       {/* Background Gradients */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">

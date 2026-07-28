@@ -15,10 +15,6 @@ const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
 const ACCESS_CONTROL_ENABLED = false;
 
 export default function AccessPolicyPage() {
-  if (!ACCESS_CONTROL_ENABLED) {
-    notFound();
-  }
-
   const { data, isLoading, isError, refetch } = usePolicies();
   const policies = useMemo(() => data?.policies ?? {}, [data]);
 
@@ -131,6 +127,10 @@ export default function AccessPolicyPage() {
   const selectedEndpointIds: string[] = detailsModalOwnerId
     ? (ownerEndpointIds[detailsModalOwnerId] ?? [])
     : [];
+
+  if (!ACCESS_CONTROL_ENABLED) {
+    notFound();
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">

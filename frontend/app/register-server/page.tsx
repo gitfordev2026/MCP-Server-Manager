@@ -74,6 +74,77 @@ export default function RegisterServerPage() {
   const [registeredSyncing, setRegisteredSyncing] = useState(false);
   const [registeredPage, setRegisteredPage] = useState(1);
   const [registeredSelectedTools, setRegisteredSelectedTools] = useState<Set<string>>(new Set());
+  const [criticalWarning, setCriticalWarning] = useState<{ toolName: string; reason: string; isRegistered?: boolean } | null>(null);
+
+  const WRITE_PATTERNS = /\b(create|delete|update|write|remove|set|add|modify|insert|drop|purge|destroy|patch|put|post|mutation|mutate)\b/i;
+
+  const isWriteTool = (toolName: string): boolean => WRITE_PATTERNS.test(toolName);
+
+  const toggleTool = (toolName: string) => {
+    // Deselection is always allowed
+    if (selectedTools.has(toolName)) {
+      setSelectedTools((prev) => {
+        const next = new Set(prev);
+        next.delete(toolName);
+        return next;
+      });
+      return;
+    }
+
+    // If it looks like a write/mutating tool, warn first
+    if (isWriteTool(toolName)) {
+      setCriticalWarning({ toolName, reason: `"${toolName}" appears to be a write/mutating tool based on its name.`, isRegistered: false });
+      return;
+    }
+
+    // Safe tool — select directly
+    setSelectedTools((prev) => {
+      const next = new Set(prev);
+      next.add(toolName);
+      return next;
+    });
+  };
+
+  const toggleRegisteredTool = (toolName: string) => {
+    if (registeredSelectedTools.has(toolName)) {
+      setRegisteredSelectedTools((prev) => {
+        const next = new Set(prev);
+        next.delete(toolName);
+        return next;
+      });
+      return;
+    }
+
+    if (isWriteTool(toolName)) {
+      setCriticalWarning({ toolName, reason: `"${toolName}" appears to be a write/mutating tool based on its name.`, isRegistered: true });
+      return;
+    }
+
+    setRegisteredSelectedTools((prev) => {
+      const next = new Set(prev);
+      next.add(toolName);
+      return next;
+    });
+  };
+
+  const confirmCriticalTool = () => {
+    if (criticalWarning) {
+      if (criticalWarning.isRegistered) {
+        setRegisteredSelectedTools((prev) => {
+          const next = new Set(prev);
+          next.add(criticalWarning.toolName);
+          return next;
+        });
+      } else {
+        setSelectedTools((prev) => {
+          const next = new Set(prev);
+          next.add(criticalWarning.toolName);
+          return next;
+        });
+      }
+      setCriticalWarning(null);
+    }
+  };
 
   const activeTool = useMemo(
     () => discoveredTools.find((tool) => tool.name === activeToolName) ?? null,
@@ -142,7 +213,8 @@ export default function RegisterServerPage() {
 
       const tools: DiscoveredTool[] = Array.isArray(payload?.tools) ? payload.tools : [];
       setDiscoveredTools(tools);
-      const initial = new Set<string>(tools.map((tool) => tool.name));
+      const WRITE_PATTERNS = /\b(create|delete|update|write|remove|set|add|modify|insert|drop|purge|destroy|patch|put|post|mutation|mutate)\b/i;
+      const initial = new Set<string>(tools.filter((t) => !WRITE_PATTERNS.test(t.name)).map((t) => t.name));
       setSelectedTools(initial);
       const descriptionMap: Record<string, string> = {};
       tools.forEach((tool) => {
@@ -159,17 +231,7 @@ export default function RegisterServerPage() {
     }
   };
 
-  const toggleTool = (toolName: string) => {
-    setSelectedTools((prev) => {
-      const next = new Set(prev);
-      if (next.has(toolName)) {
-        next.delete(toolName);
-      } else {
-        next.add(toolName);
-      }
-      return next;
-    });
-  };
+
 
   const setSelectedToolDescription = (toolName: string, description: string) => {
     setSelectedToolDescriptions((prev) => ({ ...prev, [toolName]: description }));
@@ -481,9 +543,12 @@ export default function RegisterServerPage() {
                 {discoveredTools.length === 0 && <p className="text-sm text-slate-600 dark:text-slate-400">No tools discovered.</p>}
                 {discoveredTools.length > 0 && (
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set(discoveredTools.map((tool) => tool.name)))}>
                         Select All
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set(discoveredTools.filter((t) => !isWriteTool(t.name)).map((t) => t.name)))}>
+                        Read Only
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set())}>
                         Unselect All
@@ -501,7 +566,12 @@ export default function RegisterServerPage() {
                       className={`w-full text-left p-3 rounded-xl border transition-colors ${activeToolName === tool.name ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                          {isWriteTool(tool.name) && !selectedTools.has(tool.name) && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">⚠ Write</span>
+                          )}
+                        </div>
                         <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
                           <input
                             type="checkbox"
@@ -608,13 +678,20 @@ export default function RegisterServerPage() {
               ) : (
                 <>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button
                         size="sm"
                         variant="secondary"
                         onClick={() => setRegisteredSelectedTools(new Set(registeredTools.map((row) => row.name)))}
                       >
                         Select All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredSelectedTools(new Set(registeredTools.filter((t) => !isWriteTool(t.name)).map((row) => row.name)))}
+                      >
+                        Read Only
                       </Button>
                       <Button
                         size="sm"
@@ -638,19 +715,19 @@ export default function RegisterServerPage() {
                             className={`w-full text-left p-3 rounded-xl border ${activeToolName === tool.name ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'}`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <p className="font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-900 dark:text-white">{tool.name}</p>
+                                {isWriteTool(tool.name) && !registeredSelectedTools.has(tool.name) && (
+                                  <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">⚠ Write</span>
+                                )}
+                              </div>
                               <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-medium">
                                 <input
                                   type="checkbox"
                                   checked={registeredSelectedTools.has(tool.name)}
                                   onChange={(e) => {
                                     e.stopPropagation();
-                                    setRegisteredSelectedTools((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(tool.name)) next.delete(tool.name);
-                                      else next.add(tool.name);
-                                      return next;
-                                    });
+                                    toggleRegisteredTool(tool.name);
                                   }}
                                   onClick={(e) => e.stopPropagation()}
                                 />
@@ -731,6 +808,47 @@ export default function RegisterServerPage() {
               >
                 {registeredSyncing ? 'Applying...' : 'Apply Selection'}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {criticalWarning && (
+        <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-amber-400 dark:border-amber-600 shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                <span className="text-lg">⚠️</span>
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">Write Tool Warning</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">This tool can modify data</p>
+              </div>
+            </div>
+            <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+              <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
+                You are about to enable:
+              </p>
+              <p className="text-sm font-mono text-amber-800 dark:text-amber-300 mt-1 break-all font-semibold">{criticalWarning.toolName}</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{criticalWarning.reason}</p>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mb-5">
+              Tools with write capabilities (create, update, delete, etc.) can modify data on the connected system. Ensure this tool is safe to expose before enabling it.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCriticalWarning(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmCriticalTool}
+                className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-colors shadow-md"
+              >
+                Enable Anyway
+              </button>
             </div>
           </div>
         </div>

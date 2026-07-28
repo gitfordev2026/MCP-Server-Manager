@@ -188,6 +188,8 @@ class APIEndpointModel(Base):
     exposed_to_mcp: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     exposure_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    created_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now)
     updated_on: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
 

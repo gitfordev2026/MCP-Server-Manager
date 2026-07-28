@@ -7,14 +7,14 @@
 # ==========================================================================
 
 services:
-  redis:
-    image: redis:alpine
-    container_name: mcp-redis-uni
-    ports:
-      - "6380:6379"
-    restart: unless-stopped
-    networks:
-      - mcp-network
+  # redis:
+  #   image: redis:alpine
+  #   container_name: mcp-redis-uni
+  #   ports:
+  #     - "6380:6379"
+  #   restart: unless-stopped
+  #   networks:
+  #     - mcp-network
 
   backend:
     build:
@@ -29,12 +29,12 @@ services:
     volumes:
       - ./backend/app:/app
     env_file:
-      - ./backend/.env
+      - ./backend/app/.env
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - redis
+    # depends_on:
+    #   - redis
     restart: unless-stopped
     # networks:
     #   - mcp-network

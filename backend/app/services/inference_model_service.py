@@ -1,8 +1,12 @@
 import time
 import httpx
 from typing import List, Dict, Any, Optional
-from app.env import ENV
-from app.core.logger import get_logger
+try:
+    from app.env import ENV
+    from app.core.logger import get_logger
+except ModuleNotFoundError:
+    from env import ENV
+    from core.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -22,8 +26,9 @@ async def fetch_available_models() -> List[str]:
     if _MODELS_CACHE["models"] and (now - _MODELS_CACHE["fetched_at"] < CACHE_TTL_SEC):
         return _MODELS_CACHE["models"]
 
-    base_url = ENV.inference_engine_openapi_url.rstrip("/")
-    api_key = ENV.inference_engine_api_key
+    raw_base_url = getattr(ENV, "inference_engine_openapi_url", None) or getattr(ENV, "agent_ollama_base_url", "http://localhost:11434")
+    base_url = (raw_base_url or "").rstrip("/")
+    api_key = getattr(ENV, "inference_engine_api_key", "")
 
     headers = {"User-Agent": "MCP-Manager-Inference-Client"}
     if api_key:

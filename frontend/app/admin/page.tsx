@@ -371,6 +371,20 @@ export default function AdminPanelPage() {
   // Confirm dialog state
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
+  // Create forms state
+  const [appForm, setAppForm] = useState({
+    name: '',
+    url: '',
+    description: '',
+    openapi_path: '/openapi.json',
+    include_unreachable_tools: false,
+  });
+  const [serverForm, setServerForm] = useState({
+    name: '',
+    url: '',
+    description: '',
+  });
+
   // Edit state
   const [editingApp, setEditingApp] = useState<AppItem | null>(null);
   const [editingServer, setEditingServer] = useState<ServerItem | null>(null);
@@ -388,7 +402,7 @@ export default function AdminPanelPage() {
   const canManageTools     = useMemo(() => ['super_admin', 'admin', 'developer', 'operator'].includes(actorRole), [actorRole]);
   const canManageEndpoints = useMemo(() => ['super_admin', 'admin', 'developer', 'operator'].includes(actorRole), [actorRole]);
   const canHardDelete      = useMemo(() => actorRole === 'super_admin', [actorRole]);
-  const canApproveExposure = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
+  const canViewAudit = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
 
@@ -396,22 +410,30 @@ export default function AdminPanelPage() {
     try {
       setLoading(true);
       setGlobalError(null);
-      const [statsRes, syncHealthRes, appsRes, serversRes, toolsRes, endpointsRes] = await Promise.all([
+      const isSuperAdmin = ['super_admin', 'admin'].includes(actorRole);
+      const calls: Promise<any>[] = [
         http<{ cards: DashboardCards }>('/dashboard/stats'),
         http<SyncHealthResponse>('/dashboard/sync-health'),
         http<{ base_urls: AppItem[] }>('/base-urls?include_inactive=true'),
         http<{ servers: ServerItem[] }>('/servers?include_inactive=true'),
         http<{ tools: Tool[] }>('/tools?include_inactive=true'),
         http<{ endpoints: Endpoint[] }>('/endpoints?include_inactive=true'),
-        http<{ logs: AuditLog[] }>('/audit-logs?limit=500'),
-      ]);
-      setStats(statsRes.cards);
-      setSyncHealth(syncHealthRes);
-      setApps(appsRes.base_urls || []);
-      setServers(serversRes.servers || []);
-      setTools(toolsRes.tools || []);
-      setEndpoints(endpointsRes.endpoints || []);
-      setAuditLogs(auditRes.logs || []);
+      ];
+      if (isSuperAdmin) {
+        calls.push(http<{ logs: AuditLog[] }>('/audit-logs?limit=500'));
+      }
+      const results = await Promise.all(calls);
+      setStats(results[0].cards);
+      setSyncHealth(results[1]);
+      setApps(results[2].base_urls || []);
+      setServers(results[3].servers || []);
+      setTools(results[4].tools || []);
+      setEndpoints(results[5].endpoints || []);
+      if (isSuperAdmin && results[6]) {
+        setAuditLogs(results[6].logs || []);
+      } else {
+        setAuditLogs([]);
+      }
     } catch (err) {
       setGlobalError(err instanceof Error ? err.message : 'Failed to load admin data');
     } finally {
@@ -733,13 +755,25 @@ export default function AdminPanelPage() {
   // ── Filters & Computed ─────────────────────────────────────────────────────────
 
   const filteredApps = useMemo(() => {
-    const q = appSearch.toLowerCase();
-    return apps.filter((a) => !q || a.name.toLowerCase().includes(q) || a.url.toLowerCase().includes(q));
+    const q = appSearch.trim().toLowerCase();
+    return apps.filter(
+      (a) =>
+        !q ||
+        (a.name && a.name.toLowerCase().includes(q)) ||
+        (a.url && a.url.toLowerCase().includes(q)) ||
+        (a.description && a.description.toLowerCase().includes(q))
+    );
   }, [apps, appSearch]);
 
   const filteredServers = useMemo(() => {
-    const q = serverSearch.toLowerCase();
-    return servers.filter((s) => !q || s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q));
+    const q = serverSearch.trim().toLowerCase();
+    return servers.filter(
+      (s) =>
+        !q ||
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.url && s.url.toLowerCase().includes(q)) ||
+        (s.description && s.description.toLowerCase().includes(q))
+    );
   }, [servers, serverSearch]);
 
   const mcpTools = useMemo(
@@ -748,11 +782,16 @@ export default function AdminPanelPage() {
   );
 
   const filteredTools = useMemo(() => {
-    const q = toolSearch.toLowerCase();
+    const q = toolSearch.trim().toLowerCase();
     return tools.filter(
       (t) =>
-        t.source_type === 'mcp' &&
-        (!q || t.name.toLowerCase().includes(q) || t.owner_id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+        !q ||
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.owner_id && t.owner_id.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q)) ||
+        (t.method && t.method.toLowerCase().includes(q)) ||
+        (t.path && t.path.toLowerCase().includes(q)) ||
+        (t.source_type && t.source_type.toLowerCase().includes(q))
     );
   }, [tools, toolSearch]);
 
@@ -761,25 +800,54 @@ export default function AdminPanelPage() {
     [tools]
   );
 
+  const filteredRawApiTools = useMemo(() => {
+    const q = endpointSearch.trim().toLowerCase();
+    return rawApiTools.filter(
+      (t) =>
+        !q ||
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.owner_id && t.owner_id.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q)) ||
+        (t.method && t.method.toLowerCase().includes(q)) ||
+        (t.path && t.path.toLowerCase().includes(q)) ||
+        (t.current_version && t.current_version.toLowerCase().includes(q))
+    );
+  }, [rawApiTools, endpointSearch]);
+
   const filteredEndpoints = useMemo(() => {
-    const q = endpointSearch.toLowerCase();
-    return endpoints.filter((e) => !q || e.path.toLowerCase().includes(q) || e.owner_id.toLowerCase().includes(q) || e.method.toLowerCase().includes(q));
+    const q = endpointSearch.trim().toLowerCase();
+    return endpoints.filter(
+      (e) =>
+        !q ||
+        (e.path && e.path.toLowerCase().includes(q)) ||
+        (e.owner_id && e.owner_id.toLowerCase().includes(q)) ||
+        (e.method && e.method.toLowerCase().includes(q)) ||
+        (e.description && e.description.toLowerCase().includes(q)) ||
+        (e.current_version && e.current_version.toLowerCase().includes(q))
+    );
   }, [endpoints, endpointSearch]);
 
   const filteredAuditLogs = useMemo(() => {
-    const q = auditSearch.toLowerCase();
-    const filtered = auditLogs.filter((l) => !q || l.actor.toLowerCase().includes(q) || l.action.toLowerCase().includes(q) || l.resource_type.toLowerCase().includes(q));
+    const q = auditSearch.trim().toLowerCase();
+    const filtered = auditLogs.filter(
+      (l) =>
+        !q ||
+        (l.actor && l.actor.toLowerCase().includes(q)) ||
+        (l.action && l.action.toLowerCase().includes(q)) ||
+        (l.resource_type && l.resource_type.toLowerCase().includes(q)) ||
+        (l.resource_id && l.resource_id.toLowerCase().includes(q))
+    );
     return { total: filtered.length, page: filtered.slice((auditPage - 1) * AUDIT_PAGE_SIZE, auditPage * AUDIT_PAGE_SIZE) };
   }, [auditLogs, auditSearch, auditPage]);
 
   // ── Overview cards ────────────────────────────────────────────────────────
 
-  const statCards = stats
+  const statCards: Array<{ label: string; tab: Tab; total: number; alive?: number; down?: number }> = stats
     ? [
-      { label: 'Applications', total: stats.total_applications, alive: stats.applications_alive, down: stats.applications_down },
-      { label: 'MCP Servers', total: stats.total_mcp_servers, alive: stats.mcp_servers_alive, down: stats.mcp_servers_down },
-      { label: 'Tools', total: stats.total_tools },
-      { label: 'API Endpoints', total: stats.total_api_endpoints },
+      { label: 'Applications', tab: 'applications', total: stats.total_applications, alive: stats.applications_alive, down: stats.applications_down },
+      { label: 'MCP Servers', tab: 'servers', total: stats.total_mcp_servers, alive: stats.mcp_servers_alive, down: stats.mcp_servers_down },
+      { label: 'Tools', tab: 'tools', total: stats.total_tools },
+      { label: 'API Endpoints', tab: 'endpoints', total: stats.total_api_endpoints ?? (endpoints.length + rawApiTools.length) },
     ]
     : [];
 
@@ -788,8 +856,8 @@ export default function AdminPanelPage() {
     { id: 'applications',  label: 'Applications', count: apps.length },
     { id: 'servers',       label: 'MCP Servers',  count: servers.length },
     { id: 'tools',         label: 'Tools',        count: tools.length },
-    { id: 'endpoints',     label: 'API Endpoints',count: endpoints.length },
-    { id: 'audit',         label: 'Audit Logs',   count: auditLogs.length },
+    { id: 'endpoints',     label: 'API Endpoints',count: endpoints.length + rawApiTools.length },
+    ...(canViewAudit ? [{ id: 'audit' as Tab, label: 'Audit Logs', count: auditLogs.length }] : []),
   ];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -876,7 +944,14 @@ export default function AdminPanelPage() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {statCards.map((card) => (
-                <div key={card.label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs">
+                <div
+                  key={card.label}
+                  onClick={() => setActiveTab(card.tab)}
+                  className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 transition-all hover:shadow-md"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab(card.tab); }}
+                >
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{card.label}</p>
                   <p className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{card.total}</p>
                   {card.alive !== undefined && (
@@ -1355,275 +1430,275 @@ export default function AdminPanelPage() {
             <input className="w-full max-w-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" placeholder="Search endpoints…" value={endpointSearch} onChange={(e) => setEndpointSearch(e.target.value)} />
 
             <div className="space-y-2">
-              {filteredEndpoints.length === 0 ? <EmptyState message="No endpoints found" /> : filteredEndpoints.map((ep) => {
-                const isEditingDesc = ep.id in endpointDescEdits;
-                const draftDesc = endpointDescEdits[ep.id] ?? ep.description;
-                const adminDisabled = ep.admin_enabled === false;
-                const ownerDisabled = ep.owner_enabled === false;
-                const effectiveEnabled = !adminDisabled && !ownerDisabled;
-                return (
-                  <div key={ep.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
-                    {/* Top row: identity + exposure controls */}
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`font-mono text-xs px-2 py-0.5 rounded font-semibold ${METHOD_COLORS[ep.method] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{ep.method}</span>
-                          <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white">{ep.path}</span>
-                          <span className="text-xs text-slate-500 dark:text-slate-400">v{ep.current_version}</span>
-                          {ep.mcp_tool_id && (
-                            <span className="text-xs bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 px-1.5 py-0.5 rounded font-mono">tool #{ep.mcp_tool_id}</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{ep.owner_id}</p>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                          {effectiveEnabled ? 'enabled' : 'disabled'}
-                        </span>
-                        {adminDisabled && (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
-                            admin disabled
-                          </span>
-                        )}
-                        {!adminDisabled && ownerDisabled && (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
-                            owner disabled
-                          </span>
-                        )}
-                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ep.exposed_to_mcp ? 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                          {ep.exposed_to_mcp ? 'exposed' : 'hidden'}
-                        </span>
-                        {ep.exposed_to_mcp && (
-                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ep.exposure_approved ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'}`}>
-                            {ep.exposure_approved ? 'approved' : 'pending'}
-                          </span>
-                        )}
-                        {ep.is_deleted && (
-                          <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
-                            ⚠ deleted
-                          </span>
-                        )}
-                        {(ep.parent_is_deleted || ep.parent_is_enabled === false) && (
-                          <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
-                            ⛔ parent inactive
-                          </span>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="!bg-blue-50 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-100 dark:hover:!bg-blue-900/50 border border-blue-200 dark:border-blue-800"
-                          onClick={() => handleOpenTest(ep)}
-                        >
-                          <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                          Test
-                        </Button>
-                        {canManageEndpoints && (
-                          <>
+              {filteredEndpoints.length === 0 && filteredRawApiTools.length === 0 ? (
+                <EmptyState message="No endpoints found" />
+              ) : (
+                <>
+                  {filteredEndpoints.map((ep) => {
+                    const isEditingDesc = ep.id in endpointDescEdits;
+                    const draftDesc = endpointDescEdits[ep.id] ?? ep.description;
+                    const adminDisabled = ep.admin_enabled === false;
+                    const ownerDisabled = ep.owner_enabled === false;
+                    const effectiveEnabled = !adminDisabled && !ownerDisabled;
+                    return (
+                      <div key={`ep-${ep.id}`} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
+                        {/* Top row: identity + exposure controls */}
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`font-mono text-xs px-2 py-0.5 rounded font-semibold ${METHOD_COLORS[ep.method] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{ep.method}</span>
+                              <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white">{ep.path}</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">v{ep.current_version}</span>
+                              {ep.mcp_tool_id && (
+                                <span className="text-xs bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 px-1.5 py-0.5 rounded font-mono">tool #{ep.mcp_tool_id}</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{ep.owner_id}</p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                              {effectiveEnabled ? 'enabled' : 'disabled'}
+                            </span>
+                            {adminDisabled && (
+                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
+                                admin disabled
+                              </span>
+                            )}
+                            {!adminDisabled && ownerDisabled && (
+                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
+                                owner disabled
+                              </span>
+                            )}
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ep.exposed_to_mcp ? 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                              {ep.exposed_to_mcp ? 'exposed' : 'hidden'}
+                            </span>
+                            {ep.exposed_to_mcp && (
+                              <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${ep.exposure_approved ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'}`}>
+                                {ep.exposure_approved ? 'approved' : 'pending'}
+                              </span>
+                            )}
                             {ep.is_deleted && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => void restoreEndpoint(ep)}
-                              >
-                                Restore
-                              </Button>
+                              <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
+                                ⚠ deleted
+                              </span>
+                            )}
+                            {(ep.parent_is_deleted || ep.parent_is_enabled === false) && (
+                              <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
+                                ⛔ parent inactive
+                              </span>
                             )}
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => void toggleEndpointExposure(ep)}
-                              disabled={ep.is_deleted || ep.parent_is_deleted || ep.parent_is_enabled === false}
-                              title={
-                                ep.is_deleted
-                                  ? 'Restore first to manage exposure'
-                                  : ep.parent_is_deleted || ep.parent_is_enabled === false
-                                    ? 'Parent is disabled or deleted'
-                                    : 'Toggle exposure'
-                              }
+                              className="!bg-blue-50 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-100 dark:hover:!bg-blue-900/50 border border-blue-200 dark:border-blue-800"
+                              onClick={() => handleOpenTest(ep)}
                             >
-                              {ep.exposed_to_mcp ? 'Hide' : 'Expose'}
+                              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              Test
                             </Button>
-                          </>
-                        )}
-                        {ep.exposed_to_mcp && !ep.exposure_approved && canApproveExposure && (
-                          <Button size="sm" variant="primary" onClick={() => void approveEndpointExposure(ep)}>Approve</Button>
-                        )}
-                        {ep.exposed_to_mcp && ep.exposure_approved && canApproveExposure && (
-                          <Button size="sm" variant="ghost" onClick={() => void approveEndpointExposure(ep)}>Revoke</Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Description row */}
-                    <div className="flex items-start gap-2">
-                      {isEditingDesc ? (
-                        <>
-                          <textarea
-                            rows={2}
-                            className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
-                            value={draftDesc}
-                            onChange={(e) => setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: e.target.value }))}
-                            placeholder="Enter description…"
-                            autoFocus
-                          />
-                          <div className="flex flex-col gap-1">
-                            <Button size="sm" onClick={() => void saveEndpointDescription(ep)}>Save</Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={generatingEndpointDescId === ep.id}
-                              onClick={() => void generateEndpointDescription(ep)}
-                            >
-                              {generatingEndpointDescId === ep.id ? 'Generating...' : 'Generate'}
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEndpointDescEdits((prev) => { const n = { ...prev }; delete n[ep.id]; return n; })}>Cancel</Button>
-                          </div>
-                        </>
-                      ) : (
-                        <div
-                          className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageEndpoints ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${ep.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
-                          onClick={() => canManageEndpoints && setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: ep.description }))}
-                          title={canManageEndpoints ? 'Click to edit description' : undefined}
-                        >
-                          {ep.description || (canManageEndpoints ? 'Click to add description…' : 'No description')}
-                          {canManageEndpoints && <span className="ml-1.5 opacity-0 group-hover:opacity-60 text-slate-400 text-xs">✎</span>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Raw API Tools (from registry)</h3>
-              <div className="space-y-2">
-                {rawApiTools.length === 0 ? <EmptyState message="No raw API tools found" /> : rawApiTools.map((tool) => {
-                  const isEditingDesc = tool.id in toolDescEdits;
-                  const draftDesc = toolDescEdits[tool.id] ?? tool.description;
-                  const adminDisabled = tool.admin_enabled === false;
-                  const ownerDisabled = tool.owner_enabled === false;
-                  const effectiveEnabled = !adminDisabled && !ownerDisabled;
-                  return (
-                    <div key={tool.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
-                      <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-sm text-slate-900 dark:text-white">{tool.name}</p>
-                            <span className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">{tool.source_type}</span>
-                            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">v{tool.current_version}</span>
-                          </div>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{tool.owner_id}</p>
-                          {tool.method && tool.path && (
-                            <p className="text-xs mt-1 flex items-center gap-1">
-                              <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[String(tool.method).toUpperCase()] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{tool.method}</span>
-                              <span className="text-slate-600 dark:text-slate-400 font-mono">{tool.path}</span>
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                            {effectiveEnabled ? 'enabled' : 'disabled'}
-                          </span>
-                          {adminDisabled && (
-                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
-                              admin disabled
-                            </span>
-                          )}
-                          {!adminDisabled && ownerDisabled && (
-                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
-                              owner disabled
-                            </span>
-                          )}
-                          {tool.is_deleted && (
-                            <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
-                              ⚠ deleted
-                            </span>
-                          )}
-                          {(tool.parent_is_deleted || tool.parent_is_enabled === false) && (
-                            <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
-                              ⛔ parent inactive
-                            </span>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="!bg-blue-50 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-100 dark:hover:!bg-blue-900/50 border border-blue-200 dark:border-blue-800"
-                            onClick={() => handleOpenTest(tool)}
-                          >
-                            <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            Test
-                          </Button>
-                          {canManageTools && (
-                            <>
-                              {tool.is_deleted && (
+                            {canManageEndpoints && (
+                              <>
+                                {ep.is_deleted && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => void restoreEndpoint(ep)}
+                                  >
+                                    Restore
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="secondary"
-                                  onClick={() => void toggleToolEnabled({ ...tool, admin_enabled: false })}
+                                  onClick={() => void toggleEndpointExposure(ep)}
+                                  disabled={ep.is_deleted || ep.parent_is_deleted || ep.parent_is_enabled === false}
+                                  title={
+                                    ep.is_deleted
+                                      ? 'Restore first to manage exposure'
+                                      : ep.parent_is_deleted || ep.parent_is_enabled === false
+                                        ? 'Parent is disabled or deleted'
+                                        : 'Toggle exposure'
+                                  }
                                 >
-                                  Restore
+                                  {ep.exposed_to_mcp ? 'Hide' : 'Expose'}
                                 </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => void toggleToolEnabled(tool)}
-                                disabled={tool.is_deleted || tool.parent_is_deleted || tool.parent_is_enabled === false}
-                                title={
-                                  tool.is_deleted
-                                    ? 'Restore first to enable/disable'
-                                    : tool.parent_is_deleted || tool.parent_is_enabled === false
-                                      ? 'Parent is disabled or deleted'
-                                      : 'Toggle admin enabled/disabled'
-                                }
-                              >
-                                Toggle
-                              </Button>
+                              </>
+                            )}
+                            {ep.exposed_to_mcp && !ep.exposure_approved && canApproveExposure && (
+                              <Button size="sm" variant="primary" onClick={() => void approveEndpointExposure(ep)}>Approve</Button>
+                            )}
+                            {ep.exposed_to_mcp && ep.exposure_approved && canApproveExposure && (
+                              <Button size="sm" variant="ghost" onClick={() => void approveEndpointExposure(ep)}>Revoke</Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Description row */}
+                        <div className="flex items-start gap-2">
+                          {isEditingDesc ? (
+                            <>
+                              <textarea
+                                rows={2}
+                                className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                                value={draftDesc}
+                                onChange={(e) => setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: e.target.value }))}
+                                placeholder="Enter description…"
+                                autoFocus
+                              />
+                              <div className="flex flex-col gap-1">
+                                <Button size="sm" onClick={() => void saveEndpointDescription(ep)}>Save</Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  disabled={generatingEndpointDescId === ep.id}
+                                  onClick={() => void generateEndpointDescription(ep)}
+                                >
+                                  {generatingEndpointDescId === ep.id ? 'Generating...' : 'Generate'}
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEndpointDescEdits((prev) => { const n = { ...prev }; delete n[ep.id]; return n; })}>Cancel</Button>
+                              </div>
                             </>
+                          ) : (
+                            <div
+                              className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageEndpoints ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${ep.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
+                              onClick={() => canManageEndpoints && setEndpointDescEdits((prev) => ({ ...prev, [ep.id]: ep.description }))}
+                              title={canManageEndpoints ? 'Click to edit description' : undefined}
+                            >
+                              {ep.description || (canManageEndpoints ? 'Click to add description…' : 'No description')}
+                              {canManageEndpoints && <span className="ml-1.5 opacity-0 group-hover:opacity-60 text-slate-400 text-xs">✎</span>}
+                            </div>
                           )}
                         </div>
                       </div>
-
-                      <div className="flex items-start gap-2">
-                        {isEditingDesc ? (
-                          <>
-                            <textarea
-                              rows={2}
-                              className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
-                              value={draftDesc}
-                              onChange={(e) => setToolDescEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
-                              placeholder="Enter description..."
-                              autoFocus
-                            />
-                            <div className="flex flex-col gap-1">
-                              <Button size="sm" onClick={() => void saveToolDescription(tool)}>Save</Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={generatingToolDescId === tool.id}
-                                onClick={() => void generateToolDescription(tool)}
-                              >
-                                {generatingToolDescId === tool.id ? 'Generating...' : 'Generate'}
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => setToolDescEdits((prev) => { const n = { ...prev }; delete n[tool.id]; return n; })}>Cancel</Button>
+                    );
+                  })}
+                  {filteredRawApiTools.map((tool) => {
+                    const isEditingDesc = tool.id in toolDescEdits;
+                    const draftDesc = toolDescEdits[tool.id] ?? tool.description;
+                    const adminDisabled = tool.admin_enabled === false;
+                    const ownerDisabled = tool.owner_enabled === false;
+                    const effectiveEnabled = !adminDisabled && !ownerDisabled;
+                    return (
+                      <div key={`tool-${tool.id}`} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 px-4 py-3 space-y-2.5">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-sm text-slate-900 dark:text-white">{tool.name}</p>
+                              <span className="text-xs text-slate-600 dark:text-slate-300 font-mono bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">{tool.source_type}</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">v{tool.current_version}</span>
                             </div>
-                          </>
-                        ) : (
-                          <div
-                            className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${tool.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
-                            onClick={() => canManageTools && setToolDescEdits((prev) => ({ ...prev, [tool.id]: tool.description }))}
-                            title={canManageTools ? 'Click to edit description' : undefined}
-                          >
-                            {tool.description || (canManageTools ? 'Click to add description...' : 'No description')}
-                            {canManageTools && <span className="ml-1.5 opacity-0 group-hover:opacity-60 text-slate-400 text-xs">✎</span>}
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{tool.owner_id}</p>
+                            {tool.method && tool.path && (
+                              <p className="text-xs mt-1 flex items-center gap-1">
+                                <span className={`font-mono px-1.5 py-0.5 rounded ${METHOD_COLORS[String(tool.method).toUpperCase()] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>{tool.method}</span>
+                                <span className="text-slate-600 dark:text-slate-400 font-mono">{tool.path}</span>
+                              </p>
+                            )}
                           </div>
-                        )}
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${effectiveEnabled ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                              {effectiveEnabled ? 'enabled' : 'disabled'}
+                            </span>
+                            {adminDisabled && (
+                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300" title="Disabled by admin (admin_enabled=false)">
+                                admin disabled
+                              </span>
+                            )}
+                            {!adminDisabled && ownerDisabled && (
+                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300" title="Disabled by owner (owner_enabled=false)">
+                                owner disabled
+                              </span>
+                            )}
+                            {tool.is_deleted && (
+                              <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold" title="Soft-deleted (is_deleted=true)">
+                                ⚠ deleted
+                              </span>
+                            )}
+                            {(tool.parent_is_deleted || tool.parent_is_enabled === false) && (
+                              <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold" title="Parent is disabled or deleted">
+                                ⛔ parent inactive
+                              </span>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="!bg-blue-50 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-100 dark:hover:!bg-blue-900/50 border border-blue-200 dark:border-blue-800"
+                              onClick={() => handleOpenTest(tool)}
+                            >
+                              <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              Test
+                            </Button>
+                            {canManageTools && (
+                              <>
+                                {tool.is_deleted && (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => void toggleToolEnabled({ ...tool, admin_enabled: false })}
+                                  >
+                                    Restore
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => void toggleToolEnabled(tool)}
+                                  disabled={tool.is_deleted || tool.parent_is_deleted || tool.parent_is_enabled === false}
+                                  title={
+                                    tool.is_deleted
+                                      ? 'Restore first to enable/disable'
+                                      : tool.parent_is_deleted || tool.parent_is_enabled === false
+                                        ? 'Parent is disabled or deleted'
+                                        : 'Toggle admin enabled/disabled'
+                                  }
+                                >
+                                  Toggle
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-start gap-2">
+                          {isEditingDesc ? (
+                            <>
+                              <textarea
+                                rows={2}
+                                className="flex-1 border border-cyan-300 dark:border-cyan-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl px-3 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                                value={draftDesc}
+                                onChange={(e) => setToolDescEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
+                                placeholder="Enter description..."
+                                autoFocus
+                              />
+                              <div className="flex flex-col gap-1">
+                                <Button size="sm" onClick={() => void saveToolDescription(tool)}>Save</Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  disabled={generatingToolDescId === tool.id}
+                                  onClick={() => void generateToolDescription(tool)}
+                                >
+                                  {generatingToolDescId === tool.id ? 'Generating...' : 'Generate'}
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => setToolDescEdits((prev) => { const n = { ...prev }; delete n[tool.id]; return n; })}>Cancel</Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div
+                              className={`flex-1 text-xs rounded-xl px-3 py-2 min-h-[2rem] ${canManageTools ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group' : ''} ${tool.description ? 'text-slate-600 dark:text-slate-300 font-medium' : 'text-slate-400 dark:text-slate-500 italic'}`}
+                              onClick={() => canManageTools && setToolDescEdits((prev) => ({ ...prev, [tool.id]: tool.description }))}
+                              title={canManageTools ? 'Click to edit description' : undefined}
+                            >
+                              {tool.description || (canManageTools ? 'Click to add description...' : 'No description')}
+                              {canManageTools && <span className="ml-1.5 opacity-0 group-hover:opacity-60 text-slate-400 text-xs">✎</span>}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           </section>
         )}

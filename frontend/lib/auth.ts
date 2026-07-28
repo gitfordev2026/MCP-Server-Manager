@@ -242,15 +242,6 @@ function base64UrlEncode(buffer: ArrayBuffer | ArrayBufferLike): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function generateRandomString(length: number): string {
-  let result = "";
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 async function generatePKCE(): Promise<{ verifier: string; challenge: string }> {
   const verifier = generateRandomString(64);
   const hashed = await sha256(verifier);

@@ -242,6 +242,8 @@ def create_endpoints_router(
             admin_enabled = admin_allowed
             owner_enabled = payload.owner_enabled if payload.owner_enabled is not None else True
             effective_enabled = bool(admin_enabled and owner_enabled)
+            user_sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+            user_email = actor.get("email")
             endpoint = api_endpoint_model(
                 owner_id=payload.owner_id,
                 method=payload.method.upper(),
@@ -255,6 +257,8 @@ def create_endpoints_router(
                 is_enabled=effective_enabled,
                 exposed_to_mcp=payload.exposed_to_mcp,
                 exposure_approved=payload.exposure_approved,
+                created_by_user_id=user_sub,
+                created_by_email=user_email,
             )
             db.add(endpoint)
             db.flush()

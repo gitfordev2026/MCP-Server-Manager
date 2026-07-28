@@ -208,7 +208,7 @@ def ensure_dynamic_schema_migrations() -> None:
     """
     Inspects all tables and columns declared in Base.metadata against the live DB.
     If a table exists but is missing any column declared in SQLAlchemy models,
-    it automatically executes ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...
+    it automatically executes ALTER TABLE ... ADD COLUMN ...
     """
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
@@ -238,7 +238,11 @@ def ensure_dynamic_schema_migrations() -> None:
                     else:
                         type_sql = col_type_str
 
-                    sql = f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS "{col.name}" {type_sql}'
+                    if engine.dialect.name == "postgresql":
+                        sql = f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS "{col.name}" {type_sql}'
+                    else:
+                        sql = f'ALTER TABLE "{table_name}" ADD COLUMN "{col.name}" {type_sql}'
+
                     print(f"[DB Auto-Migration] Adding missing column '{col.name}' ({type_sql}) to table '{table_name}'...")
                     try:
                         conn.exec_driver_sql(sql)
@@ -489,6 +493,8 @@ def ensure_phase2_schema_columns() -> None:
             ("admin_allowed", "BOOLEAN"),
             ("admin_enabled", "BOOLEAN"),
             ("owner_enabled", "BOOLEAN"),
+            ("created_by_user_id", "VARCHAR(255)"),
+            ("created_by_email", "VARCHAR(255)"),
         ],
     }
     for table_name, additions in table_to_columns.items():
@@ -2229,6 +2235,7 @@ app.include_router(
         ServerModel,
         MCPToolModel,
         probe_server_status_runtime,
+        APIEndpointModel,
     ),
     tags=["Dashboard"],
 )

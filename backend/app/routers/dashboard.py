@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.core.cache import cache_get_json, cache_set_json
 from app.core.rbac import get_request_actor
@@ -16,6 +16,7 @@ def create_dashboard_router(
     server_model,
     mcp_tool_model,
     probe_server_status_fn,
+    api_endpoint_model=None,
     get_actor_dep=get_request_actor,
 ) -> APIRouter:
     router = APIRouter()
@@ -45,18 +46,19 @@ def create_dashboard_router(
 
     @router.get(
         "/dashboard/stats",
-        summary="Get Dashboard Stats",
-        description="Return dashboard cards and live status checks for apps and MCP servers. Source: backend/app/routers/dashboard.py",
+        summary="Get Dashboard Statistics",
+        description="Return overview cards for applications, servers, tools, and endpoints. Source: backend/app/routers/dashboard.py",
     )
     async def get_dashboard_stats(
         actor: dict[str, Any] = Depends(get_actor_dep),
     ) -> dict[str, Any]:
-        role = actor.get("primary_role") or "developer"
-        sub = actor.get("subject") or actor.get("sub") or actor.get("username")
+        role = actor.get("primary_role") or actor.get("role", "developer")
+        sub = actor.get("subject") or actor.get("sub") or actor.get("username", "")
         username = actor.get("username")
         user_ids = [u for u in (sub, username) if u]
+        is_admin = role in ["admin", "super_admin"]
+        cache_key = f"dashboard:stats:{role}:{sub}"
 
-        cache_key = f"status:dashboard:stats:{sub}"
         cached = cache_get_json(cache_key)
         if cached is not None:
             return cached
@@ -66,13 +68,48 @@ def create_dashboard_router(
             srv_stmt = select(server_model).where(server_model.is_deleted == False)  # noqa: E712
             tool_stmt = select(mcp_tool_model).where(mcp_tool_model.is_deleted == False)  # noqa: E712
 
-            if role != "admin":
+            if not is_admin:
                 app_stmt = app_stmt.where(base_url_model.created_by_user_id.in_(user_ids))
                 srv_stmt = srv_stmt.where(server_model.created_by_user_id.in_(user_ids))
 
             apps = db.scalars(app_stmt).all()
             servers = db.scalars(srv_stmt).all()
+            user_app_ids = {app.id for app in apps}
+            user_server_ids = {srv.id for srv in servers}
+
+            if not is_admin:
+                tool_filters = []
+                if user_app_ids:
+                    tool_filters.append(mcp_tool_model.raw_api_id.in_(user_app_ids))
+                if user_server_ids:
+                    tool_filters.append(mcp_tool_model.server_id.in_(user_server_ids))
+                if hasattr(mcp_tool_model, "created_by_user_id"):
+                    tool_filters.append(mcp_tool_model.created_by_user_id.in_(user_ids))
+                
+                if tool_filters:
+                    tool_stmt = tool_stmt.where(or_(*tool_filters))
+                else:
+                    tool_stmt = tool_stmt.where(mcp_tool_model.id == -1)
+
             tools = db.scalars(tool_stmt).all()
+
+            if api_endpoint_model is not None:
+                ep_stmt = select(api_endpoint_model).where(api_endpoint_model.is_deleted == False)  # noqa: E712
+                if not is_admin:
+                    active_base_names = {app.name for app in apps}
+                    active_server_names = {srv.name for srv in servers}
+                    owner_prefixes = [f"app:{name}" for name in active_base_names] + [f"mcp:{name}" for name in active_server_names]
+                    if hasattr(api_endpoint_model, "created_by_user_id"):
+                        ep_stmt = ep_stmt.where(
+                            (api_endpoint_model.owner_id.in_(owner_prefixes)) |
+                            (api_endpoint_model.created_by_user_id.in_(user_ids))
+                        )
+                    else:
+                        ep_stmt = ep_stmt.where(api_endpoint_model.owner_id.in_(owner_prefixes))
+                endpoints = db.scalars(ep_stmt).all()
+                db_endpoints_count = len(endpoints)
+            else:
+                db_endpoints_count = 0
 
         active_server_ids = {server.id for server in servers if getattr(server, "is_enabled", True)}
         active_api_ids = {app.id for app in apps if getattr(app, "is_enabled", True)}
@@ -88,6 +125,9 @@ def create_dashboard_router(
                 if raw_api_id is not None and raw_api_id not in active_api_ids:
                     continue
             visible_tools.append(tool)
+
+        openapi_tools_count = sum(1 for t in visible_tools if getattr(t, "source_type", "") == "openapi")
+        total_endpoints_count = db_endpoints_count + openapi_tools_count
 
         app_checks = [probe_app_status(app.name, app.url) for app in apps]
         server_checks = [probe_server_status(server.name, server.url) for server in servers]
@@ -105,8 +145,8 @@ def create_dashboard_router(
                 "total_mcp_servers": len(servers),
                 "mcp_servers_alive": servers_alive,
                 "mcp_servers_down": len(servers) - servers_alive,
-                "total_tools": sum(1 for t in visible_tools if getattr(t, "source_type", "") == "mcp"),
-                "total_api_endpoints": sum(1 for t in visible_tools if getattr(t, "source_type", "") == "openapi"),
+                "total_tools": len(visible_tools),
+                "total_api_endpoints": total_endpoints_count,
             },
             "apps": app_statuses,
             "mcp_servers": server_statuses,

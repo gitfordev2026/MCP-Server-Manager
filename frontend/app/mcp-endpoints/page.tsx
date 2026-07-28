@@ -118,6 +118,8 @@ export default function McpEndpointsPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   /* --- derived --- */
   const [combinedMcpUrl, setCombinedMcpUrl] = useState('/api/proxy/mcp/apps');
 
@@ -127,14 +129,37 @@ export default function McpEndpointsPage() {
     }
   }, []);
 
+  const filteredCatalogTools = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return catalogTools;
+    return catalogTools.filter(
+      (tool) =>
+        (tool.name && tool.name.toLowerCase().includes(q)) ||
+        (tool.title && tool.title.toLowerCase().includes(q)) ||
+        (tool.app && tool.app.toLowerCase().includes(q)) ||
+        (tool.method && tool.method.toLowerCase().includes(q)) ||
+        (tool.path && tool.path.toLowerCase().includes(q))
+    );
+  }, [catalogTools, searchQuery]);
+
   const combinedToolsByApp = useMemo(() => {
     const map: Record<string, CatalogTool[]> = {};
-    for (const tool of catalogTools) {
+    for (const tool of filteredCatalogTools) {
       if (!map[tool.app]) map[tool.app] = [];
       map[tool.app].push(tool);
     }
     return map;
-  }, [catalogTools]);
+  }, [filteredCatalogTools]);
+
+  const filteredServers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return servers;
+    return servers.filter(
+      (server) =>
+        (server.name && server.name.toLowerCase().includes(q)) ||
+        (server.url && server.url.toLowerCase().includes(q))
+    );
+  }, [servers, searchQuery]);
   /* --- data fetching --- */
   const fetchData = useCallback(async () => {
     if (!NEXT_PUBLIC_BE_API_URL) {
@@ -283,12 +308,21 @@ export default function McpEndpointsPage() {
               Connect your MCP client to any endpoint below. Click to view available tools &amp; permissions.
             </p>
           </div>
-          <button
-            onClick={() => fetchData()}
-            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-4 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold text-sm transition-all shadow-xs cursor-pointer"
-          >
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              placeholder="Search tools or endpoints..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-violet-500/40 outline-none w-64 shadow-xs"
+            />
+            <button
+              onClick={() => fetchData()}
+              className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-4 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold text-sm transition-all shadow-xs cursor-pointer"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {error && (

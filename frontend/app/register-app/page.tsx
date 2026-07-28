@@ -137,6 +137,122 @@ export default function RegisterAppPage() {
   const [selectedEndpointDescriptions, setSelectedEndpointDescriptions] = useState<Record<string, string>>({});
   const [generatingEndpointDescriptionId, setGeneratingEndpointDescriptionId] = useState<string | null>(null);
   const [generatingRegisteredDescriptionId, setGeneratingRegisteredDescriptionId] = useState<string | null>(null);
+  const [criticalWarning, setCriticalWarning] = useState<{
+    endpointId?: string;
+    method?: string;
+    path?: string;
+    isRegistered?: boolean;
+    isSelectAll?: boolean;
+    endpointsToSelect?: Set<string>;
+    count?: number;
+  } | null>(null);
+
+  const CRITICAL_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
+
+  const isCriticalEndpoint = (endpointId: string): { method: string; path: string } | null => {
+    const parts = endpointId.split(' ');
+    const method = parts[0]?.toUpperCase() || '';
+    if (CRITICAL_METHODS.includes(method)) {
+      return { method, path: parts.slice(1).join(' ') };
+    }
+    return null;
+  };
+
+  const handleSelectAllEndpoints = (endpointsList: (ModalEndpoint | DiscoveredEndpoint)[], isRegistered: boolean) => {
+    const allIds = new Set(endpointsList.map((ep) => ep.id));
+    const criticalCount = endpointsList.filter((ep) => CRITICAL_METHODS.includes(ep.method)).length;
+
+    if (criticalCount > 0) {
+      setCriticalWarning({
+        isSelectAll: true,
+        isRegistered,
+        endpointsToSelect: allIds,
+        count: criticalCount,
+      });
+    } else {
+      if (isRegistered) {
+        setRegisteredSelectedEndpoints(allIds);
+      } else {
+        setSelectedEndpoints(allIds);
+      }
+    }
+  };
+
+  const toggleEndpoint = (endpointId: string) => {
+    // If already selected, always allow deselection without warning
+    if (selectedEndpoints.has(endpointId)) {
+      setSelectedEndpoints((prev) => {
+        const next = new Set(prev);
+        next.delete(endpointId);
+        return next;
+      });
+      return;
+    }
+
+    // If selecting a critical method, show warning first
+    const critical = isCriticalEndpoint(endpointId);
+    if (critical) {
+      setCriticalWarning({ endpointId, ...critical, isRegistered: false });
+      return;
+    }
+
+    // Safe method - select directly
+    setSelectedEndpoints((prev) => {
+      const next = new Set(prev);
+      next.add(endpointId);
+      return next;
+    });
+  };
+
+  const toggleRegisteredEndpoint = (endpointId: string) => {
+    if (registeredSelectedEndpoints.has(endpointId)) {
+      setRegisteredSelectedEndpoints((prev) => {
+        const next = new Set(prev);
+        next.delete(endpointId);
+        return next;
+      });
+      return;
+    }
+
+    const critical = isCriticalEndpoint(endpointId);
+    if (critical) {
+      setCriticalWarning({ endpointId, ...critical, isRegistered: true });
+      return;
+    }
+
+    setRegisteredSelectedEndpoints((prev) => {
+      const next = new Set(prev);
+      next.add(endpointId);
+      return next;
+    });
+  };
+
+  const confirmCriticalEndpoint = () => {
+    if (criticalWarning) {
+      if (criticalWarning.isSelectAll && criticalWarning.endpointsToSelect) {
+        if (criticalWarning.isRegistered) {
+          setRegisteredSelectedEndpoints(criticalWarning.endpointsToSelect);
+        } else {
+          setSelectedEndpoints(criticalWarning.endpointsToSelect);
+        }
+      } else if (criticalWarning.endpointId) {
+        if (criticalWarning.isRegistered) {
+          setRegisteredSelectedEndpoints((prev) => {
+            const next = new Set(prev);
+            next.add(criticalWarning.endpointId!);
+            return next;
+          });
+        } else {
+          setSelectedEndpoints((prev) => {
+            const next = new Set(prev);
+            next.add(criticalWarning.endpointId!);
+            return next;
+          });
+        }
+      }
+      setCriticalWarning(null);
+    }
+  };
   const [llmModels, setLlmModels] = useState<string[]>([]);
   const [llmModel, setLlmModel] = useState<string>('');
   const [llmModelError, setLlmModelError] = useState<string | null>(null);
@@ -255,7 +371,7 @@ export default function RegisterAppPage() {
         descriptionMap[endpoint.id] = endpoint.summary || endpoint.description || '';
       });
       setSelectedEndpointDescriptions(descriptionMap);
-      const initial = new Set<string>(endpoints.map((endpoint) => endpoint.id));
+      const initial = new Set<string>(endpoints.filter((ep) => ep.method === 'GET').map((ep) => ep.id));
       setSelectedEndpoints(initial);
       setActiveEndpointId(endpoints[0]?.id ?? null);
       setDiscoveryPage(1);
@@ -267,17 +383,7 @@ export default function RegisterAppPage() {
     }
   };
 
-  const toggleEndpoint = (endpointId: string) => {
-    setSelectedEndpoints((prev) => {
-      const next = new Set(prev);
-      if (next.has(endpointId)) {
-        next.delete(endpointId);
-      } else {
-        next.add(endpointId);
-      }
-      return next;
-    });
-  };
+
 
   const setSelectedEndpointDescription = (endpointId: string, description: string) => {
     setSelectedEndpointDescriptions((prev) => ({ ...prev, [endpointId]: description }));
@@ -777,9 +883,12 @@ export default function RegisterAppPage() {
                 {discoveredEndpoints.length === 0 && <p className="text-sm text-slate-600 dark:text-slate-400">No endpoints discovered.</p>}
                 {discoveredEndpoints.length > 0 && (
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => setSelectedEndpoints(new Set(discoveredEndpoints.map((endpoint) => endpoint.id)))}>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button size="sm" variant="secondary" onClick={() => handleSelectAllEndpoints(discoveredEndpoints, false)}>
                         Select All
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setSelectedEndpoints(new Set(discoveredEndpoints.filter((ep) => ep.method === 'GET').map((ep) => ep.id)))}>
+                        GET Only
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setSelectedEndpoints(new Set())}>
                         Unselect All
@@ -816,6 +925,9 @@ export default function RegisterAppPage() {
                               {endpoint.method}
                             </span>
                             <span className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100 break-all">{endpoint.path}</span>
+                            {CRITICAL_METHODS.includes(endpoint.method) && !isSelected && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">⚠ Critical</span>
+                            )}
                           </div>
                           <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
                             <input
@@ -973,13 +1085,20 @@ export default function RegisterAppPage() {
               ) : (
                 <>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => setRegisteredSelectedEndpoints(new Set(registeredEndpoints.map((row) => row.id)))}
+                        onClick={() => handleSelectAllEndpoints(registeredEndpoints, true)}
                       >
                         Select All
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setRegisteredSelectedEndpoints(new Set(registeredEndpoints.filter((ep) => ep.method === 'GET').map((row) => row.id)))}
+                      >
+                        GET Only
                       </Button>
                       <Button
                         size="sm"
@@ -1015,6 +1134,9 @@ export default function RegisterAppPage() {
                                     {endpoint.method}
                                   </span>
                                   <span className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100 break-all">{endpoint.path}</span>
+                                  {CRITICAL_METHODS.includes(endpoint.method) && !isEnabled && (
+                                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700/50">⚠ Critical</span>
+                                  )}
                                 </div>
                                 <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
                                   <input
@@ -1022,12 +1144,7 @@ export default function RegisterAppPage() {
                                     checked={isEnabled}
                                     onChange={(e) => {
                                       e.stopPropagation();
-                                      setRegisteredSelectedEndpoints((prev) => {
-                                        const next = new Set(prev);
-                                        if (next.has(endpoint.id)) next.delete(endpoint.id);
-                                        else next.add(endpoint.id);
-                                        return next;
-                                      });
+                                      toggleRegisteredEndpoint(endpoint.id);
                                     }}
                                     onClick={(e) => e.stopPropagation()}
                                     className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
@@ -1129,6 +1246,59 @@ export default function RegisterAppPage() {
               >
                 {registeredSyncing ? 'Applying...' : 'Apply Selection'}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {criticalWarning && (
+        <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-amber-400 dark:border-amber-600 shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                <span className="text-lg">⚠️</span>
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                  {criticalWarning.isSelectAll ? 'Critical APIs Warning' : 'Critical API Warning'}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">These endpoints can modify data</p>
+              </div>
+            </div>
+
+            {criticalWarning.isSelectAll ? (
+              <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
+                  Select All includes <strong className="text-amber-900 dark:text-amber-100">{criticalWarning.count} critical endpoint(s)</strong> (POST, PUT, PATCH, DELETE).
+                </p>
+              </div>
+            ) : (
+              <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
+                  You are about to enable a <span className={`inline-block px-1.5 py-0.5 text-[11px] font-bold rounded-md border uppercase ${getMethodBadgeClass(criticalWarning.method || '')}`}>{criticalWarning.method}</span> endpoint:
+                </p>
+                <p className="text-sm font-mono text-amber-800 dark:text-amber-300 mt-1 break-all">{criticalWarning.path}</p>
+              </div>
+            )}
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 mb-5">
+              <strong>POST</strong>, <strong>PUT</strong>, <strong>PATCH</strong>, and <strong>DELETE</strong> endpoints can create, modify, or delete data. Ensure these endpoints are safe to expose before enabling them.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCriticalWarning(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmCriticalEndpoint}
+                className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-colors shadow-md"
+              >
+                {criticalWarning.isSelectAll ? 'Enable All Anyway' : 'Enable Anyway'}
+              </button>
             </div>
           </div>
         </div>

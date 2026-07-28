@@ -1076,33 +1076,9 @@ def create_agent_router(
     async def list_models(
         actor: dict[str, Any] = Depends(get_request_actor),
     ) -> Dict[str, Any]:
-        base_url = (ENV.agent_ollama_base_url or "").rstrip("/")
-
-        if not base_url:
-            raise HTTPException(
-                status_code=500,
-                detail="Ollama base URL not configured",
-            )
-
         try:
-            async with httpx.AsyncClient(
-                base_url=base_url,
-                timeout=httpx.Timeout(5.0),
-            ) as client:
-                res = await client.get("/api/tags")
-
-            if not res.is_success:
-                raise HTTPException(
-                    status_code=res.status_code,
-                    detail="Failed to fetch Ollama models",
-                )
-
-            payload = res.json()
-            models = [
-                m.get("name")
-                for m in payload.get("models", [])
-                if m.get("name")
-            ]
+            discovered_models = await fetch_available_models()
+            default_mod = await get_default_model()
 
             return {
                 "models": discovered_models,

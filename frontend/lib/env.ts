@@ -1,6 +1,6 @@
 function readRequiredEnv(value: string | undefined, key: string): string {
-  if (value === undefined) {
-    throw new Error(`Missing required env var: ${key}`);
+  if (!value) {
+    return "";
   }
   return value.trim();
 }

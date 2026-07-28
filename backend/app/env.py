@@ -77,6 +77,8 @@ class BackendEnv:
     langfuse_public_key: str
     langfuse_secret_key: str
     langfuse_host: str
+    inference_engine_openapi_url: str
+    inference_engine_api_key: str
 
 
 def load_backend_env() -> BackendEnv:
@@ -139,6 +141,8 @@ def load_backend_env() -> BackendEnv:
         langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "").strip(),
         langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY", "").strip(),
         langfuse_host=os.getenv("LANGFUSE_HOST", "http://localhost:3000").strip().rstrip("/"),
+        inference_engine_openapi_url=os.getenv("INFERENCE_ENGINE_OPENAPI_URL", os.getenv("AGENT_OLLAMA_BASE_URL", "http://localhost:11434")).strip(),
+        inference_engine_api_key=os.getenv("INFERENCE_ENGINE_API_KEY", "").strip(),
     )
 
 
