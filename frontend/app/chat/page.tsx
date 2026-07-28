@@ -1,20 +1,53 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Navigation from '@/components/Navigation';
 import MessageContent from '@/components/MessageContent';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 import { streamAgentResponse } from '@/lib/agentStream';
 
-const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
-
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to execCommand
+    }
+  }
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.width = '2em';
+    textArea.style.height = '2em';
+    textArea.style.padding = '0';
+    textArea.style.border = 'none';
+    textArea.style.outline = 'none';
+    textArea.style.boxShadow = 'none';
+    textArea.style.background = 'transparent';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch {
+    return false;
+  }
 }
 
 function buildHistory(messages: Message[]) {
@@ -44,6 +77,7 @@ export default function ChatPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editInput, setEditInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,6 +86,13 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Auto-focus input box whenever loading finishes or on mount
+  useEffect(() => {
+    if (!loading) {
+      inputRef.current?.focus();
+    }
+  }, [loading]);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -157,6 +198,7 @@ export default function ChatPage() {
       );
     } finally {
       setLoading(false);
+      inputRef.current?.focus();
     }
   };
 
@@ -195,9 +237,9 @@ export default function ChatPage() {
                 <div
                   key={message.id}
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-slideInUp`}
-                  style={{ animationDelay: `${index * 0.1}s` }}
+                  style={{ animationDelay: `${index * 0.05}s` }}
                 >
-                  <div className={`flex gap-3 max-w-xs sm:max-w-sm lg:max-w-xl`}>
+                  <div className={`flex gap-3 max-w-xs sm:max-w-md lg:max-w-2xl`}>
                     {message.role === 'assistant' && (
                       <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30">
                         <span className="text-white text-sm font-bold">AI</span>
@@ -278,7 +320,7 @@ export default function ChatPage() {
                     <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/40">
                       <span className="text-white text-sm font-bold">AI</span>
                     </div>
-                    <div className="bg-slate-100 text-slate-800 px-5 py-4 rounded-2xl rounded-bl-none border border-amber-300/50 shadow-md">
+                    <div className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-5 py-4 rounded-2xl rounded-bl-none border border-amber-300/50 shadow-md">
                       <div className="flex gap-2">
                         <div className="w-3 h-3 bg-amber-500 rounded-full animate-bounce"></div>
                         <div className="w-3 h-3 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
@@ -316,6 +358,7 @@ export default function ChatPage() {
               </div>
               <form onSubmit={handleSendMessage} className="flex gap-3">
                 <input
+                  ref={inputRef}
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -329,7 +372,7 @@ export default function ChatPage() {
                   className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-6 sm:px-8 py-3 rounded-2xl font-bold disabled:opacity-50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/50 hover:scale-105 shadow-md active:scale-95"
                 >
                   {loading ? (
-                    <span className="inline-block animate-spin-slow">⚙️</span>
+                    <span className="inline-block animate-spin">⚙️</span>
                   ) : (
                     '✨ Send'
                   )}

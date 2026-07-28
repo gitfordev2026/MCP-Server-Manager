@@ -40,6 +40,7 @@ class BackendEnv:
     keycloak_realm: str
     keycloak_client_id: str
     keycloak_client_secret: str
+    keycloak_client_secret: str
     keycloak_verify_aud: bool
     keycloak_verify_ssl: bool
     database_url: str
@@ -112,7 +113,7 @@ def load_backend_env() -> BackendEnv:
         redis_list_ttl_sec=int(os.getenv("REDIS_LIST_TTL_SEC", "5").strip()),
         agent_mcp_server_name=os.getenv("AGENT_MCP_SERVER_NAME", "http_server").strip() or "http_server",
         agent_mcp_server_url=(
-            os.getenv("AGENT_MCP_SERVER_URL", "http://127.0.0.1:8000/mcp/apps/").strip().rstrip("/") + "/"
+            os.getenv("AGENT_MCP_SERVER_URL", "http://10.196.167.176:8000/mcp/apps/").strip().rstrip("/") + "/"
         ),
         agent_ollama_model=os.getenv("AGENT_OLLAMA_MODEL", "gemma4:31b-cloud").strip() or "gemma4:31b-cloud",
         agent_ollama_base_url=os.getenv("AGENT_OLLAMA_BASE_URL", "http://localhost:11434").strip(),

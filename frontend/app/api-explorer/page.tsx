@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, Suspense, Fragment } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Navigation from '@/components/Navigation';
+import MarkdownRenderer from '@/components/ui/MarkdownRenderer';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 
-const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
 
 interface PathItem {
   path: string;
@@ -35,15 +36,22 @@ interface OpenAPISpec {
   servers?: Array<{ url: string; description?: string }>;
 }
 
-const methodColors: Record<string, string> = {
-  get: 'bg-blue-600',
-  post: 'bg-green-600',
-  put: 'bg-yellow-600',
-  patch: 'bg-orange-600',
-  delete: 'bg-red-600',
-  head: 'bg-purple-600',
-  options: 'bg-slate-600',
-};
+function getMethodBadgeClass(method: string) {
+  const m = (method || '').toUpperCase();
+  switch (m) {
+    case 'GET':
+      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700/50';
+    case 'POST':
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-700/50';
+    case 'PUT':
+    case 'PATCH':
+      return 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700/50';
+    case 'DELETE':
+      return 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-700/50';
+    default:
+      return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700';
+  }
+}
 
 function ApiExplorerContent() {
   const searchParams = useSearchParams();
@@ -157,7 +165,6 @@ function ApiExplorerContent() {
         setLoading(true);
         setError(null);
 
-        // Fetch spec via backend proxy to avoid browser CORS restrictions.
         const query = new URLSearchParams({ url });
         const customPath = openapiPath.trim();
         if (customPath) {
@@ -177,7 +184,6 @@ function ApiExplorerContent() {
         const data = payload as OpenAPISpec;
         setSpec(data);
 
-        // Parse paths and methods
         if (data.paths) {
           const items: PathItem[] = [];
           Object.entries(data.paths).forEach(([path, pathValue]) => {
@@ -262,316 +268,333 @@ function ApiExplorerContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
       {/* Animated background elements */}
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 relative overflow-hidden">
+      {/* Background Gradients */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-80 h-80 bg-amber-400/5 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute bottom-20 right-10 w-80 h-80 bg-emerald-400/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
-        <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-blue-400/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-20 left-10 w-96 h-96 bg-blue-500/10 dark:bg-blue-500/5 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
       </div>
 
-      {/* Navigation */}
+      {/* Navigation Header */}
       <Navigation pageTitle="API Explorer" />
 
-      {/* Main Content */}
-      <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-amber-600 to-emerald-600 bg-clip-text text-transparent mb-2">
-            📖 {name} API Explorer
-          </h1>
-          <p className="text-slate-600 dark:text-slate-400">{url}</p>
-          <p className="text-slate-500 dark:text-slate-500 text-xs mt-1 font-mono">
-            OpenAPI path: {openapiPath.trim() || '/openapi.json (auto)'}
+      {/* Main Container */}
+      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
+        {/* Header Title Section */}
+        <div className="mb-8 border-b border-slate-200/80 dark:border-slate-800/80 pb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2.5 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50">
+              <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 dark:from-blue-400 dark:via-indigo-400 dark:to-emerald-400 bg-clip-text text-transparent">
+              {name} API Explorer
+            </h1>
+          </div>
+          <p className="text-sm font-mono text-slate-600 dark:text-slate-400 flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+            {url}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-500 mt-1 font-mono">
+            OpenAPI Spec Path: <span className="text-slate-700 dark:text-slate-300 font-semibold">{openapiPath.trim() || '/openapi.json (auto)'}</span>
           </p>
         </div>
 
-        {/* Spec Info */}
+        {/* Spec Overview Card */}
         {spec?.info && (
-          <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-amber-300/50 dark:border-amber-800/30 mb-8 p-6 shadow-lg shadow-amber-200/30 dark:shadow-none">
+          <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 mb-8 p-6 shadow-xl shadow-slate-200/20 dark:shadow-none rounded-2xl">
             <div className="grid md:grid-cols-3 gap-6">
               <div>
-                <p className="text-slate-600 dark:text-slate-400 text-sm">API Title</p>
-                <p className="text-slate-800 dark:text-slate-200 text-lg font-semibold">{spec.info.title || 'Unknown'}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">API Title</p>
+                <p className="text-slate-900 dark:text-white text-lg font-bold mt-1">{spec.info.title || 'Unknown'}</p>
               </div>
               <div>
-                <p className="text-slate-600 dark:text-slate-400 text-sm">Version</p>
-                <p className="text-slate-800 dark:text-slate-200 text-lg font-semibold">{spec.info.version || 'N/A'}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Version</p>
+                <p className="text-slate-900 dark:text-white text-lg font-bold mt-1">{spec.info.version || 'N/A'}</p>
               </div>
               <div>
-                <p className="text-slate-600 dark:text-slate-400 text-sm">Total Endpoints</p>
-                <p className="text-slate-800 dark:text-slate-200 text-lg font-semibold">{totalOperations}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Operations</p>
+                <p className="text-slate-900 dark:text-white text-lg font-bold mt-1">{totalOperations}</p>
               </div>
             </div>
             {spec.info.description && (
-              <p className="text-slate-700 dark:text-slate-300 mt-4 text-sm">{spec.info.description}</p>
+              <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
+                <MarkdownRenderer content={spec.info.description} />
+              </div>
             )}
           </Card>
         )}
 
         {/* Error State */}
         {error && (
-          <Card className="bg-red-100 dark:bg-red-950/30 border border-red-400 dark:border-red-900 p-6 mb-8">
-            <p className="text-red-700 dark:text-red-400">
-              <span className="font-semibold">Error:</span> {error}
-            </p>
+          <Card className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 p-6 mb-8 rounded-2xl">
+            <div className="flex items-start gap-3">
+              <svg className="w-6 h-6 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <h3 className="text-base font-bold text-rose-800 dark:text-rose-200">Unable to load OpenAPI Specification</h3>
+                <p className="text-sm text-rose-700 dark:text-rose-300 mt-1">{error}</p>
+              </div>
+            </div>
           </Card>
         )}
 
         {/* Loading State */}
         {loading && (
-          <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 p-12 text-center shadow-lg">
-            <div className="inline-flex items-center gap-2">
-              <div className="w-4 h-4 bg-amber-500 rounded-full animate-bounce"></div>
-              <div className="w-4 h-4 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              <div className="w-4 h-4 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+          <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 p-12 text-center shadow-xl rounded-2xl">
+            <div className="inline-flex items-center gap-3">
+              <div className="w-4 h-4 bg-blue-500 rounded-full animate-bounce" />
+              <div className="w-4 h-4 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />
+              <div className="w-4 h-4 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }} />
             </div>
-            <p className="text-slate-600 dark:text-slate-400 mt-4">Loading API specification...</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mt-4">Loading API specification...</p>
           </Card>
         )}
 
-        {/* Endpoints */}
+        {/* Empty State */}
         {!loading && !error && pathItems.length === 0 && (
-          <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 p-8 text-center shadow-lg">
-            <p className="text-slate-600 dark:text-slate-400">No endpoints found in the OpenAPI specification</p>
+          <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 p-12 text-center shadow-xl rounded-2xl">
+            <p className="text-slate-600 dark:text-slate-400">No endpoints found in the OpenAPI specification.</p>
           </Card>
         )}
 
+        {/* Endpoints Table */}
         {!loading && pathItems.length > 0 && (
-          <div className="overflow-x-auto rounded-xl border border-slate-200/50 dark:border-slate-800 shadow-md">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gradient-to-r from-amber-500 to-emerald-600">
-                  <th className="px-6 py-4 text-left text-white font-semibold">Method</th>
-                  <th className="px-6 py-4 text-left text-white font-semibold">Endpoint</th>
-                  <th className="px-6 py-4 text-left text-white font-semibold">Description</th>
-                  <th className="px-6 py-4 text-left text-white font-semibold text-center w-24">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200/50 dark:divide-slate-800 bg-white/40 dark:bg-slate-900/40">
-                {pathItems.map((item, idx) =>
-                  item.methods.map((method, methodIdx) => {
-                    const isExpanded = selectedMethod === `${idx}-${methodIdx}`;
-                    return (
-                      <Fragment key={`${idx}-${methodIdx}`}>
-                        <tr
-                          className="hover:bg-white/70 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-                          onClick={() =>
-                            setSelectedMethod(isExpanded ? null : `${idx}-${methodIdx}`)
-                          }
-                        >
-                          {/* Method */}
-                          <td className="px-6 py-4">
-                            <span
-                              className={`${methodColors[method.method.toLowerCase()] || 'bg-slate-600'} text-white px-3 py-1.5 rounded-lg text-xs font-bold font-mono whitespace-nowrap inline-block shadow-sm`}
+          <div className="space-y-6">
+            <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-xs uppercase font-bold text-slate-600 dark:text-slate-300">
+                      <th className="px-6 py-4 w-28">Method</th>
+                      <th className="px-6 py-4">Endpoint Path</th>
+                      <th className="px-6 py-4">Summary & Description</th>
+                      <th className="px-6 py-4 w-20 text-center">Inspect</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800/70 text-sm">
+                    {pathItems.map((item, idx) =>
+                      item.methods.map((method, methodIdx) => {
+                        const key = `${idx}-${methodIdx}`;
+                        const isExpanded = selectedMethod === key;
+                        return (
+                          <React.Fragment key={key}>
+                            <tr
+                              onClick={() => setSelectedMethod(isExpanded ? null : key)}
+                              className={`transition-colors cursor-pointer ${
+                                isExpanded
+                                  ? 'bg-blue-50/80 dark:bg-blue-950/40'
+                                  : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/50'
+                              }`}
                             >
-                              {method.method}
-                            </span>
-                          </td>
+                              {/* Method Badge */}
+                              <td className="px-6 py-4 align-top">
+                                <span className={`px-2.5 py-1 text-xs font-extrabold rounded-md border uppercase inline-block ${getMethodBadgeClass(method.method)}`}>
+                                  {method.method}
+                                </span>
+                              </td>
 
-                          {/* Endpoint */}
-                          <td className="px-6 py-4">
-                            <p className="font-mono text-sm break-all text-blue-600 dark:text-blue-400 font-semibold">{item.path}</p>
-                          </td>
+                              {/* Endpoint Path */}
+                              <td className="px-6 py-4 align-top font-mono text-sm font-semibold text-slate-900 dark:text-slate-100 break-all">
+                                {item.path}
+                              </td>
 
-                          {/* Description */}
-                          <td className="px-6 py-4">
-                            <div>
-                              {method.summary && <p className="text-slate-800 dark:text-slate-200 text-sm font-medium">{method.summary}</p>}
-                              {method.description && method.description !== method.summary && (
-                                <p className="text-slate-600 dark:text-slate-400 text-xs mt-1 line-clamp-2">{method.description}</p>
-                              )}
-                              {!method.summary && !method.description && (
-                                <p className="text-slate-500 dark:text-slate-500 text-sm italic">No description</p>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Expand Button */}
-                          <td className="px-6 py-4 text-center">
-                            <button className="cursor-pointer text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center justify-center mx-auto">
-                              <svg
-                                className={`w-5 h-5 transition-transform duration-200 ${isExpanded ? 'transform rotate-180' : ''}`}
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
-                          </td>
-                        </tr>
-
-                        {/* Inline Details Pane */}
-                        {isExpanded && (
-                          <tr className="bg-slate-50/30 dark:bg-slate-950/20">
-                            <td colSpan={4} className="px-6 py-6 border-t border-b border-slate-200/50 dark:border-slate-800/80">
-                              <div className="p-2 space-y-6">
+                              {/* Summary & Description */}
+                              <td className="px-6 py-4 align-top">
                                 <div>
-                                  <h4 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Endpoint Details</h4>
-                                  <h3 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent mb-1">
-                                    {item.path}
-                                  </h3>
-                                  <p className="text-slate-700 dark:text-slate-300 text-sm">{method.summary || method.description || 'No description'}</p>
-                                </div>
-
-                                <div className="grid md:grid-cols-2 gap-8">
-                                  {/* Parameters */}
-                                  {method.parameters && method.parameters.length > 0 && (
-                                    <div>
-                                      <h4 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
-                                        <span className="bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded text-sm">📋</span>
-                                        Parameters ({method.parameters.length})
-                                      </h4>
-                                      <div className="space-y-2">
-                                        {method.parameters.map((param, pIdx) => (
-                                          <div
-                                            key={pIdx}
-                                            className="bg-white/60 dark:bg-slate-900/60 hover:bg-white dark:hover:bg-slate-900 border border-amber-200/50 dark:border-amber-800/30 hover:border-amber-400/60 dark:hover:border-amber-600/30 rounded-lg p-3 transition-all text-xs"
-                                          >
-                                            <div className="flex items-center justify-between mb-1.5">
-                                              <span className="text-amber-700 dark:text-amber-400 font-mono font-semibold">{param.name}</span>
-                                              <div className="flex gap-1.5">
-                                                <span className="bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-mono">
-                                                  {param.schema?.type || 'string'}
-                                                </span>
-                                                {param.required && (
-                                                  <span className="bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 px-2 py-0.5 rounded font-semibold">
-                                                    ⚠️ Required
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </div>
-                                            <p className="text-slate-500 dark:text-slate-450">
-                                              Location: <span className="text-slate-600 dark:text-slate-400 font-mono">{param.in}</span>
-                                            </p>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
+                                  {method.summary && (
+                                    <p className="text-slate-900 dark:text-slate-200 font-semibold text-sm">{method.summary}</p>
                                   )}
+                                  {method.description && method.description !== method.summary && (
+                                    <p className="text-slate-600 dark:text-slate-400 text-xs mt-1 line-clamp-2 leading-relaxed">
+                                      {method.description}
+                                    </p>
+                                  )}
+                                  {!method.summary && !method.description && (
+                                    <p className="text-slate-400 dark:text-slate-500 text-xs italic">No description provided</p>
+                                  )}
+                                </div>
+                              </td>
 
-                                  {/* Responses */}
-                                  {method.responses && Object.keys(method.responses).length > 0 && (
-                                    <div>
-                                      <h4 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
-                                        <span className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded text-sm">✓</span>
-                                        Responses ({Object.keys(method.responses).length})
-                                      </h4>
-                                      <div className="space-y-2">
-                                        {Object.entries(method.responses).map(([statusCode, response]) => (
-                                          <div
-                                            key={statusCode}
-                                            className={`border rounded-lg p-3 hover:shadow-md transition-all text-xs ${statusCode.startsWith('2')
-                                              ? 'bg-emerald-100/30 dark:bg-emerald-950/10 border-emerald-300/50 dark:border-emerald-800/30 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/20'
-                                              : statusCode.startsWith('4')
-                                                ? 'bg-amber-100/30 dark:bg-amber-950/10 border-amber-300/50 dark:border-amber-800/30 hover:bg-amber-100/50 dark:hover:bg-amber-950/20'
-                                                : 'bg-red-100/30 dark:bg-red-950/10 border-red-300/50 dark:border-red-800/30 hover:bg-red-100/50 dark:hover:bg-red-950/20'
-                                              }`}
-                                          >
-                                            <div className="flex items-center gap-2 mb-1.5">
-                                              <span
-                                                className={`font-bold px-2 py-0.5 rounded-full text-white ${statusCode.startsWith('2')
-                                                  ? 'bg-emerald-600'
-                                                  : statusCode.startsWith('4')
-                                                    ? 'bg-amber-600'
-                                                    : 'bg-red-600'
-                                                  }`}
+                              {/* Expand Chevron Icon */}
+                              <td className="px-6 py-4 align-top text-center">
+                                <button
+                                  type="button"
+                                  className="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                                  aria-label="Toggle details"
+                                >
+                                  <svg
+                                    className={`w-5 h-5 transform transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''}`}
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                              </td>
+                            </tr>
+
+                            {/* Inline Details Panel - Opens directly below the target endpoint row */}
+                            {isExpanded && (
+                              <tr className="bg-slate-50/80 dark:bg-slate-950/60">
+                                <td colSpan={4} className="px-6 py-6 border-b border-slate-200 dark:border-slate-800">
+                                  <div className="bg-white dark:bg-slate-900 border border-blue-200/80 dark:border-slate-800 shadow-xl rounded-2xl p-6 sm:p-8">
+                                    <div className="mb-6 border-b border-slate-200/80 dark:border-slate-800/80 pb-4">
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        <span className={`px-3 py-1 text-xs font-extrabold rounded-md border uppercase ${getMethodBadgeClass(method.method)}`}>
+                                          {method.method}
+                                        </span>
+                                        <h3 className="text-xl sm:text-2xl font-mono font-bold text-slate-900 dark:text-white">
+                                          {item.path}
+                                        </h3>
+                                      </div>
+                                      <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 font-medium">
+                                        {method.summary || method.description || 'No description provided.'}
+                                      </p>
+                                    </div>
+
+                                    <div className="grid lg:grid-cols-2 gap-8">
+                                      {/* Parameters Section */}
+                                      <div>
+                                        <h4 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                          <span className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 022 2h2a2 2 0 022-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                            </svg>
+                                          </span>
+                                          Parameters ({method.parameters?.length || 0})
+                                        </h4>
+
+                                        {!method.parameters || method.parameters.length === 0 ? (
+                                          <p className="text-xs text-slate-500 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                                            No parameters required for this operation.
+                                          </p>
+                                        ) : (
+                                          <div className="space-y-3">
+                                            {method.parameters.map((param, pIdx) => (
+                                              <div
+                                                key={pIdx}
+                                                className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 transition-all"
                                               >
-                                                {statusCode}
-                                              </span>
-                                              <span className="text-slate-700 dark:text-slate-300 font-medium">
-                                                {statusCode === '200' ? 'Success' : statusCode === '201' ? 'Created' : statusCode === '204' ? 'No Content' : statusCode === '400' ? 'Bad Request' : statusCode === '404' ? 'Not Found' : statusCode === '500' ? 'Server Error' : 'Response'}
-                                              </span>
-                                            </div>
-                                            <p className="text-slate-500 dark:text-slate-400">
-                                              {((response as Record<string, unknown>)?.description as string) || 'No description provided'}
-                                            </p>
+                                                <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                                                  <span className="text-blue-600 dark:text-blue-400 font-mono font-bold text-sm">{param.name}</span>
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-mono bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2.5 py-0.5 rounded-md">
+                                                      {param.schema?.type || 'string'}
+                                                    </span>
+                                                    {param.required ? (
+                                                      <span className="text-xs bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800/50 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        Required
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-xs bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 px-2 py-0.5 rounded-md font-medium">
+                                                        Optional
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                <p className="text-xs text-slate-600 dark:text-slate-400">
+                                                  Location: <span className="text-slate-800 dark:text-slate-200 font-mono font-semibold uppercase">{param.in}</span>
+                                                </p>
+                                              </div>
+                                            ))}
                                           </div>
-                                        ))}
+                                        )}
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
 
-                                {/* Test Request Section (Swagger UI / FastAPI Docs style) */}
-                                <div className="border-t border-slate-200 dark:border-slate-800 pt-5 mt-4 space-y-4">
-                                  <div className="flex items-center justify-between">
-                                    <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                                      <span className="bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs">⚡</span>
-                                      Test Endpoint (Try It Out)
-                                    </h4>
-                                    <button
-                                      onClick={() => handleExecuteRequest(item, method)}
-                                      disabled={testLoading}
-                                      className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition disabled:opacity-50 flex items-center gap-2 shadow-sm"
-                                    >
-                                      {testLoading ? (
-                                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                      ) : 'Execute'}
-                                    </button>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                    <div className="space-y-1">
-                                      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                        Query Parameters (Optional)
-                                      </label>
-                                      <input
-                                        type="text"
-                                        value={testQueryParams}
-                                        onChange={(e) => setTestQueryParams(e.target.value)}
-                                        placeholder="e.g. ?limit=10&offset=0"
-                                        className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500/40 outline-none transition-all"
-                                      />
-                                    </div>
-
-                                    {method.method !== 'GET' && method.method !== 'HEAD' && (
-                                      <div className="space-y-1">
-                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                          Request Body (JSON)
-                                        </label>
-                                        <textarea
-                                          value={testRequestBody}
-                                          onChange={(e) => setTestRequestBody(e.target.value)}
-                                          placeholder='{"key": "value"}'
-                                          rows={4}
-                                          className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500/40 outline-none transition-all"
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {testResponse && (
-                                    <div className="bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-3 shadow-inner">
-                                      <div className="flex items-center justify-between text-xs border-b border-slate-200 dark:border-slate-850 pb-2">
-                                        <span className="font-semibold text-slate-500 dark:text-slate-400">Server Response</span>
-                                        <div className="flex gap-4 font-semibold">
-                                          <span className={`${testResponse.status >= 200 && testResponse.status < 300 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-450'}`}>
-                                            Code: {testResponse.status} {testResponse.statusText}
+                                      {/* Responses Section */}
+                                      <div>
+                                        <h4 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                          <span className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
                                           </span>
-                                          <span className="text-slate-500 dark:text-slate-400 font-mono">
-                                            Time: {testResponse.timeMs}ms
-                                          </span>
-                                        </div>
+                                          Responses ({Object.keys(method.responses || {}).length})
+                                        </h4>
+
+                                        {!method.responses || Object.keys(method.responses).length === 0 ? (
+                                          <p className="text-xs text-slate-500 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+                                            No response schema documented.
+                                          </p>
+                                        ) : (
+                                          <div className="space-y-3">
+                                            {Object.entries(method.responses).map(([statusCode, response]) => {
+                                              const is2xx = statusCode.startsWith('2');
+                                              const is4xx = statusCode.startsWith('4');
+                                              return (
+                                                <div
+                                                  key={statusCode}
+                                                  className={`rounded-xl p-4 border transition-all ${
+                                                    is2xx
+                                                      ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50'
+                                                      : is4xx
+                                                      ? 'bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800/50'
+                                                      : 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/50'
+                                                  }`}
+                                                >
+                                                  <div className="flex items-center gap-2 mb-2">
+                                                    <span
+                                                      className={`text-xs font-bold px-2.5 py-1 rounded-md text-white ${
+                                                        is2xx
+                                                          ? 'bg-emerald-600'
+                                                          : is4xx
+                                                          ? 'bg-amber-600'
+                                                          : 'bg-rose-600'
+                                                      }`}
+                                                    >
+                                                      {statusCode}
+                                                    </span>
+                                                    <span className="text-slate-900 dark:text-slate-100 text-xs font-bold">
+                                                      {statusCode === '200'
+                                                        ? 'OK / Success'
+                                                        : statusCode === '201'
+                                                        ? 'Created'
+                                                        : statusCode === '204'
+                                                        ? 'No Content'
+                                                        : statusCode === '400'
+                                                        ? 'Bad Request'
+                                                        : statusCode === '401'
+                                                        ? 'Unauthorized'
+                                                        : statusCode === '403'
+                                                        ? 'Forbidden'
+                                                        : statusCode === '404'
+                                                        ? 'Not Found'
+                                                        : statusCode === '500'
+                                                        ? 'Internal Server Error'
+                                                        : 'Response'}
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
+                                                    {((response as Record<string, unknown>)?.description as string) || 'No description provided.'}
+                                                  </p>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
                                       </div>
-                                      <pre className="text-xs font-mono overflow-auto max-h-64 text-slate-800 dark:text-slate-200 whitespace-pre-wrap bg-white/50 dark:bg-slate-900/50 p-3 rounded-md border border-slate-200/50 dark:border-slate-800/50">
-                                        {typeof testResponse.data === 'object' 
-                                          ? JSON.stringify(testResponse.data, null, 2) 
-                                          : testResponse.data}
-                                      </pre>
                                     </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -581,14 +604,14 @@ function ApiExplorerContent() {
 
 export default function ApiExplorerPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 dark:border-blue-400" />
+        </div>
+      }
+    >
       <ApiExplorerContent />
     </Suspense>
   );
 }
-
-

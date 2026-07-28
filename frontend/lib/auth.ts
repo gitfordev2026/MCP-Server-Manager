@@ -242,6 +242,15 @@ function base64UrlEncode(buffer: ArrayBuffer | ArrayBufferLike): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+function generateRandomString(length: number): string {
+  let result = "";
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 async function generatePKCE(): Promise<{ verifier: string; challenge: string }> {
   const verifier = generateRandomString(64);
   const hashed = await sha256(verifier);
@@ -251,10 +260,10 @@ async function generatePKCE(): Promise<{ verifier: string; challenge: string }> 
 
 // ---------- Keycloak redirect ----------
 
-export async function redirectToLogin(config: AuthConfig): Promise<void> {
+export async function redirectToLogin(config: AuthConfig, force: boolean = false): Promise<void> {
   const now = Date.now();
   const lastRedirect = sessionStorage.getItem(LOGIN_REDIRECT_AT_KEY);
-  if (lastRedirect && now - Number(lastRedirect) < 5000) {
+  if (!force && lastRedirect && now - Number(lastRedirect) < 2000) {
     return;
   }
   sessionStorage.setItem(LOGIN_REDIRECT_AT_KEY, now.toString());
@@ -297,11 +306,7 @@ export async function exchangeCodeForToken(
 ): Promise<TokenResponse> {
   const verifier = sessionStorage.getItem(PKCE_VERIFIER_KEY);
   if (!verifier) {
-    // Verifier can be missing if the page was reloaded, opened in another
-    // tab, or React Strict Mode re-ran the effect.  Restart the login flow.
-    await redirectToLogin(config);
-    // redirectToLogin navigates away; throw to stop the caller.
-    throw new Error("PKCE verifier missing — restarting login");
+    throw new Error("PKCE verifier missing — session reset required");
   }
 
   const redirectUri = `${window.location.origin}/auth/callback`;

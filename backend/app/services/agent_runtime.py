@@ -9,6 +9,7 @@ from mcp_use.agents.mcpagent import MCPAgent
 from mcp_use.client import MCPClient
 
 from app.env import ENV
+from app.services.inference_model_service import get_default_model
 
 
 class LLMDebugCallback(BaseCallbackHandler):
@@ -64,7 +65,7 @@ def build_default_agent(
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
 
     llm = ChatOllama(
-        model=ENV.agent_ollama_model,
+        model=ENV.agent_ollama_model or "gemma4:31b-cloud",
         base_url=ENV.agent_ollama_base_url,
         temperature=0.0,
         callbacks=callbacks,
@@ -131,7 +132,7 @@ async def generate_direct_response(
     additional_instructions: str | None = None,
 ) -> str:
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
-    resolved_model = model or ENV.agent_ollama_model or "gemma4:31b-cloud"
+    resolved_model = model or ENV.agent_ollama_model or await get_default_model()
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
@@ -163,7 +164,7 @@ async def stream_direct_response_chunks(
     additional_instructions: str | None = None,
 ) -> AsyncIterator[str]:
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
-    resolved_model = model or ENV.agent_ollama_model or "gemma4:31b-cloud"
+    resolved_model = model or ENV.agent_ollama_model or await get_default_model()
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
@@ -180,3 +181,4 @@ async def stream_direct_response_chunks(
         text = _normalize_content(content)
         if text:
             yield text
+

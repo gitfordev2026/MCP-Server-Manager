@@ -234,6 +234,9 @@ def _select_relevant_tools(
     return selected
 
 
+from app.services.inference_model_service import fetch_available_models, get_default_model
+
+
 # =========================================================
 # Prompt & Model Utilities
 # =========================================================
@@ -246,7 +249,7 @@ def _normalize_model(model: Optional[str]) -> str:
 
 def _build_tool_only_instructions(selected_tools: List[str]) -> str:
     """
-    Bullet list format tokenizes better than comma-separated lists.
+    Build rich prompt with tool Request Schemas, parameter types, and REQUIRED rules.
     """
     if not selected_tools:
         return (
@@ -255,23 +258,55 @@ def _build_tool_only_instructions(selected_tools: List[str]) -> str:
             "Respond strictly with: 'No matching tool found for this operation'"
         )
 
-    lines = "\n".join(f"- {tool}" for tool in selected_tools)
-    logger.warning("List of available tools: %s", lines)
+    from app.main import openapi_tool_catalog
+    catalog_tools = openapi_tool_catalog.tools if openapi_tool_catalog else {}
+
+    tool_lines: List[str] = []
+    for tool_name in selected_tools:
+        tool_def = catalog_tools.get(tool_name)
+        if tool_def and getattr(tool_def, "input_schema", None):
+            schema = tool_def.input_schema or {}
+            props = schema.get("properties") or {}
+            req_list = schema.get("required") or []
+
+            param_descs: List[str] = []
+            for p_name, p_info in props.items():
+                if p_name in {"timeout_seconds"}:
+                    continue
+                if not isinstance(p_info, dict):
+                    continue
+                p_type = p_info.get("type", "any")
+                is_req = "REQUIRED" if p_name in req_list else "optional"
+                p_desc = p_info.get("description") or p_info.get("title") or ""
+                param_descs.append(f"      - `{p_name}` ({p_type}, {is_req}): {p_desc}")
+
+            param_str = "\n".join(param_descs) if param_descs else "      (No parameters required)"
+            req_str = f" [REQUIRED FIELDS: {', '.join(req_list)}]" if req_list else ""
+
+            tool_lines.append(
+                f"- Tool Name: `{tool_name}` ({tool_def.method.upper()} {tool_def.path})\n"
+                f"    Description: {tool_def.description}\n"
+                f"    Request Schema{req_str}:\n{param_str}"
+            )
+        else:
+            tool_lines.append(f"- Tool Name: `{tool_name}`")
+
+    tools_block = "\n".join(tool_lines)
 
     return (
-        "You are a strict, deterministic tool-calling assistant.\n"
-        "You MAY ONLY call tools that are explicitly defined in the provided tools list below.\n"
-        "You are STRICTLY FORBIDDEN from inventing tool names, parameter keys, or hallucinating mock data.\n"
-        "Before calling a tool, you MUST wrap your reasoning inside <think>...</think> tags.\n"
-        "To execute a tool, output exactly ONE JSON block in this format:\n"
-        "```json\n"
-        '{"name": "<tool_name>", "arguments": {}}\n'
-        "```\n"
-        "Do not fabricate tool results. Call the tool first, and wait for the system to return the result.\n"
-        "Only the following tools are available:\n"
-        f"{lines}\n"
-        "If none of these tools apply or if no tool matches the user's request, respond strictly:\n"
-        "'No matching tool found for this operation'"
+        "You are an MCP tool-using agent.\n"
+        "Use tools whenever they are relevant.\n"
+        "Do not return JSON tool calls, function-call plans, or parameter objects to the user.\n\n"
+        "CRITICAL TOOL PARAMETER RULES:\n"
+        "1. Examine the Request Schema for each tool carefully.\n"
+        "2. IF ANY REQUIRED PARAMETER IS MISSING from the user's prompt or conversation context, DO NOT EXECUTE THE TOOL WITH MISSING REQUIRED PARAMETERS.\n"
+        "3. Instead, ask the user directly and politely to supply the missing required parameter(s) before attempting to call the tool.\n"
+        "4. When calling a tool, pass all required arguments matching their expected data types (integer, string, etc.).\n"
+        "5. If you execute a tool, summarize the result clearly for the user.\n\n"
+        "Available Tools & Request Schemas:\n"
+        f"{tools_block}\n\n"
+        "If none of these tools apply, say: "
+        "'No suitable tool available with the current tool set.'"
     )
 
 
@@ -579,9 +614,28 @@ def _format_tool_result_human_readable(tool_name: str, arguments: Dict[str, Any]
         except Exception:
             pass
 
-    sections: List[str] = []
-
     clean_tool_title = tool_name.replace("app__", "").replace("mcp__", "").replace("__", " ").replace("_", " ").title()
+
+    # Detect 422 Unprocessable Entity / FastAPI Validation Errors
+    if isinstance(data, dict) and ("detail" in data or "message" in data):
+        detail = data.get("detail")
+        if isinstance(detail, list) and any(isinstance(err, dict) and "loc" in err for err in detail):
+            missing_fields: List[str] = []
+            for err in detail:
+                if isinstance(err, dict):
+                    loc = err.get("loc") or []
+                    msg = err.get("msg") or "Field required"
+                    field = str(loc[-1]) if loc else "parameter"
+                    missing_fields.append(f"- **`{field}`**: {msg}")
+
+            fields_str = "\n".join(missing_fields)
+            return (
+                f"⚠️ **Missing Parameter Notice for `{clean_tool_title}`**:\n\n"
+                f"The tool execution requires additional parameters:\n{fields_str}\n\n"
+                f"Please reply with the missing parameter(s) so I can complete your request."
+            )
+
+    sections: List[str] = []
     sections.append(f"### 📄 {clean_tool_title}\n")
 
     def _render_dict_clean(d: dict, depth: int = 0) -> str:
@@ -763,7 +817,7 @@ async def _run_agent_query(
         agent.tools_used_names.clear()
 
     try:
-        result = await agent.run(effective_prompt)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
         rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
         if rescued is not None:
             result = rescued
@@ -771,11 +825,13 @@ async def _run_agent_query(
             result = _append_tool_usage_note(result, agent)
     except Exception as exc:
         logger.warning(f"MCPAgent execution failed ({exc}), falling back to direct LLM response")
-        result = await generate_direct_response(
+        raw_direct = await generate_direct_response(
             effective_prompt,
             model=model,
             additional_instructions=instructions,
         )
+        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools)
+        result = rescued if rescued is not None else raw_direct
 
     return {"response": result, "mode": "mcp_agent"}
 
@@ -861,7 +917,7 @@ async def _run_playground_query(
     )
 
     try:
-        result = await agent.run(effective_prompt)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
         rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
         if rescued is not None:
             result = rescued
@@ -1049,16 +1105,13 @@ def create_agent_router(
             ]
 
             return {
-                "models": models,
-                "default_model": ENV.agent_ollama_model,
+                "models": discovered_models,
+                "default_model": default_mod,
             }
-
-        except HTTPException:
-            raise
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to reach Ollama server: {exc}",
+                detail=f"Failed to fetch models: {exc}",
             ) from exc
 
     # -----------------------------------------------------
