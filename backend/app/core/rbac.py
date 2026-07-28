@@ -148,6 +148,30 @@ def get_request_actor(request: Request) -> dict[str, Any]:
                     user_row.keycloak_sub = sub
                     db.commit()
                 db_role = (user_row.role or "").strip().lower()
+            elif username:
+                # Auto-provision user on first Keycloak authentication.
+                # If database has zero users, automatically assign 'admin' role;
+                # otherwise default to 'developer'.
+                total_users = db.scalar(select(func.count(UserModel.id))) or 0
+                assigned_role = "admin" if total_users == 0 else "developer"
+                try:
+                    new_user = UserModel(
+                        username=username,
+                        keycloak_sub=sub or f"sub-{username}",
+                        role=assigned_role,
+                    )
+                    db.add(new_user)
+                    db.commit()
+                    db.refresh(new_user)
+                    db_role = assigned_role
+                    logger.info(f"[Auto-Provision] Auto-registered user '{username}' with role '{assigned_role}' (total_users before insert: {total_users})")
+                except Exception as exc:
+                    db.rollback()
+                    user_row = db.scalar(select(UserModel).where(func.lower(UserModel.username) == username.lower()))
+                    if user_row:
+                        db_role = (user_row.role or "").strip().lower()
+                    else:
+                        db_role = "developer"
             elif x_user_header and not token:
                 # Only for unit test suite using X-User header without JWT
                 db_role = "admin" if (username and username.lower() == "admin") or request.headers.get("x-roles") == "super_admin" else "developer"

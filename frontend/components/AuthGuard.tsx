@@ -38,6 +38,56 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const isPublicPath = PUBLIC_PATHS.some((p) => (p === "/" ? pathname === "/" : pathname.startsWith(p)));
 
+  // --- GLOBAL INACTIVITY TIMER (15 minutes idle timeout shared across tabs) ---
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+    const ACTIVITY_KEY = "mcp_last_activity";
+    let lastUpdate = 0;
+
+    const recordActivity = () => {
+      const now = Date.now();
+      // Throttle updates to localStorage to once per second
+      if (now - lastUpdate > 1000) {
+        lastUpdate = now;
+        try {
+          localStorage.setItem(ACTIVITY_KEY, now.toString());
+        } catch (_) {}
+      }
+    };
+
+    // Initialize last activity timestamp if missing
+    if (!localStorage.getItem(ACTIVITY_KEY)) {
+      localStorage.setItem(ACTIVITY_KEY, Date.now().toString());
+    }
+
+    const events = ["mousedown", "keydown", "click", "visibilitychange"];
+    events.forEach((evt) => window.addEventListener(evt, recordActivity, { passive: true }));
+
+    const checkInterval = setInterval(() => {
+      const storedLast = localStorage.getItem(ACTIVITY_KEY);
+      const lastTime = storedLast ? Number(storedLast) : Date.now();
+      if (Date.now() - lastTime > INACTIVITY_TIMEOUT_MS) {
+        const currentPath = window.location.pathname;
+        if (
+          currentPath !== "/" &&
+          !currentPath.startsWith("/login") &&
+          !currentPath.startsWith("/auth/")
+        ) {
+          console.warn("[InactivityTimer] 15-minute idle limit reached — logging out");
+          clearTokens();
+          window.location.href = "/";
+        }
+      }
+    }, 5000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, recordActivity));
+      clearInterval(checkInterval);
+    };
+  }, []);
+
   useEffect(() => {
     if (!hydrated || isPublicPath) {
       setLoading(false);

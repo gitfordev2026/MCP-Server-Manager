@@ -12,18 +12,36 @@ const API_BASE = '/api/proxy';
  * `access_token` HttpOnly cookie, which `credentials: 'include'` attaches
  * automatically on same-origin requests.
  */
-export function authenticatedFetch(
+export async function authenticatedFetch(
   input: string | URL | Request,
   init?: RequestInit
 ): Promise<Response> {
   const existingHeaders = init?.headers || {};
-  return fetch(input, {
+  const res = await fetch(input, {
     credentials: 'include',
     ...init,
     headers: {
       ...(existingHeaders as Record<string, string>),
     },
   });
+
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const currentPath = window.location.pathname;
+    if (
+      currentPath !== '/' &&
+      !currentPath.startsWith('/login') &&
+      !currentPath.startsWith('/auth/') &&
+      !currentPath.startsWith('/access-denied')
+    ) {
+      clearTokens();
+      storePostLoginRedirect(
+        `${window.location.pathname}${window.location.search}${window.location.hash}`
+      );
+      window.location.href = '/';
+    }
+  }
+
+  return res;
 }
 
 export async function http<T>(
@@ -42,15 +60,16 @@ export async function http<T>(
   if (res.status === 401 && typeof window !== 'undefined') {
     const currentPath = window.location.pathname;
     if (
+      currentPath !== '/' &&
       !currentPath.startsWith('/login') &&
-      !currentPath.startsWith('/auth/callback') &&
+      !currentPath.startsWith('/auth/') &&
       !currentPath.startsWith('/access-denied')
     ) {
       clearTokens();
       storePostLoginRedirect(
         `${window.location.pathname}${window.location.search}${window.location.hash}`
       );
-      window.location.href = '/login';
+      window.location.href = '/';
     }
     throw new Error('Authentication expired — redirecting to login');
   }

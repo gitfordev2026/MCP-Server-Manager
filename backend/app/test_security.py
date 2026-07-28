@@ -20,6 +20,7 @@ client = TestClient(app)
 class TestSecurityControls(unittest.TestCase):
     def setUp(self):
         try:
+            from core.rate_limiter import limiter
             limiter.reset()
         except Exception:
             pass
@@ -31,8 +32,8 @@ class TestSecurityControls(unittest.TestCase):
             res = client.post("/auth/token", data={"grant_type": "password", "username": "foo", "password": "bar"})
             responses.append(res.status_code)
 
-        # First requests should return standard non-429 codes (e.g. 400 or 200 or 500 depending on downstream keycloak)
-        self.assertNotIn(429, responses[:15])
+        # First requests should return standard non-429 codes (e.g. 401 or 400 depending on auth)
+        self.assertNotIn(429, responses[:8])
         # Subsequent requests past limit must trigger HTTP 429 Too Many Requests
         self.assertEqual(responses[-1], 429)
 

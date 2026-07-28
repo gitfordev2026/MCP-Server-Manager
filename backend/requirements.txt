@@ -57,6 +57,7 @@ langchain
 langchain-core
 langchain-google-genai
 langchain-ollama
+langfuse>=2.0.0
 langgraph
 langgraph-checkpoint
 langgraph-prebuilt

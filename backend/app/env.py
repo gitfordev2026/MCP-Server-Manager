@@ -73,6 +73,9 @@ class BackendEnv:
     rate_limit_enabled: bool
     rate_limit_default: str
     rate_limit_auth: str
+    langfuse_public_key: str
+    langfuse_secret_key: str
+    langfuse_host: str
 
 
 def load_backend_env() -> BackendEnv:
@@ -132,6 +135,9 @@ def load_backend_env() -> BackendEnv:
         rate_limit_enabled=os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() == "true",
         rate_limit_default=os.getenv("RATE_LIMIT_DEFAULT", "120/minute").strip(),
         rate_limit_auth=os.getenv("RATE_LIMIT_AUTH", "20/minute").strip(),
+        langfuse_public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "").strip(),
+        langfuse_secret_key=os.getenv("LANGFUSE_SECRET_KEY", "").strip(),
+        langfuse_host=os.getenv("LANGFUSE_HOST", "http://localhost:3000").strip().rstrip("/"),
     )
 
 

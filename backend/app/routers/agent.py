@@ -26,6 +26,7 @@ from app.services.agent_runtime import (
     generate_direct_response,
     stream_direct_response_chunks,
 )
+from app.services.langfuse_service import langfuse_service
 
 
 from app.core.logger import get_logger
@@ -249,26 +250,28 @@ def _build_tool_only_instructions(selected_tools: List[str]) -> str:
     """
     if not selected_tools:
         return (
-            "You have no tools available. "
-            "Answer directly using your knowledge."
+            "You are a strict, deterministic tool-calling assistant. You have NO tools available for this query. "
+            "You are STRICTLY FORBIDDEN from inventing tool names or parameters. "
+            "Respond strictly with: 'No matching tool found for this operation'"
         )
 
     lines = "\n".join(f"- {tool}" for tool in selected_tools)
     logger.warning("List of available tools: %s", lines)
 
     return (
-        "You are an MCP tool-using agent.\n"
-        "Use the provided tools whenever they are relevant to answer the user's request.\n"
-        "Before calling a tool, you MUST wrap your reasoning inside <think>...</think> tags. "
-        "To execute a tool, output exactly ONE JSON block in this format to call a tool:\n"
+        "You are a strict, deterministic tool-calling assistant.\n"
+        "You MAY ONLY call tools that are explicitly defined in the provided tools list below.\n"
+        "You are STRICTLY FORBIDDEN from inventing tool names, parameter keys, or hallucinating mock data.\n"
+        "Before calling a tool, you MUST wrap your reasoning inside <think>...</think> tags.\n"
+        "To execute a tool, output exactly ONE JSON block in this format:\n"
         "```json\n"
         '{"name": "<tool_name>", "arguments": {}}\n'
         "```\n"
-        "Do not hallucinate tool results. Call the tool first, and wait for the system to return the result.\n"
+        "Do not fabricate tool results. Call the tool first, and wait for the system to return the result.\n"
         "Only the following tools are available:\n"
         f"{lines}\n"
-        "If none of these tools apply, say: "
-        "'No suitable tool available with the current tool set.'"
+        "If none of these tools apply or if no tool matches the user's request, respond strictly:\n"
+        "'No matching tool found for this operation'"
     )
 
 

@@ -1671,11 +1671,14 @@ async def invoke_openapi_tool(tool: OpenAPIToolDefinition, arguments: dict[str, 
     request_cookies = {str(k): str(v) for k, v in cookie_args.items()}
     params = {str(k): v for k, v in query_args.items()}
 
-    from app.services.keycloak_auth import get_keycloak_token
-    with SessionLocal() as db:
-        token = await get_keycloak_token(tool.domain_type, db)
-        if token:
-            request_headers["Authorization"] = f"Bearer {token}"
+    if user_token and user_token.strip():
+        request_headers["Authorization"] = f"Bearer {user_token.strip()}"
+    else:
+        from app.services.keycloak_auth import get_keycloak_token
+        with SessionLocal() as db:
+            token = await get_keycloak_token(tool.domain_type, db)
+            if token:
+                request_headers["Authorization"] = f"Bearer {token}"
 
     request_kwargs: dict[str, Any] = {
         "params": params,
@@ -1928,6 +1931,8 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
         **_kwargs: Any,
     ) -> ToolResult:
         _ = version
+        args = arguments or {}
+
         # Helper to check access policy
         def _check_access(owner_id: str, tool_id: str) -> None:
             mode = _effective_access_mode(
@@ -1942,22 +1947,40 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
         if name.startswith("mcp__"):
             parts = name.split("__", 2)  # ["mcp", server_name, tool_name]
             if len(parts) != 3:
-                raise ValueError(f"Malformed MCP tool name: '{name}'")
+                return ToolResult(
+                    structured_content={
+                        "error": "no_matching_tool",
+                        "message": "No matching tool found for this operation",
+                    },
+                    is_error=True,
+                )
             server_name, orig_tool_name = parts[1], parts[2]
 
-            _check_access(f"mcp:{server_name}", orig_tool_name)
-            _require_tool_visible(owner_id=f"mcp:{server_name}", tool_name=orig_tool_name, source_type="mcp")
+            try:
+                _check_access(f"mcp:{server_name}", orig_tool_name)
+                _require_tool_visible(owner_id=f"mcp:{server_name}", tool_name=orig_tool_name, source_type="mcp")
+            except HTTPException as exc:
+                return ToolResult(
+                    structured_content={"error": "access_denied", "message": str(exc.detail)},
+                    is_error=True,
+                )
 
             with SessionLocal() as db:
                 server = db.scalar(select(ServerModel).where(ServerModel.name == server_name))
             if not server:
-                raise ValueError(f"MCP server '{server_name}' not found in database.")
+                return ToolResult(
+                    structured_content={
+                        "error": "no_matching_tool",
+                        "message": "No matching tool found for this operation",
+                    },
+                    is_error=True,
+                )
 
             native_result = await call_server_tool_runtime(
                 server_name,
                 server.url,
                 orig_tool_name,
-                arguments or {},
+                args,
                 timeout_sec=30.0,
             )
             return ToolResult(structured_content=native_result)
@@ -1971,12 +1994,38 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             tool = catalog.tools.get(name)
 
         if tool is None:
-            raise ValueError(f"Unknown tool '{name}'. Refresh your MCP tool list and try again.")
+            return ToolResult(
+                structured_content={
+                    "error": "no_matching_tool",
+                    "message": "No matching tool found for this operation",
+                },
+                is_error=True,
+            )
 
-        _check_access(f"app:{tool.app_name}", tool.name)
-        _require_tool_visible(owner_id=f"app:{tool.app_name}", tool_name=tool.name, source_type="openapi")
+        try:
+            _check_access(f"app:{tool.app_name}", tool.name)
+            _require_tool_visible(owner_id=f"app:{tool.app_name}", tool_name=tool.name, source_type="openapi")
+        except HTTPException as exc:
+            return ToolResult(
+                structured_content={"error": "access_denied", "message": str(exc.detail)},
+                is_error=True,
+            )
 
-        openapi_result = await invoke_openapi_tool(tool, arguments or {})
+        # Strict JSON schema validation for required fields
+        if tool.input_schema and isinstance(tool.input_schema, dict):
+            required_fields = tool.input_schema.get("required") or []
+            missing_fields = [field for field in required_fields if field not in args]
+            if missing_fields:
+                return ToolResult(
+                    structured_content={
+                        "error": "invalid_arguments",
+                        "message": f"Missing required parameter(s): {', '.join(missing_fields)} for tool '{name}'",
+                    },
+                    is_error=True,
+                )
+
+        user_token = _kwargs.get("user_token") or getattr(self, "_active_user_token", None)
+        openapi_result = await invoke_openapi_tool(tool, args, user_token=user_token)
         return ToolResult(structured_content=openapi_result)
 
 def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
@@ -2016,39 +2065,52 @@ class JWTAuthASGIMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] in ("http", "websocket"):
-            client_ip = (scope.get("client") or ("", 0))[0]
-            is_internal = client_ip in ("127.0.0.1", "localhost", "::1", "") or os.getenv("ENV", "development").lower() in {"dev", "development"}
-            if is_internal:
+            if "query_string" not in scope:
+                scope["query_string"] = b""
+            headers = dict(scope.get("headers", []))
+            auth_value = headers.get(b"authorization", b"").decode("latin-1")
+            token = auth_value[7:].strip() if auth_value.lower().startswith("bearer ") else ""
+            
+            if not token:
+                from starlette.requests import Request
+                req = Request(scope)
+                token = (
+                    req.cookies.get("mcp_access_token")
+                    or req.cookies.get("access_token")
+                    or req.query_params.get("token")
+                    or req.query_params.get("access_token")
+                    or ""
+                )
+
+            # Narrow loopback exemption: Only allow unauthenticated access for internal health check paths
+            req_path = scope.get("path", "")
+            is_internal_health = (
+                headers.get(b"x-internal-loopback", b"").decode("latin-1") == "true"
+                or req_path == "/health"
+            )
+
+            if not token and is_internal_health:
                 await self.app(scope, receive, send)
                 return
 
-            if AUTH_ENABLED:
-                headers = dict(scope.get("headers", []))
-                auth_value = headers.get(b"authorization", b"").decode("latin-1")
-                token = auth_value[7:].strip() if auth_value.lower().startswith("bearer ") else ""
-                if not token:
-                    from starlette.requests import Request
-                    req = Request(scope)
-                    token = (
-                        req.cookies.get("mcp_access_token")
-                        or req.cookies.get("access_token")
-                        or req.query_params.get("token")
-                        or req.query_params.get("access_token")
-                        or ""
-                    )
+            if AUTH_ENABLED and not is_internal_health:
                 if not token:
                     response = JSONResponse(
                         status_code=401,
                         content={"detail": "Missing authentication token"},
+                        headers={"WWW-Authenticate": 'Bearer realm="Keycloak"'},
                     )
                     await response(scope, receive, send)
                     return
                 try:
-                    validate_token(token)
+                    claims = validate_token(token)
+                    scope["user_token"] = token
+                    scope["user_claims"] = claims
                 except TokenValidationError as exc:
                     response = JSONResponse(
                         status_code=401,
-                        content={"detail": str(exc)},
+                        content={"detail": f"Token validation failed: {exc}"},
+                        headers={"WWW-Authenticate": 'Bearer error="invalid_token" realm="Keycloak"'},
                     )
                     await response(scope, receive, send)
                     return

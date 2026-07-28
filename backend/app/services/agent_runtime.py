@@ -66,7 +66,7 @@ def build_default_agent(
     llm = ChatOllama(
         model=ENV.agent_ollama_model,
         base_url=ENV.agent_ollama_base_url,
-        temperature=ENV.agent_ollama_temperature,
+        temperature=0.0,
         callbacks=callbacks,
     )
 
@@ -108,7 +108,7 @@ def build_agent_with_model(
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
-        temperature=ENV.agent_ollama_temperature,
+        temperature=0.0,
         callbacks=callbacks,
         streaming=True,
     )
@@ -135,7 +135,7 @@ async def generate_direct_response(
     llm = ChatOllama(
         model=resolved_model,
         base_url=ENV.agent_ollama_base_url,
-        temperature=ENV.agent_ollama_temperature,
+        temperature=0.0,
         callbacks=callbacks,
     )
 
