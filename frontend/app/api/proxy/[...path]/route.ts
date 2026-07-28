@@ -45,9 +45,8 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
     
     const backendUrlParsed = new URL(backendUrl);
     const candidateOrigins: string[] = [backendUrlParsed.origin];
-    
-    // Add common fallback hosts for host network, bridge docker, and host.docker.internal
-    for (const fallbackHost of ['http://127.0.0.1:8000', 'http://localhost:8000', 'http://backend:8000', 'http://mcp-backend:8000', 'http://host.docker.internal:8000']) {
+
+    for (const fallbackHost of ['http://127.0.0.1:8000', 'http://localhost:8000']) {
       if (!candidateOrigins.includes(fallbackHost)) {
         candidateOrigins.push(fallbackHost);
       }
@@ -61,10 +60,10 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       try {
         const fetchHeaders = new Headers(headers);
         fetchHeaders.delete('host');
-        
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
-        
+
         const res = await fetch(targetUrl, {
           method,
           headers: fetchHeaders,
@@ -74,16 +73,17 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
         });
         clearTimeout(timeoutId);
         response = res;
-        console.log(`[Proxy] Successfully fetched: ${targetUrl}`);
         break;
       } catch (err: any) {
         lastError = err;
-        console.warn(`[Proxy] Connection to ${targetUrl} failed (${err.message}). Trying next candidate origin...`);
       }
     }
 
     if (!response) {
-      throw lastError || new Error("Failed to connect to backend service");
+      return NextResponse.json(
+        { error: "Backend service unreachable", detail: lastError?.message || "Failed to connect to backend service" },
+        { status: 503 }
+      );
     }
 
     const responseHeaders = new Headers(response.headers);

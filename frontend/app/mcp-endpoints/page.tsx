@@ -112,7 +112,7 @@ export default function McpEndpointsPage() {
       const [serversRes, catalogRes] = await Promise.allSettled([
         authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
         authenticatedFetch(
-          `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&registry_only=true&public_only=true`
+          `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&registry_only=true&public_only=false`
         ),
       ]);
 
@@ -122,9 +122,23 @@ export default function McpEndpointsPage() {
       }
       if (catalogRes.status === 'fulfilled' && catalogRes.value.ok) {
         const payload = await catalogRes.value.json();
-        setCatalogTools(Array.isArray(payload?.tools) ? payload.tools : []);
-        setCatalogToolCount(typeof payload?.tool_count === 'number' ? payload.tool_count : 0);
-        setCatalogSummary(payload?.summary ?? null);
+        const tools = Array.isArray(payload?.tools)
+          ? payload.tools
+          : [
+              ...(Array.isArray(payload?.openapi_tools) ? payload.openapi_tools : []),
+              ...(Array.isArray(payload?.mcp_server_tools) ? payload.mcp_server_tools : [])
+            ];
+        setCatalogTools(tools);
+        setCatalogToolCount(
+          typeof payload?.tool_count === 'number' ? payload.tool_count : tools.length
+        );
+        const summary = payload?.summary || payload?.apps_summary || {};
+        setCatalogSummary({
+          apps_total: summary.apps_total ?? summary.total_apps ?? 0,
+          healthy: summary.healthy ?? summary.healthy_apps ?? 0,
+          zero_endpoints: summary.zero_endpoints ?? summary.zero_tool_apps ?? 0,
+          unreachable: summary.unreachable ?? summary.unreachable_apps ?? 0,
+        });
       }
 
       setError(null);
