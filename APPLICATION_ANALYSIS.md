@@ -1009,8 +1009,47 @@ sequenceDiagram
     - **Nested Bullet Lists & Indented Trees** ➔ Rendered with indented bullets and clean label formatting.
     - **Markdown Tables** (`| Col 1 | Col 2 |`) ➔ Rendered as styled responsive HTML tables with headers and alternating hover states.
     - **Horizontal Rules** (`---`) ➔ Rendered as clean subtle divider lines.
+### 14.5 Human-Readable Markdown UI Rendering Engine
+- **Frontend Markdown Component (`frontend/components/MessageContent.tsx`)**:
+  - Replaced rigid `lines.every(...)` list check with a full React Markdown renderer supporting:
+    - **Headings** (`#`, `##`, `###`) ➔ Rendered as styled font-bold heading tags (`<h1>`, `<h2>`, `<h3>`).
+    - **Bold text** (`**text**`) ➔ Rendered as `<strong>` tags.
+    - **Italic text** (`_text_` / `*text*`) ➔ Rendered as `<em>` tags.
+    - **Inline Code Badges** (`` `code` ``) ➔ Rendered as styled rose-accented inline code pills.
+    - **Nested Bullet Lists & Indented Trees** ➔ Rendered with indented bullets and clean label formatting.
+    - **Markdown Tables** (`| Col 1 | Col 2 |`) ➔ Rendered as styled responsive HTML tables with headers and alternating hover states.
+    - **Horizontal Rules** (`---`) ➔ Rendered as clean subtle divider lines.
 - **Unwrapped Technical Headers (`backend/app/routers/agent.py`)**:
   - Updated `_format_tool_result_human_readable()` to strip internal HTTP metadata (`status_code`, `ok`, `url`, `content_type`), formatting core payload data directly into clean Markdown bullet lists and tables with an execution summary footer.
+
+### 14.6 Multi-Tenant Developer Isolation & RBAC Control Plane
+- **Developer Ownership Filtering**: Enforced strict `created_by_user_id` filtering across `catalog.py`, `servers.py`, `base_urls.py`, `tools.py`, `endpoints.py`, and `dashboard.py`. Developers can only view and manage resources registered under their own user ID.
+- **Role-Based Admin Access**: Updated `Navigation.tsx` and `app/admin/page.tsx` so developer roles can visit `/admin` with role-restricted views (hiding the global Audit Logs tab). Audit log endpoints are strictly guarded by `Depends(require_role(["admin"]))`.
+- **Redis Cache Key Namespacing**: Appended user subject tokens (`user_sub`) to cache keys across status endpoints (`status:servers:...:{sub}`) to prevent cross-tenant cache contamination.
+
+### 14.7 Combined MCP Server Transport Compliance & Multi-Channel Auth
+- **Streamable HTTP & SSE Transport**: Mounted FastMCP 3.4.4 combined server under `/mcp/apps` and `/mcp/apps/`.
+- **Multi-Channel Authentication**: Updated `JWTAuthASGIMiddleware` in `main.py` to extract and validate tokens across three channels: `Authorization: Bearer <token>` header, HttpOnly cookies (`access_token`, `mcp_access_token`), and URL query parameters (`?token=<token>`, `?access_token=<token>`).
+- **JSON-RPC 2.0 Client Verification**: Verified standard MCP protocol handshake (`initialize`), tool discovery (`tools/list` returning 30 tools), and tool execution (`tools/call` returning `structuredContent`).
+
+### 14.8 Automatic Database Schema Auto-Migration on Boot
+- **Startup Column Auto-Sync**: Added `ensure_dynamic_schema_migrations()` inside `init_db()` in `backend/app/main.py`.
+- **Dynamic Model Inspection**: Automatically compares all SQLAlchemy model declarations in `Base.metadata.tables` against live database tables and executes `ALTER TABLE "table_name" ADD COLUMN IF NOT EXISTS "col_name" col_type` on application boot without manual migration scripts.
+
+### 14.9 Frontend Proxy Routing & Candidate Origin Optimization
+- **Proxy Failover & Error Handling**: Optimized `handleProxy()` in `frontend/app/api/proxy/[...path]/route.ts` with streamlined backend candidate origins (`http://mcp-backend:8000`, `http://127.0.0.1:8000`, `http://host.docker.internal:8000`). Fixed missing `authenticatedFetch` import on `/admin`.
+- **Clean 503 JSON Fallback**: Configured proxy to return a clean JSON `503 Service Unavailable` response during backend service initialization/reboot instead of outputting uncaught `ECONNREFUSED` stack traces.
+
+### 14.10 Comprehensive Software Approval Documentation Suite
+- **Generated Approval Artifacts**: Compiled 7 formal software approval documents in Microsoft Word (`.docx`) and Markdown format stored in `documents/`:
+  1. `System_Architecture_and_Workflow_Guide.docx` / `system_architecture_and_workflow_guide.md`
+  2. `Software_Deployment_Plan.docx`
+  3. `Software_Requirements_Specification.docx`
+  4. `Test_Plan.docx`
+  5. `User_Manual.docx`
+  6. `Release_Notes.docx`
+  7. `Domain_Driven_Design.docx`
+- **Embedded Architecture Flowcharts**: Generated and embedded high-resolution topology diagrams, test result breakdowns, and sequence flowcharts into docx documents.
 
 ---
 
@@ -1020,4 +1059,5 @@ sequenceDiagram
 > 3. `cd frontend && npm run dev` (port 3000)
 > 4. Optionally: `cd mock-mcp-server && uvicorn server:app --port 8001 --reload`
 > 5. Access dashboard at `http://localhost:3000`
+
 
