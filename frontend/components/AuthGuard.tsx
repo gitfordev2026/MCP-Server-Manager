@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth";
 import { publicEnv } from "@/lib/env";
 import { authenticatedFetch } from "@/services/http";
+import { UserProvider, type UserProfile } from "@/context/UserContext";
 
 /** Paths that do not require authentication or DB role check. */
 const PUBLIC_PATHS = [
@@ -29,6 +30,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [roleVerified, setRoleVerified] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -52,7 +54,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const recordActivity = () => {
       const now = Date.now();
-      // Throttle updates to localStorage to once per second
       if (now - lastUpdate > 1000) {
         lastUpdate = now;
         try {
@@ -61,7 +62,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Initialize last activity timestamp if missing
     if (!localStorage.getItem(ACTIVITY_KEY)) {
       localStorage.setItem(ACTIVITY_KEY, Date.now().toString());
     }
@@ -73,11 +73,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       const storedLast = localStorage.getItem(ACTIVITY_KEY);
       const lastTime = storedLast ? Number(storedLast) : Date.now();
       if (Date.now() - lastTime > INACTIVITY_TIMEOUT_MS) {
-        const currentPath = window.location.pathname;
+        const curPath = window.location.pathname;
         if (
-          currentPath !== "/" &&
-          !currentPath.startsWith("/login") &&
-          !currentPath.startsWith("/auth/")
+          curPath !== "/" &&
+          !curPath.startsWith("/login") &&
+          !curPath.startsWith("/auth/")
         ) {
           console.warn("[InactivityTimer] 15-minute idle limit reached — logging out");
           clearTokens();
@@ -110,6 +110,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         // If auth is disabled globally in config, allow access
         if (!config.auth_enabled) {
           if (!cancelled) {
+            setUserProfile({
+              username: "admin",
+              sub: "dev-admin",
+              roles: ["admin"],
+              primary_role: "admin",
+            });
             setRoleVerified(true);
             setLoading(false);
           }
@@ -130,9 +136,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
 
         if (res.ok) {
-          const profile = await res.json();
+          const profile: UserProfile = await res.json();
           // User exists in DB and has an active primary_role ("admin" | "developer")
           if (profile.primary_role) {
+            // Check page-level permission checks (e.g. /admin requires admin role)
+            if (currentPath.startsWith("/admin") && profile.primary_role !== "admin") {
+              router?.replace("/access-denied");
+              return;
+            }
+            setUserProfile(profile);
             setRoleVerified(true);
             setLoading(false);
           } else {
@@ -161,11 +173,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, isPublicPath, pathname, attempt, router]);
+  }, [hydrated, isPublicPath, pathname, attempt, router, currentPath]);
 
-  // Render public pages or server-side SSR pass immediately without blocking
+  // Render public pages immediately wrapped in UserProvider
   if (typeof window === "undefined" || !hydrated || isPublicPath) {
-    return <>{children}</>;
+    return (
+      <UserProvider user={userProfile} loading={false} setUser={setUserProfile}>
+        {children}
+      </UserProvider>
+    );
   }
 
   // Show loading spinner while verifying authorization on client (prevents UI flashing)
@@ -205,7 +221,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Only render protected children after role verification succeeds
   if (roleVerified) {
-    return <>{children}</>;
+    return (
+      <UserProvider user={userProfile} loading={loading} setUser={setUserProfile}>
+        {children}
+      </UserProvider>
+    );
   }
 
   return null;

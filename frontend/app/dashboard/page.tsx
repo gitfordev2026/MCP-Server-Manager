@@ -8,6 +8,7 @@ import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 import { toast } from '@/lib/toast';
+import { useUser } from '@/context/UserContext';
 
 
 const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
@@ -94,23 +95,10 @@ export default function Home() {
   const backendToastShownRef = useRef(false);
   const [systemStatuses, setSystemStatuses] = useState<SystemStatus[]>([]);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'down' | null>(null);
-  const [userRole, setUserRole] = useState<string>('developer');
+  const { user, role: contextRole, isAdmin } = useUser();
+  const userRole = contextRole || user?.primary_role || 'developer';
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
-
-  useEffect(() => {
-    if (!NEXT_PUBLIC_BE_API_URL) return;
-    authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/api/me`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.role) {
-          setUserRole(data.role);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
 
   const aliveLatencies = Object.values(serverHealth)
     .filter((item) => item.status === 'alive')

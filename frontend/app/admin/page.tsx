@@ -5,6 +5,7 @@ import Navigation from '@/components/Navigation';
 import Button from '@/components/ui/Button';
 import { http, authenticatedFetch } from '@/services/http';
 import { toast } from '@/lib/toast';
+import { useUser } from '@/context/UserContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -321,28 +322,9 @@ export default function AdminPanelPage() {
 
   // Role is read from env/session — not switchable from UI in production.
   // In dev, it's read from localStorage (set externally via settings page or env).
-  const [actorRole, setActorRole] = useState<Role>('admin');
-  const [currentUser, setCurrentUser] = useState<{ username: string; sub: string } | null>(null);
-
-  useEffect(() => {
-    async function loadCurrentUser() {
-      try {
-        const res = await authenticatedFetch('/api/proxy/api/me');
-        if (res.ok) {
-          const profile = await res.json();
-          setCurrentUser({ username: profile.username, sub: profile.sub });
-          if (profile.primary_role) {
-            setActorRole(profile.primary_role as Role);
-          }
-        } else if (res.status === 403) {
-          window.location.href = '/access-denied';
-        }
-      } catch (err) {
-        console.error('Failed to load user role for admin panel:', err);
-      }
-    }
-    void loadCurrentUser();
-  }, []);
+  const { user, role: contextRole } = useUser();
+  const actorRole = (contextRole as Role) || 'admin';
+  const currentUser = user ? { username: user.username, sub: user.sub } : null;
 
   const [stats, setStats] = useState<DashboardCards | null>(null);
   const [syncHealth, setSyncHealth] = useState<SyncHealthResponse | null>(null);

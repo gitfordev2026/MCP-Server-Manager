@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useTheme } from "@/context/ThemeContext";
 import { authenticatedFetch } from "@/services/http";
 import { clearTokens } from "@/lib/auth";
+import { useUser } from "@/context/UserContext";
 import UserManagementModal from "./UserManagementModal";
 import FeedbackModal from "./FeedbackModal";
 
@@ -15,40 +16,14 @@ export interface UserProfile {
 }
 
 export default function UserHeader() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { user } = useUser();
+  const profile = user;
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isManagementOpen, setIsManagementOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
-
-  useEffect(() => {
-    async function loadProfile() {
-      try {
-        const res = await authenticatedFetch("/api/proxy/api/me");
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data);
-        } else if (res.status === 403) {
-          window.location.href = "/access-denied";
-        } else if (res.status === 401) {
-          // Cookie expired or not set. Only redirect to login if we
-          // believe the user was previously authenticated (has the flag).
-          const wasAuthenticated = localStorage.getItem("mcp_is_authenticated") === "true";
-          clearTokens();
-          if (wasAuthenticated) {
-            window.location.href = "/login";
-          }
-          // If not previously authenticated, just stay — the page layout
-          // or other guards will handle the redirect.
-        }
-      } catch (err) {
-        console.error("Failed to load user profile:", err);
-      }
-    }
-    loadProfile();
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
