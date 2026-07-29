@@ -291,7 +291,7 @@ export default function ChatPage() {
                         </div>
                       ) : message.content ? (
                         <div className="text-sm sm:text-base leading-relaxed font-medium">
-                          <MessageContent content={message.content} />
+                          <MessageContent content={message.content} isUser={message.role === 'user'} />
                         </div>
                       ) : (
                         <div className="flex gap-2 py-1">

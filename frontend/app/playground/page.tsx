@@ -615,7 +615,7 @@ export default function PlaygroundPage() {
                                         )}
                                         <div
                                             className={`relative group px-5 py-4 rounded-2xl transition-all duration-200 ${message.role === 'user'
-                                                    ? 'bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-br-none shadow-md'
+                                                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-none shadow-md shadow-blue-500/20'
                                                     : 'bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-bl-none border border-slate-200 dark:border-slate-700 shadow-xs'
                                                 }`}
                                         >
@@ -644,9 +644,9 @@ export default function PlaygroundPage() {
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="text-sm sm:text-base leading-relaxed prose prose-sm max-w-none dark:prose-invert">
+                                                <div className="text-sm sm:text-base leading-relaxed">
                                                     {message.content ? (
-                                                        <MessageContent content={message.content} />
+                                                        <MessageContent content={message.content} isUser={message.role === 'user'} />
                                                     ) : (
                                                         <div className="flex gap-2 py-1">
                                                             <div className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-bounce"></div>
@@ -657,7 +657,7 @@ export default function PlaygroundPage() {
                                                 </div>
                                             )}
                                             {editingMessageId !== message.id && (
-                                                <span className={`text-xs mt-2 block opacity-60 ${message.role === 'user' ? 'text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                <span className={`text-xs mt-2 block opacity-75 ${message.role === 'user' ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
                                                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                             )}

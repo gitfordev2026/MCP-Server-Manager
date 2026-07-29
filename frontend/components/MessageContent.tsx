@@ -85,7 +85,7 @@ function renderCodeBlock(value: string, key: string, language?: string) {
   );
 }
 
-function renderInlineMarkdown(text: string): React.ReactNode[] {
+function renderInlineMarkdown(text: string, isUser = false): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const regex = /(`[^`]+`|\*\*[^*]+\*\*|_[^_]+_|\*[^*]+\*)/g;
   let lastIdx = 0;
@@ -101,21 +101,31 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
       nodes.push(
         <code
           key={match.index}
-          className="bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/60 px-1.5 py-0.5 rounded-md font-mono text-xs font-semibold mx-0.5 inline-block"
+          className={
+            isUser
+              ? "bg-white/20 text-white border border-white/30 px-1.5 py-0.5 rounded-md font-mono text-xs font-semibold mx-0.5 inline-block"
+              : "bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-900/60 px-1.5 py-0.5 rounded-md font-mono text-xs font-semibold mx-0.5 inline-block"
+          }
         >
           {codeVal}
         </code>
       );
     } else if (token.startsWith('**') && token.endsWith('**')) {
       nodes.push(
-        <strong key={match.index} className="font-bold text-slate-900 dark:text-slate-100">
-          {renderInlineMarkdown(token.slice(2, -2))}
+        <strong
+          key={match.index}
+          className={isUser ? "font-bold text-white" : "font-bold text-slate-900 dark:text-slate-100"}
+        >
+          {renderInlineMarkdown(token.slice(2, -2), isUser)}
         </strong>
       );
     } else if ((token.startsWith('_') && token.endsWith('_')) || (token.startsWith('*') && token.endsWith('*'))) {
       nodes.push(
-        <em key={match.index} className="italic text-slate-700 dark:text-slate-300">
-          {renderInlineMarkdown(token.slice(1, -1))}
+        <em
+          key={match.index}
+          className={isUser ? "italic text-blue-100" : "italic text-slate-700 dark:text-slate-300"}
+        >
+          {renderInlineMarkdown(token.slice(1, -1), isUser)}
         </em>
       );
     } else {
@@ -131,7 +141,7 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
   return nodes;
 }
 
-function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode {
+function renderMarkdownBlock(block: string, keyPrefix: string, isUser = false): React.ReactNode {
   const lines = block.split('\n');
   const elements: React.ReactNode[] = [];
 
@@ -149,18 +159,18 @@ function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode 
     elements.push(
       <div key={`${keyPrefix}-table-${idx}`} className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <table className="min-w-full text-xs sm:text-sm text-left">
-          <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
+          <thead className={isUser ? "bg-white/10 text-white font-bold border-b border-white/20" : "bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700"}>
             <tr>
               {header.map((cell, colIdx) => (
-                <th key={colIdx} className="px-4 py-2.5">{renderInlineMarkdown(cell)}</th>
+                <th key={colIdx} className="px-4 py-2.5">{renderInlineMarkdown(cell, isUser)}</th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+          <tbody className={isUser ? "divide-y divide-white/10 bg-transparent" : "divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900"}>
             {bodyRows.map((row, rIdx) => (
-              <tr key={rIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+              <tr key={rIdx} className="hover:bg-white/5 transition-colors">
                 {row.map((cell, cIdx) => (
-                  <td key={cIdx} className="px-4 py-2 text-slate-700 dark:text-slate-300">{renderInlineMarkdown(cell)}</td>
+                  <td key={cIdx} className={isUser ? "px-4 py-2 text-white" : "px-4 py-2 text-slate-700 dark:text-slate-300"}>{renderInlineMarkdown(cell, isUser)}</td>
                 ))}
               </tr>
             ))}
@@ -186,31 +196,31 @@ function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode 
 
     // Horizontal Rule
     if (trimmed === '---' || trimmed === '***') {
-      elements.push(<hr key={idx} className="my-3 border-slate-200 dark:border-slate-800" />);
+      elements.push(<hr key={idx} className={isUser ? "my-3 border-white/30" : "my-3 border-slate-200 dark:border-slate-800"} />);
       return;
     }
 
     // Headers
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <h3 key={idx} className="text-base font-bold text-slate-900 dark:text-white mt-3 mb-1.5 flex items-center gap-2">
-          {renderInlineMarkdown(trimmed.slice(4))}
+        <h3 key={idx} className={isUser ? "text-base font-bold text-white mt-3 mb-1.5 flex items-center gap-2" : "text-base font-bold text-slate-900 dark:text-white mt-3 mb-1.5 flex items-center gap-2"}>
+          {renderInlineMarkdown(trimmed.slice(4), isUser)}
         </h3>
       );
       return;
     }
     if (trimmed.startsWith('## ')) {
       elements.push(
-        <h2 key={idx} className="text-lg font-bold text-slate-900 dark:text-white mt-4 mb-2">
-          {renderInlineMarkdown(trimmed.slice(3))}
+        <h2 key={idx} className={isUser ? "text-lg font-bold text-white mt-4 mb-2" : "text-lg font-bold text-slate-900 dark:text-white mt-4 mb-2"}>
+          {renderInlineMarkdown(trimmed.slice(3), isUser)}
         </h2>
       );
       return;
     }
     if (trimmed.startsWith('# ')) {
       elements.push(
-        <h1 key={idx} className="text-xl font-bold text-slate-900 dark:text-white mt-4 mb-2">
-          {renderInlineMarkdown(trimmed.slice(2))}
+        <h1 key={idx} className={isUser ? "text-xl font-bold text-white mt-4 mb-2" : "text-xl font-bold text-slate-900 dark:text-white mt-4 mb-2"}>
+          {renderInlineMarkdown(trimmed.slice(2), isUser)}
         </h1>
       );
       return;
@@ -224,11 +234,11 @@ function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode 
       elements.push(
         <div
           key={idx}
-          className="flex items-start gap-2.5 text-sm leading-relaxed my-1 text-slate-800 dark:text-slate-200"
+          className={isUser ? "flex items-start gap-2.5 text-sm leading-relaxed my-1 text-white" : "flex items-start gap-2.5 text-sm leading-relaxed my-1 text-slate-800 dark:text-slate-200"}
           style={{ paddingLeft: `${Math.min(indentSpaces, 12) * 0.5}rem` }}
         >
-          <span className="text-rose-500 font-bold text-xs pt-1 select-none">•</span>
-          <span className="flex-1">{renderInlineMarkdown(contentText)}</span>
+          <span className={isUser ? "text-amber-300 font-bold text-xs pt-1 select-none" : "text-rose-500 font-bold text-xs pt-1 select-none"}>•</span>
+          <span className="flex-1">{renderInlineMarkdown(contentText, isUser)}</span>
         </div>
       );
       return;
@@ -236,8 +246,8 @@ function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode 
 
     if (trimmed) {
       elements.push(
-        <p key={idx} className="text-sm leading-relaxed my-1 text-slate-800 dark:text-slate-200">
-          {renderInlineMarkdown(line)}
+        <p key={idx} className={isUser ? "text-sm leading-relaxed my-1 text-white" : "text-sm leading-relaxed my-1 text-slate-800 dark:text-slate-200"}>
+          {renderInlineMarkdown(line, isUser)}
         </p>
       );
     }
@@ -250,7 +260,7 @@ function renderMarkdownBlock(block: string, keyPrefix: string): React.ReactNode 
   return <div key={keyPrefix} className="space-y-1">{elements}</div>;
 }
 
-function renderThinkBlock(value: string, key: string) {
+function renderThinkBlock(value: string, key: string, isUser = false) {
   if (!value.trim()) return null;
 
   return (
@@ -263,14 +273,14 @@ function renderThinkBlock(value: string, key: string) {
           if (segment.type === 'code') {
             return renderCodeBlock(segment.value, `${key}-code-${index}`, segment.language);
           }
-          return renderMarkdownBlock(segment.value, `${key}-md-${index}`);
+          return renderMarkdownBlock(segment.value, `${key}-md-${index}`, isUser);
         })}
       </div>
     </details>
   );
 }
 
-export default function MessageContent({ content }: { content: string }) {
+export default function MessageContent({ content, isUser = false }: { content: string; isUser?: boolean }) {
   if (!content) return null;
 
   const segments = parseSegments(content);
@@ -279,13 +289,13 @@ export default function MessageContent({ content }: { content: string }) {
     <div className="space-y-2">
       {segments.map((segment, index) => {
         if (segment.type === 'think') {
-          return renderThinkBlock(segment.value, `think-${index}`);
+          return renderThinkBlock(segment.value, `think-${index}`, isUser);
         }
         if (segment.type === 'code') {
           return renderCodeBlock(segment.value, `code-${index}`, segment.language);
         }
 
-        return renderMarkdownBlock(segment.value, `md-${index}`);
+        return renderMarkdownBlock(segment.value, `md-${index}`, isUser);
       })}
     </div>
   );
