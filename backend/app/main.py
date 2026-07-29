@@ -1632,7 +1632,11 @@ def combine_base_and_path(base_url: str, path: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, final_path, "", "", ""))
 
 
-async def invoke_openapi_tool(tool: OpenAPIToolDefinition, arguments: dict[str, Any]) -> dict[str, Any]:
+async def invoke_openapi_tool(
+    tool: OpenAPIToolDefinition,
+    arguments: dict[str, Any],
+    user_token: str | None = None,
+) -> dict[str, Any]:
     if tool.is_placeholder:
         return {
             "app": tool.app_name,
