@@ -18,6 +18,7 @@ This document captures the complete chronological record, technical findings, ar
 | **LLM vs. MCP Tool Execution Architecture** | ✅ Clarified | Clarified that Ollama/LLMs only output tool call JSON reasoning, while MCP Server Manager executes real downstream HTTP REST requests. |
 | **Eliminated UI Flashing (FOUC)** | ✅ Fixed | Created `UserContext` and updated `AuthGuard` to verify user identity & role BEFORE mounting protected pages. Prevents unauthorized content flashes even for milliseconds. |
 | **Role-Based Component Rendering** | ✅ Fixed | Removed hard `/access-denied` redirect for non-admins on `/admin`. Non-admin users (e.g. `developer`, `operator`, `read_only`) can access `/admin`, which dynamically displays only allowable components, tabs, and actions unique to their role. |
+| **Light Theme User Message Color** | ✅ Fixed | Added `isUser` prop to `MessageContent` component and updated user message bubbles in Playground and Chat pages to render headers, bold text, italics, lists, tables, and paragraphs in high-contrast white/light-blue in Light Theme. |
 
 ---
 
