@@ -74,11 +74,38 @@ export default function RegisterServerPage() {
   const [registeredSyncing, setRegisteredSyncing] = useState(false);
   const [registeredPage, setRegisteredPage] = useState(1);
   const [registeredSelectedTools, setRegisteredSelectedTools] = useState<Set<string>>(new Set());
-  const [criticalWarning, setCriticalWarning] = useState<{ toolName: string; reason: string; isRegistered?: boolean } | null>(null);
+  const [criticalWarning, setCriticalWarning] = useState<{
+    toolName?: string;
+    reason?: string;
+    isRegistered?: boolean;
+    isSelectAll?: boolean;
+    toolsToSelect?: Set<string>;
+    count?: number;
+  } | null>(null);
 
   const WRITE_PATTERNS = /\b(create|delete|update|write|remove|set|add|modify|insert|drop|purge|destroy|patch|put|post|mutation|mutate)\b/i;
 
   const isWriteTool = (toolName: string): boolean => WRITE_PATTERNS.test(toolName);
+
+  const handleSelectAllTools = (toolsList: (DiscoveredTool | ModalTool)[], isRegistered: boolean) => {
+    const allNames = new Set(toolsList.map((t) => t.name));
+    const writeCount = toolsList.filter((t) => isWriteTool(t.name)).length;
+
+    if (writeCount > 0) {
+      setCriticalWarning({
+        isSelectAll: true,
+        isRegistered,
+        toolsToSelect: allNames,
+        count: writeCount,
+      });
+    } else {
+      if (isRegistered) {
+        setRegisteredSelectedTools(allNames);
+      } else {
+        setSelectedTools(allNames);
+      }
+    }
+  };
 
   const toggleTool = (toolName: string) => {
     // Deselection is always allowed
@@ -129,18 +156,26 @@ export default function RegisterServerPage() {
 
   const confirmCriticalTool = () => {
     if (criticalWarning) {
-      if (criticalWarning.isRegistered) {
-        setRegisteredSelectedTools((prev) => {
-          const next = new Set(prev);
-          next.add(criticalWarning.toolName);
-          return next;
-        });
-      } else {
-        setSelectedTools((prev) => {
-          const next = new Set(prev);
-          next.add(criticalWarning.toolName);
-          return next;
-        });
+      if (criticalWarning.isSelectAll && criticalWarning.toolsToSelect) {
+        if (criticalWarning.isRegistered) {
+          setRegisteredSelectedTools(criticalWarning.toolsToSelect);
+        } else {
+          setSelectedTools(criticalWarning.toolsToSelect);
+        }
+      } else if (criticalWarning.toolName) {
+        if (criticalWarning.isRegistered) {
+          setRegisteredSelectedTools((prev) => {
+            const next = new Set(prev);
+            next.add(criticalWarning.toolName!);
+            return next;
+          });
+        } else {
+          setSelectedTools((prev) => {
+            const next = new Set(prev);
+            next.add(criticalWarning.toolName!);
+            return next;
+          });
+        }
       }
       setCriticalWarning(null);
     }
@@ -544,7 +579,7 @@ export default function RegisterServerPage() {
                 {discoveredTools.length > 0 && (
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex gap-2 flex-wrap">
-                      <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set(discoveredTools.map((tool) => tool.name)))}>
+                      <Button size="sm" variant="secondary" onClick={() => handleSelectAllTools(discoveredTools, false)}>
                         Select All
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setSelectedTools(new Set(discoveredTools.filter((t) => !isWriteTool(t.name)).map((t) => t.name)))}>
@@ -682,7 +717,7 @@ export default function RegisterServerPage() {
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => setRegisteredSelectedTools(new Set(registeredTools.map((row) => row.name)))}
+                        onClick={() => handleSelectAllTools(registeredTools, true)}
                       >
                         Select All
                       </Button>
@@ -820,19 +855,31 @@ export default function RegisterServerPage() {
                 <span className="text-lg">⚠️</span>
               </div>
               <div>
-                <h4 className="text-base font-bold text-slate-900 dark:text-white">Write Tool Warning</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">This tool can modify data</p>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                  {criticalWarning.isSelectAll ? 'Write Tools Warning' : 'Write Tool Warning'}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">These tools can modify data</p>
               </div>
             </div>
-            <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-              <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
-                You are about to enable:
-              </p>
-              <p className="text-sm font-mono text-amber-800 dark:text-amber-300 mt-1 break-all font-semibold">{criticalWarning.toolName}</p>
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{criticalWarning.reason}</p>
-            </div>
+
+            {criticalWarning.isSelectAll ? (
+              <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
+                  Select All includes <strong className="text-amber-900 dark:text-amber-100">{criticalWarning.count} write/mutating tool(s)</strong>.
+                </p>
+              </div>
+            ) : (
+              <div className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <p className="text-sm text-amber-900 dark:text-amber-200 font-medium">
+                  You are about to enable:
+                </p>
+                <p className="text-sm font-mono text-amber-800 dark:text-amber-300 mt-1 break-all font-semibold">{criticalWarning.toolName}</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">{criticalWarning.reason}</p>
+              </div>
+            )}
+
             <p className="text-xs text-slate-600 dark:text-slate-400 mb-5">
-              Tools with write capabilities (create, update, delete, etc.) can modify data on the connected system. Ensure this tool is safe to expose before enabling it.
+              Tools with write capabilities (create, update, delete, etc.) can modify data on the connected system. Ensure these tools are safe to expose before enabling them.
             </p>
             <div className="flex items-center justify-end gap-3">
               <button
@@ -847,7 +894,7 @@ export default function RegisterServerPage() {
                 onClick={confirmCriticalTool}
                 className="px-4 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-xl transition-colors shadow-md"
               >
-                Enable Anyway
+                {criticalWarning.isSelectAll ? 'Enable All Anyway' : 'Enable Anyway'}
               </button>
             </div>
           </div>

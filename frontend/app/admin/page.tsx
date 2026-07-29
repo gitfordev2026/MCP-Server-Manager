@@ -403,6 +403,7 @@ export default function AdminPanelPage() {
   const canManageEndpoints = useMemo(() => ['super_admin', 'admin', 'developer', 'operator'].includes(actorRole), [actorRole]);
   const canHardDelete      = useMemo(() => actorRole === 'super_admin', [actorRole]);
   const canViewAudit = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
+  const canApproveExposure = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
 

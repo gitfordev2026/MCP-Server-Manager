@@ -94,8 +94,23 @@ export default function Home() {
   const backendToastShownRef = useRef(false);
   const [systemStatuses, setSystemStatuses] = useState<SystemStatus[]>([]);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'down' | null>(null);
+  const [userRole, setUserRole] = useState<string>('developer');
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
+
+  useEffect(() => {
+    if (!NEXT_PUBLIC_BE_API_URL) return;
+    authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/api/me`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.role) {
+          setUserRole(data.role);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
 
   const aliveLatencies = Object.values(serverHealth)
     .filter((item) => item.status === 'alive')
@@ -498,16 +513,20 @@ export default function Home() {
 
   useEffect(() => {
     void fetchData();
-    void fetchSystemHealth();
+    if (isAdmin) {
+      void fetchSystemHealth();
+    }
     const intervalId = window.setInterval(() => {
       void fetchData(true);
-      void fetchSystemHealth(true);
+      if (isAdmin) {
+        void fetchSystemHealth(true);
+      }
     }, STATUS_POLL_MS);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [fetchData, fetchSystemHealth]);
+  }, [fetchData, fetchSystemHealth, isAdmin]);
 
   useEffect(() => {
     if (!NEXT_PUBLIC_BE_API_URL) return;
@@ -623,15 +642,15 @@ export default function Home() {
 
           {/* Statistics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
-            {/* Active Servers Card */}
+            {/* Active MCP Servers Card */}
             <div className="group relative animate-slideInUp" style={{ animationDelay: '0.1s' }}>
               <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-amber-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
               <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
                 <div className="flex items-start justify-between mb-6">
                   <div className="flex-1">
-                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Active Servers</p>
+                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>MCP Servers</p>
                     <h3 className={`text-5xl font-bold mt-3 group-hover:text-amber-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      {statusSummary.alive}
+                      {statusSummary.alive}/{statusSummary.total}
                     </h3>
                   </div>
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-amber-900/20 group-hover:border-amber-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-amber-50 group-hover:to-amber-100 group-hover:border-amber-300/60'}`}>
@@ -641,231 +660,125 @@ export default function Home() {
                   </div>
                 </div>
                 <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
-                  <p className="text-sm">{statusSummary.down} down / {statusSummary.total} total</p>
+                  <p className="text-sm">mcp {statusSummary.alive}/{statusSummary.total} active ({statusSummary.down} down)</p>
                 </div>
               </div>
             </div>
 
-            {/* Status Card */}
+            {/* Active Applications Card */}
             <div className="group relative animate-slideInUp" style={{ animationDelay: '0.2s' }}>
-              <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-emerald-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-              <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex-1">
-                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>System Status</p>
-                    <h3 className={`text-4xl font-bold mt-3 group-hover:text-emerald-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      <span className="inline-flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full animate-pulse ${statusSummary.down > 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
-                        {statusSummary.down > 0 ? 'Degraded' : 'Healthy'}
-                      </span>
-                    </h3>
-                  </div>
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-emerald-900/20 group-hover:border-emerald-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-emerald-50 group-hover:to-emerald-100 group-hover:border-emerald-300/60'}`}>
-                    <svg className={`w-6 h-6 transition-colors duration-300 group-hover:text-emerald-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                </div>
-                <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
-                  <p className="text-sm">{statusSummary.alive} alive / {statusSummary.total} monitored</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Performance Card */}
-            <div className="group relative animate-slideInUp" style={{ animationDelay: '0.3s' }}>
               <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-blue-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
               <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
                 <div className="flex items-start justify-between mb-6">
                   <div className="flex-1">
-                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Uptime</p>
-                    <h3 className={`text-4xl font-bold mt-3 group-hover:text-blue-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      {averageLatency === null ? '--' : `${averageLatency}ms`}
+                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Applications</p>
+                    <h3 className={`text-5xl font-bold mt-3 group-hover:text-blue-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      {appStatusSummary.alive}/{appStatusSummary.total}
                     </h3>
                   </div>
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-blue-900/20 group-hover:border-blue-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-blue-50 group-hover:to-blue-100 group-hover:border-blue-300/60'}`}>
-                    <svg className={`w-6 h-6 transition-colors duration-300 group-hover:text-blue-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="text-lg">🔌</span>
+                  </div>
+                </div>
+                <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
+                  <p className="text-sm">app {appStatusSummary.alive}/{appStatusSummary.total} active ({appStatusSummary.down} down)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Performance / Latency Card */}
+            <div className="group relative animate-slideInUp" style={{ animationDelay: '0.3s' }}>
+              <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-emerald-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
+              <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex-1">
+                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Uptime / Latency</p>
+                    <h3 className={`text-4xl font-bold mt-3 group-hover:text-emerald-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      {averageLatency === null ? '--' : `${averageLatency}ms`}
+                    </h3>
+                  </div>
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-emerald-900/20 group-hover:border-emerald-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-emerald-50 group-hover:to-emerald-100 group-hover:border-emerald-300/60'}`}>
+                    <svg className={`w-6 h-6 transition-colors duration-300 group-hover:text-emerald-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                 </div>
                 <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
-                  <p className="text-sm">Average live latency</p>
+                  <p className="text-sm">Average live response latency</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="animate-slideInUp mb-16" style={{ animationDelay: '0.35s' }}>
-            <div className={`relative border rounded-2xl p-6 shadow-sm ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200/80'}`}>
-              <div className="flex items-start justify-between gap-4 mb-6">
-                <div>
-                  <h2 className={`text-2xl font-bold transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                    Backend Systems
-                  </h2>
-                  <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Live status for core backend dependencies
-                  </p>
-                </div>
-                <div className={`px-4 py-2 rounded-full text-sm font-semibold border ${
-                  healthStatus === 'down'
-                    ? isDark
-                      ? 'bg-red-900/30 text-red-300 border-red-500/30'
-                      : 'bg-red-50 text-red-700 border-red-200'
-                    : healthStatus === 'degraded'
-                      ? isDark
-                        ? 'bg-amber-900/30 text-amber-300 border-amber-500/30'
-                        : 'bg-amber-50 text-amber-700 border-amber-200'
-                      : isDark
-                        ? 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30'
-                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                }`}>
-                  {healthStatus === 'down' ? 'System Issues' : healthStatus === 'degraded' ? 'Partially Available' : 'All Core Systems Healthy'}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
-                {systemStatuses.map((system) => (
-                  <div
-                    key={system.key}
-                    className={`rounded-xl border p-4 transition-colors duration-300 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className={`w-3 h-3 rounded-full shrink-0 ${getSystemIndicatorClasses(system.status)}`}></span>
-                        <span className={`font-semibold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                          {system.name}
-                        </span>
-                      </div>
-                      <span className={`text-xs font-bold uppercase tracking-wide ${
-                        system.status === 'up'
-                          ? isDark ? 'text-emerald-300' : 'text-emerald-700'
-                          : system.status === 'down'
-                            ? isDark ? 'text-red-300' : 'text-red-700'
-                            : isDark ? 'text-slate-400' : 'text-slate-500'
-                      }`}>
-                        {getSystemStatusLabel(system.status)}
-                      </span>
-                    </div>
-                    <p className={`text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                      {system.detail}
+          {/* Backend Systems Section (Only visible to Admin) */}
+          {isAdmin && (
+            <div className="animate-slideInUp mb-16" style={{ animationDelay: '0.35s' }}>
+              <div className={`relative border rounded-2xl p-6 shadow-sm ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200/80'}`}>
+                <div className="flex items-start justify-between gap-4 mb-6">
+                  <div>
+                    <h2 className={`text-2xl font-bold transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                      Backend Systems
+                    </h2>
+                    <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Live status for core backend dependencies
                     </p>
                   </div>
-                ))}
-              </div>
+                  <div className={`px-4 py-2 rounded-full text-sm font-semibold border ${
+                    healthStatus === 'down'
+                      ? isDark
+                        ? 'bg-red-900/30 text-red-300 border-red-500/30'
+                        : 'bg-red-50 text-red-700 border-red-200'
+                      : healthStatus === 'degraded'
+                        ? isDark
+                          ? 'bg-amber-900/30 text-amber-300 border-amber-500/30'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                        : isDark
+                          ? 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}>
+                    {healthStatus === 'down' ? 'System Issues' : healthStatus === 'degraded' ? 'Partially Available' : 'All Core Systems Healthy'}
+                  </div>
+                </div>
 
-              <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                {liveUpCount} online / {liveDownCount} offline / {systemStatuses.filter((system) => system.status === 'disabled').length} disabled
-              </p>
-            </div>
-          </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+                  {systemStatuses.map((system) => (
+                    <div
+                      key={system.key}
+                      className={`rounded-xl border p-4 transition-colors duration-300 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className={`w-3 h-3 rounded-full shrink-0 ${getSystemIndicatorClasses(system.status)}`}></span>
+                          <span className={`font-semibold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                            {system.name}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-bold uppercase tracking-wide ${
+                          system.status === 'up'
+                            ? isDark ? 'text-emerald-300' : 'text-emerald-700'
+                            : system.status === 'down'
+                              ? isDark ? 'text-red-300' : 'text-red-700'
+                              : isDark ? 'text-slate-400' : 'text-slate-500'
+                        }`}>
+                          {getSystemStatusLabel(system.status)}
+                        </span>
+                      </div>
+                      <p className={`text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {system.detail}
+                      </p>
+                    </div>
+                  ))}
+                </div>
 
-          {/* Servers Section */}
-          <div className="animate-slideInUp" style={{ animationDelay: '0.4s' }}>
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className={`text-3xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Connected Servers</h2>
-                <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Manage and monitor your MCP server instances
-                  {lastUpdated ? ` • Updated ${lastUpdated}` : ''}
-                  {refreshing ? ' • Refreshing...' : ''}
+                <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                  {liveUpCount} online / {liveDownCount} offline / {systemStatuses.filter((system) => system.status === 'disabled').length} disabled
                 </p>
               </div>
-              <Link href="/register-server">
-                <Button className="cursor-pointer bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 px-6 py-3 rounded-xl font-bold transition-all duration-300 hover:shadow-lg hover:shadow-emerald-400/50 hover:scale-105 shadow-md shadow-emerald-300/40">
-                  ➕ Add Server
-                </Button>
-              </Link>
             </div>
-
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="text-center">
-                  <div className="inline-block">
-                    <div className={`w-16 h-16 border-4 rounded-full animate-spin ${isDark ? 'border-amber-600/50 border-t-amber-400' : 'border-amber-300 border-t-amber-600'}`}></div>
-                  </div>
-                  <p className={`mt-4 transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Loading servers...</p>
-                </div>
-              </div>
-            ) : error ? (
-              <div className={`rounded-2xl p-8 text-center border ${isDark ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'}`}>
-                <p className={`font-medium transition-colors duration-500 ${isDark ? 'text-red-400' : 'text-red-600'}`}>⚠️ {error}</p>
-              </div>
-            ) : servers.length === 0 ? (
-              <div className={`rounded-xl p-16 text-center border ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200'}`}>
-                <div className={`text-5xl mb-6 opacity-60 ${isDark ? '' : ''}`}>🖥️</div>
-                <h3 className={`text-xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>No Servers Connected</h3>
-                <p className={`mb-8 max-w-md mx-auto transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Start by registering your first MCP server to begin monitoring and management</p>
-                <Link href="/register-server">
-                  <Button className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 px-8 py-3 rounded-lg font-semibold transition-all duration-300 hover:shadow-md inline-block">
-                    Add Your First Server
-                  </Button>
-                </Link>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {servers.map((server, index) => {
-                  const health = serverHealth[server.name];
-                  const isAlive = health?.status === 'alive';
-
-                  return (
-                  <div
-                    key={server.name}
-                    className="group relative animate-slideInUp"
-                    style={{ animationDelay: `${0.5 + index * 0.1}s` }}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-                    <div className={`relative border rounded-xl overflow-hidden hover:border-slate-300/80 transition-all duration-300 h-full shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                      {/* Card header with gradient accent */}
-                      <div className="h-1 bg-gradient-to-r from-amber-500 to-amber-400 group-hover:from-amber-600 group-hover:to-amber-500 transition-all duration-300"></div>
-                      
-                      <div className="p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-amber-900/20 group-hover:border-amber-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:from-amber-50 group-hover:to-amber-100 group-hover:border-amber-300/60'}`}>
-                            <svg className={`w-5 h-5 transition-colors duration-300 group-hover:text-amber-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                            </svg>
-                          </div>
-                          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${isAlive ? (isDark ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-900/30 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700')}`}>
-                            <span className={`w-2 h-2 rounded-full animate-pulse ${isAlive ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                            <span className="text-xs font-semibold">{isAlive ? 'Alive' : 'Down'}</span>
-                          </div>
-                        </div>
-                        
-                        <h3 className={`text-lg font-bold mb-1 truncate line-clamp-1 group-hover:text-amber-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{server.name}</h3>
-                        <p className={`text-xs font-mono mb-2 truncate opacity-75 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{server.url.split('//')[1] || server.url}</p>
-                        <div className={`text-xs mb-4 space-y-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                          <p>{health ? `${health.latency_ms} ms latency` : 'Waiting for status...'}</p>
-                          <p>
-                            {health && health.status === 'alive'
-                              ? `${health.tool_count} tools`
-                              : 'Tool count unavailable'}
-                          </p>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Link href={`/servers/${encodeURIComponent(server.name)}`} className="flex-1">
-                            <button className={`cursor-pointer w-full py-2 rounded-lg font-medium transition-all duration-200 text-sm border ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'}`}>
-                              View Tools
-                            </button>
-                          </Link>
-                          <Link href={`/api-explorer?url=${encodeURIComponent(server.url)}&name=${encodeURIComponent(server.name)}`}>
-                            <button className={`cursor-pointer px-3 py-2 rounded-lg transition-all duration-200 text-sm border font-medium ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'}`}>
-                              APIs
-                            </button>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Applications Section */}
-          <div className="animate-slideInUp mt-16" style={{ animationDelay: '0.5s' }}>
+          <div className="animate-slideInUp" style={{ animationDelay: '0.4s' }}>
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h2 className={`text-3xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Registered Applications</h2>
@@ -952,6 +865,110 @@ export default function Home() {
                       </div>
                     </div>
                   </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Connected Servers Section (Second) */}
+          <div className="animate-slideInUp mt-16" style={{ animationDelay: '0.5s' }}>
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className={`text-3xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Connected Servers</h2>
+                <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Manage and monitor your MCP server instances
+                  {lastUpdated ? ` • Updated ${lastUpdated}` : ''}
+                  {refreshing ? ' • Refreshing...' : ''}
+                </p>
+              </div>
+              <Link href="/register-server">
+                <Button className="cursor-pointer bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 px-6 py-3 rounded-xl font-bold transition-all duration-300 hover:shadow-lg hover:shadow-emerald-400/50 hover:scale-105 shadow-md shadow-emerald-300/40">
+                  ➕ Add Server
+                </Button>
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="text-center">
+                  <div className="inline-block">
+                    <div className={`w-16 h-16 border-4 rounded-full animate-spin ${isDark ? 'border-amber-600/50 border-t-amber-400' : 'border-amber-300 border-t-amber-600'}`}></div>
+                  </div>
+                  <p className={`mt-4 transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Loading servers...</p>
+                </div>
+              </div>
+            ) : error ? (
+              <div className={`rounded-2xl p-8 text-center border ${isDark ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'}`}>
+                <p className={`font-medium transition-colors duration-500 ${isDark ? 'text-red-400' : 'text-red-600'}`}>⚠️ {error}</p>
+              </div>
+            ) : servers.length === 0 ? (
+              <div className={`rounded-xl p-16 text-center border ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200'}`}>
+                <div className={`text-5xl mb-6 opacity-60 ${isDark ? '' : ''}`}>🖥️</div>
+                <h3 className={`text-xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>No Servers Connected</h3>
+                <p className={`mb-8 max-w-md mx-auto transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Start by registering your first MCP server to begin monitoring and management</p>
+                <Link href="/register-server">
+                  <Button className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 px-8 py-3 rounded-lg font-semibold transition-all duration-300 hover:shadow-md inline-block">
+                    Add Your First Server
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {servers.map((server, index) => {
+                  const health = serverHealth[server.name];
+                  const isAlive = health?.status === 'alive';
+
+                  return (
+                  <div
+                    key={server.name}
+                    className="group relative animate-slideInUp"
+                    style={{ animationDelay: `${0.6 + index * 0.1}s` }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
+                    <div className={`relative border rounded-xl overflow-hidden hover:border-slate-300/80 transition-all duration-300 h-full shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
+                      {/* Card header with gradient accent */}
+                      <div className="h-1 bg-gradient-to-r from-amber-500 to-amber-400 group-hover:from-amber-600 group-hover:to-amber-500 transition-all duration-300"></div>
+                      
+                      <div className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-amber-900/20 group-hover:border-amber-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:from-amber-50 group-hover:to-amber-100 group-hover:border-amber-300/60'}`}>
+                            <svg className={`w-5 h-5 transition-colors duration-300 group-hover:text-amber-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                            </svg>
+                          </div>
+                          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${isAlive ? (isDark ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-900/30 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700')}`}>
+                            <span className={`w-2 h-2 rounded-full animate-pulse ${isAlive ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                            <span className="text-xs font-semibold">{isAlive ? 'Alive' : 'Down'}</span>
+                          </div>
+                        </div>
+                        
+                        <h3 className={`text-lg font-bold mb-1 truncate line-clamp-1 group-hover:text-amber-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{server.name}</h3>
+                        <p className={`text-xs font-mono mb-2 truncate opacity-75 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{server.url.split('//')[1] || server.url}</p>
+                        <div className={`text-xs mb-4 space-y-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          <p>{health ? `${health.latency_ms} ms latency` : 'Waiting for status...'}</p>
+                          <p>
+                            {health && health.status === 'alive'
+                              ? `${health.tool_count} tools`
+                              : 'Tool count unavailable'}
+                          </p>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Link href={`/servers/${encodeURIComponent(server.name)}`} className="flex-1">
+                            <button className={`cursor-pointer w-full py-2 rounded-lg font-medium transition-all duration-200 text-sm border ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'}`}>
+                              View Tools
+                            </button>
+                          </Link>
+                          <Link href={`/api-explorer?url=${encodeURIComponent(server.url)}&name=${encodeURIComponent(server.name)}`}>
+                            <button className={`cursor-pointer px-3 py-2 rounded-lg transition-all duration-200 text-sm border font-medium ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                              APIs
+                            </button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   );
                 })}
               </div>
