@@ -139,11 +139,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           const profile: UserProfile = await res.json();
           // User exists in DB and has an active primary_role ("admin" | "developer")
           if (profile.primary_role) {
-            // Check page-level permission checks (e.g. /admin requires admin role)
-            if (currentPath.startsWith("/admin") && profile.primary_role !== "admin") {
-              router?.replace("/access-denied");
-              return;
-            }
             setUserProfile(profile);
             setRoleVerified(true);
             setLoading(false);
