@@ -1,0 +1,87 @@
+{
+  "clientId": "mcp-client-secure",
+  "name": "mcp-client-secure",
+  "description": "mcp-client-secure",
+  "rootUrl": "",
+  "adminUrl": "",
+  "baseUrl": "",
+  "surrogateAuthRequired": false,
+  "enabled": true,
+  "alwaysDisplayInConsole": false,
+  "clientAuthenticatorType": "client-secret",
+  "secret": "oORQ1ynZJoiCRduW6aMVqpYq4BFgkPP27f7LMqHbwRUCxviUGzuHGQG9xulwqLXHeRfJASDx1wV3KEsoaT8xyB",
+  "redirectUris": [
+    "http://127.0.0.1:*",
+    "http://10.139.10.176:3000/",
+    "https://vscode.dev/redirect",
+    "*",
+    "+"
+  ],
+  "webOrigins": [
+    "/*"
+  ],
+  "notBefore": 0,
+  "bearerOnly": false,
+  "consentRequired": false,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": true,
+  "publicClient": false,
+  "frontchannelLogout": true,
+  "protocol": "openid-connect",
+  "attributes": {
+    "logout.confirmation.enabled": "false",
+    "client.secret.creation.time": "1785173213",
+    "standard.token.exchange.enabled": "false",
+    "oauth2.jwt.authorization.grant.enabled": "false",
+    "frontchannel.logout.session.required": "true",
+    "oauth2.device.authorization.grant.enabled": "false",
+    "use.jwks.url": "false",
+    "backchannel.logout.revoke.offline.tokens": "false",
+    "realm_client": "false",
+    "oidc.ciba.grant.enabled": "false",
+    "backchannel.logout.session.required": "true",
+    "display.on.consent.screen": "false",
+    "dpop.bound.access.tokens": "false"
+  },
+  "authenticationFlowBindingOverrides": {},
+  "fullScopeAllowed": true,
+  "nodeReRegistrationTimeout": -1,
+  "protocolMappers": [
+    {
+      "name": "inpector-client",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "consentRequired": false,
+      "config": {
+        "included.client.audience": "inspector-client",
+        "id.token.claim": "true",
+        "lightweight.claim": "true",
+        "access.token.claim": "true",
+        "introspection.token.claim": "true"
+      }
+    }
+  ],
+  "defaultClientScopes": [
+    "web-origins",
+    "service_account",
+    "acr",
+    "profile",
+    "roles",
+    "basic",
+    "email"
+  ],
+  "optionalClientScopes": [
+    "address",
+    "phone",
+    "offline_access",
+    "organization",
+    "microprofile-jwt"
+  ],
+  "access": {
+    "view": true,
+    "configure": true,
+    "manage": true
+  }
+}

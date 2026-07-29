@@ -738,6 +738,7 @@ def _format_tool_result_human_readable(tool_name: str, arguments: Dict[str, Any]
 async def _maybe_execute_raw_tool_call(
     result_text: Any,
     allowed_tools: List[str],
+    user_token: Optional[str] = None,
 ) -> Optional[str]:
     parsed = _parse_raw_tool_call(result_text)
     if parsed is None:
@@ -751,20 +752,31 @@ async def _maybe_execute_raw_tool_call(
 
     logger.info(f"Executing tool '{canonical_tool}' (resolved from '{candidate_name}') with args: {arguments}")
 
+    tool_result = None
+
+    # 1. Direct in-process execution via combined_apps_mcp first
     try:
-        tool_result = await call_server_tool(
-            ENV.agent_mcp_server_name,
-            ENV.agent_mcp_server_url,
-            canonical_tool,
-            arguments,
-            timeout_sec=30.0,
-        )
-    except Exception as exc:
-        logger.warning(f"call_server_tool failed ({exc}), attempting direct combined_apps_mcp call")
-        try:
-            from app.main import combined_apps_mcp
-            res = await combined_apps_mcp.call_tool(canonical_tool, arguments)
+        from app.main import combined_apps_mcp
+        res = await combined_apps_mcp.call_tool(canonical_tool, arguments, user_token=user_token)
+        if hasattr(res, "structured_content") and res.structured_content:
+            tool_result = res.structured_content
+        elif hasattr(res, "content") and res.content:
+            tool_result = {"content": [getattr(item, "text", str(item)) for item in res.content]}
+        else:
             tool_result = getattr(res, "structured_content", res)
+    except Exception as exc:
+        logger.warning(f"combined_apps_mcp.call_tool direct execution failed ({exc}), attempting call_server_tool")
+
+    # 2. Fallback to HTTP call_server_tool
+    if tool_result is None or (isinstance(tool_result, dict) and tool_result.get("error") == "no_matching_tool"):
+        try:
+            tool_result = await call_server_tool(
+                ENV.agent_mcp_server_name,
+                ENV.agent_mcp_server_url,
+                canonical_tool,
+                arguments,
+                timeout_sec=30.0,
+            )
         except Exception as inner_exc:
             return f"Error executing tool '{canonical_tool}': {inner_exc}"
 
@@ -794,6 +806,7 @@ async def _run_agent_query(
 ) -> Dict[str, Any]:
     model = _normalize_model(request.model)
     effective_prompt = _effective_prompt(request)
+    user_token = actor.get("token") if actor else None
 
     if _is_capability_prompt(request.prompt):
         all_tools = await _list_combined_tool_names(actor)
@@ -821,6 +834,7 @@ async def _run_agent_query(
         return {"response": result, "mode": "direct_llm"}
 
     all_tools = await _list_combined_tool_names(actor)
+    selected_tools = all_tools
 
     if not all_tools:
         result = await generate_direct_response(
@@ -841,12 +855,6 @@ async def _run_agent_query(
             "mode": "tool_inventory",
         }
 
-    selected_tools = _select_relevant_tools(
-        effective_prompt,
-        all_tools,
-        max_tools=12,
-    )
-
     instructions = _build_tool_only_instructions(selected_tools)
 
     agent = build_agent_with_model(
@@ -864,8 +872,8 @@ async def _run_agent_query(
         agent.tools_used_names.clear()
 
     try:
-        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
-        rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=45.0)
+        rescued = await _maybe_execute_raw_tool_call(result, selected_tools, user_token=user_token)
         if rescued is not None:
             result = rescued
         else:
@@ -877,7 +885,7 @@ async def _run_agent_query(
             model=model,
             additional_instructions=instructions,
         )
-        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools)
+        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools, user_token=user_token)
         result = rescued if rescued is not None else raw_direct
 
     return {"response": result, "mode": "mcp_agent"}
@@ -889,6 +897,7 @@ async def _run_playground_query(
     actor: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     model = _normalize_model(request.model)
+    user_token = actor.get("token") if actor else None
 
     effective_prompt = _effective_prompt(request)
 
@@ -964,8 +973,8 @@ async def _run_playground_query(
     )
 
     try:
-        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
-        rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=45.0)
+        rescued = await _maybe_execute_raw_tool_call(result, selected_tools, user_token=user_token)
         if rescued is not None:
             result = rescued
         else:
@@ -977,7 +986,7 @@ async def _run_playground_query(
             model=model,
             additional_instructions=instructions,
         )
-        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools)
+        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools, user_token=user_token)
         result = rescued if rescued is not None else raw_direct
 
     return {"response": result, "mode": "mcp_agent"}

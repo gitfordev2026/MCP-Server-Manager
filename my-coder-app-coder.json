@@ -1,0 +1,66 @@
+{
+  "clientId": "my-coder-app",
+  "name": "my-coder-app",
+  "description": "my-coder-app",
+  "rootUrl": "",
+  "adminUrl": "",
+  "baseUrl": "",
+  "surrogateAuthRequired": false,
+  "enabled": true,
+  "alwaysDisplayInConsole": false,
+  "clientAuthenticatorType": "client-secret",
+  "secret": "8GpKXiLsfxMyFgz71mFmbykwT3qXcupkOb2oZMrxyLu1o5AbJVR2WHDSdY9Sh6tRYzeIwtiL5jKVL7dEylZxtb",
+  "redirectUris": [
+    "http://10.139.10.176:7080/*"
+  ],
+  "webOrigins": [
+    "+"
+  ],
+  "notBefore": 0,
+  "bearerOnly": false,
+  "consentRequired": false,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false,
+  "publicClient": false,
+  "frontchannelLogout": true,
+  "protocol": "openid-connect",
+  "attributes": {
+    "realm_client": "false",
+    "oidc.ciba.grant.enabled": "false",
+    "client.secret.creation.time": "1785350371",
+    "backchannel.logout.session.required": "true",
+    "standard.token.exchange.enabled": "false",
+    "oauth2.jwt.authorization.grant.enabled": "false",
+    "oauth2.device.authorization.grant.enabled": "false",
+    "backchannel.logout.revoke.offline.tokens": "false",
+    "dpop.bound.access.tokens": "false"
+  },
+  "authenticationFlowBindingOverrides": {},
+  "fullScopeAllowed": true,
+  "nodeReRegistrationTimeout": -1,
+  "defaultClientScopes": [
+    "web-origins",
+    "acr",
+    "mcp:prompts",
+    "profile",
+    "roles",
+    "mcp:tools",
+    "basic",
+    "email",
+    "mcp:resources"
+  ],
+  "optionalClientScopes": [
+    "address",
+    "phone",
+    "offline_access",
+    "organization",
+    "microprofile-jwt"
+  ],
+  "access": {
+    "view": true,
+    "configure": true,
+    "manage": true
+  }
+}
