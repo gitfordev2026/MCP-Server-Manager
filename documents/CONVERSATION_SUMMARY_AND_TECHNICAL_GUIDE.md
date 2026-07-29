@@ -16,6 +16,7 @@ This document captures the complete chronological record, technical findings, ar
 | **Token Refresh & Lifecycle** | ✅ Documented | Explained OAuth 2.1 silent background refresh using `refresh_token` without user re-login. |
 | **Direct vs. Proxy URLs** | ✅ Clarified | Defined recommendation matrix for when to use Direct Backend (`:8000`) vs. Frontend Proxy (`:3000`). |
 | **LLM vs. MCP Tool Execution Architecture** | ✅ Clarified | Clarified that Ollama/LLMs only output tool call JSON reasoning, while MCP Server Manager executes real downstream HTTP REST requests. |
+| **Eliminated UI Flashing (FOUC)** | ✅ Fixed | Created `UserContext` and updated `AuthGuard` to verify user identity & role BEFORE mounting protected pages. Prevents unauthorized content flashes even for milliseconds. |
 
 ---
 
