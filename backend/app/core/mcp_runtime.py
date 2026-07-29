@@ -44,21 +44,63 @@ except Exception:
     )
 
 
-def build_fastmcp_asgi_app(server: Any, *, path: str = "/") -> Any:
-    """Build an ASGI app from whichever FastMCP implementation is active."""
-    if hasattr(server, "streamable_http_app"):
-        return server.streamable_http_app()
+def build_fastmcp_asgi_app(
+    server: Any,
+    *,
+    path: str = "/",
+    allowed_hosts: list[str] | None = None,
+    allowed_origins: list[str] | None = None,
+) -> Any:
+    """Build an ASGI app from whichever FastMCP implementation is active.
 
+    Uses ``server.http_app()`` which is the stable API in FastMCP v3.x.
+    Passes ``host_origin_protection``, ``allowed_hosts``, and ``allowed_origins``
+    to enable DNS-rebinding protection with proper allowlisting for
+    MCP Inspector, Claude Desktop, Cursor, and other MCP clients.
+    """
+
+    # FastMCP v3.x: http_app() is the canonical method.
     if hasattr(server, "http_app"):
-        try:
-            return server.http_app(path=path)
-        except TypeError:
-            return server.http_app()
+        kwargs: dict[str, Any] = {"path": path}
 
+        # Inject host/origin protection if supported.
+        import inspect
+        sig = inspect.signature(server.http_app)
+        if "host_origin_protection" in sig.parameters:
+            kwargs["host_origin_protection"] = "auto"
+        if "allowed_hosts" in sig.parameters and allowed_hosts:
+            kwargs["allowed_hosts"] = allowed_hosts
+        if "allowed_origins" in sig.parameters and allowed_origins:
+            kwargs["allowed_origins"] = allowed_origins
+
+        try:
+            app = server.http_app(**kwargs)
+            MCP_RUNTIME_INFO["asgi_builder"] = "http_app"
+            MCP_RUNTIME_INFO["host_origin_protection"] = kwargs.get("host_origin_protection", "none")
+            MCP_RUNTIME_INFO["allowed_hosts"] = allowed_hosts or []
+            MCP_RUNTIME_INFO["allowed_origins"] = allowed_origins or []
+            logger.info(
+                "FastMCP ASGI app built via http_app() with host_origin_protection=%s, "
+                "allowed_hosts=%s, allowed_origins=%s",
+                kwargs.get("host_origin_protection", "none"),
+                allowed_hosts or [],
+                allowed_origins or [],
+            )
+            return app
+        except TypeError:
+            # Fallback: call without kwargs if signature doesn't match.
+            app = server.http_app()
+            MCP_RUNTIME_INFO["asgi_builder"] = "http_app_fallback"
+            logger.warning("FastMCP http_app() called without protection kwargs (signature mismatch).")
+            return app
+
+    # Legacy fallback paths.
     if hasattr(server, "asgi_app"):
+        MCP_RUNTIME_INFO["asgi_builder"] = "asgi_app"
         return server.asgi_app()
 
     if hasattr(server, "app"):
+        MCP_RUNTIME_INFO["asgi_builder"] = "app_attribute"
         return server.app
 
     raise RuntimeError(

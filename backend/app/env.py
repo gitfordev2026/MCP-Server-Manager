@@ -79,6 +79,8 @@ class BackendEnv:
     langfuse_host: str
     inference_engine_openapi_url: str
     inference_engine_api_key: str
+    mcp_allowed_origins: list[str]
+    mcp_allowed_hosts: list[str]
 
 
 def load_backend_env() -> BackendEnv:
@@ -143,6 +145,18 @@ def load_backend_env() -> BackendEnv:
         langfuse_host=os.getenv("LANGFUSE_HOST", "http://localhost:3000").strip().rstrip("/"),
         inference_engine_openapi_url=os.getenv("INFERENCE_ENGINE_OPENAPI_URL", os.getenv("AGENT_OLLAMA_BASE_URL", "http://localhost:11434")).strip(),
         inference_engine_api_key=os.getenv("INFERENCE_ENGINE_API_KEY", "").strip(),
+        mcp_allowed_origins=[
+            o.strip() for o in os.getenv(
+                "MCP_ALLOWED_ORIGINS",
+                "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://inspector.modelcontextprotocol.io"
+            ).split(",") if o.strip()
+        ],
+        mcp_allowed_hosts=[
+            h.strip() for h in os.getenv(
+                "MCP_ALLOWED_HOSTS",
+                "localhost,127.0.0.1,localhost:8000,127.0.0.1:8000,localhost:3000,127.0.0.1:3000"
+            ).split(",") if h.strip()
+        ],
     )
 
 

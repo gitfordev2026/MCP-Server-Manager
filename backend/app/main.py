@@ -110,6 +110,9 @@ PUBLIC_PATHS = {
     "/ws",
     "/api/me",
     "/api/admin/users",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/openid-configuration",
 }
 
 
@@ -162,14 +165,25 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(lifespan=lifespan, dependencies=[Depends(global_auth_dependency)])
 
-# Add CORS middleware
+# Build explicit allowed origins for CORS (do NOT use wildcard with credentials).
+_cors_origins: list[str] = list(ENV.mcp_allowed_origins)
+# Add the frontend URL if configured.
+_frontend_url = ENV.keycloak_frontend_url.replace("/realms/", "").split("/realms")[0]  # avoid realm suffix
+if ENV.keycloak_frontend_url:
+    for _candidate in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+        if _candidate not in _cors_origins:
+            _cors_origins.append(_candidate)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (use specific domains in production)
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods including POST, GET, OPTIONS
-    allow_headers=["*"],  # Allow all headers
-    expose_headers=["Mcp-Session-Id", "mcp-session-id", "MCP-Session-Id"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=[
+        "Mcp-Session-Id", "mcp-session-id", "MCP-Session-Id",
+        "WWW-Authenticate", "Content-Type",
+    ],
 )
 
 from app.core.hmac_middleware import HMACVerificationMiddleware
@@ -202,6 +216,102 @@ else:
 )
 def get_mcp_runtime() -> dict[str, Any]:
     return MCP_RUNTIME_INFO
+
+
+# ── OAuth / OIDC Discovery Endpoints (MCP Spec Compliance) ──────────────────
+#
+# These endpoints MUST be served unauthenticated so MCP clients can discover
+# the authorization server metadata before obtaining tokens.
+
+
+@app.get(
+    "/.well-known/oauth-protected-resource",
+    tags=["OAuth Discovery"],
+    summary="OAuth Protected Resource Metadata (RFC 9728)",
+    include_in_schema=False,
+)
+def well_known_oauth_protected_resource(request: Request) -> dict[str, Any]:
+    """Return metadata about this MCP resource server per RFC 9728.
+
+    MCP clients use this to discover which authorization server to use.
+    """
+    # Derive resource identifier from the request URL.
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", "localhost:8000"))
+    resource_url = f"{scheme}://{host}"
+
+    authorization_server = KEYCLOAK_ISSUER  # e.g. http://host:8080/realms/IAF
+
+    return {
+        "resource": resource_url,
+        "authorization_servers": [authorization_server] if authorization_server else [],
+        "scopes_supported": ["openid", "profile", "email", "offline_access"],
+        "bearer_methods_supported": ["header", "body"],
+    }
+
+
+@app.get(
+    "/.well-known/oauth-authorization-server",
+    tags=["OAuth Discovery"],
+    summary="OAuth Authorization Server Metadata (RFC 8414)",
+    include_in_schema=False,
+)
+async def well_known_oauth_authorization_server() -> dict[str, Any]:
+    """Return OAuth2 authorization server metadata.
+
+    Proxies/mirrors Keycloak's OpenID configuration enriched with
+    fields required by the MCP OAuth 2.1 specification.
+    """
+    if not KEYCLOAK_ISSUER:
+        raise HTTPException(status_code=503, detail="Keycloak issuer not configured")
+
+    oidc_url = f"{KEYCLOAK_ISSUER}/.well-known/openid-configuration"
+    try:
+        async with httpx.AsyncClient(verify=ENV.keycloak_verify_ssl, timeout=10.0) as client:
+            resp = await client.get(oidc_url)
+            resp.raise_for_status()
+            kc_meta = resp.json()
+    except Exception as exc:
+        logger.warning("Failed to fetch Keycloak OIDC metadata from %s: %s", oidc_url, exc)
+        # Return a minimal static response so clients aren't completely blocked.
+        kc_meta = {}
+
+    return {
+        "issuer": kc_meta.get("issuer", KEYCLOAK_ISSUER),
+        "authorization_endpoint": kc_meta.get("authorization_endpoint", f"{KEYCLOAK_ISSUER}/protocol/openid-connect/auth"),
+        "token_endpoint": kc_meta.get("token_endpoint", f"{KEYCLOAK_ISSUER}/protocol/openid-connect/token"),
+        "registration_endpoint": kc_meta.get("registration_endpoint", ""),
+        "jwks_uri": kc_meta.get("jwks_uri", f"{KEYCLOAK_ISSUER}/protocol/openid-connect/certs"),
+        "scopes_supported": kc_meta.get("scopes_supported", ["openid", "profile", "email", "offline_access"]),
+        "response_types_supported": kc_meta.get("response_types_supported", ["code"]),
+        "grant_types_supported": kc_meta.get("grant_types_supported", ["authorization_code", "refresh_token", "client_credentials"]),
+        "token_endpoint_auth_methods_supported": kc_meta.get("token_endpoint_auth_methods_supported", ["client_secret_basic", "client_secret_post", "none"]),
+        "code_challenge_methods_supported": kc_meta.get("code_challenge_methods_supported", ["S256"]),
+        "revocation_endpoint": kc_meta.get("revocation_endpoint", f"{KEYCLOAK_ISSUER}/protocol/openid-connect/revoke"),
+        "introspection_endpoint": kc_meta.get("introspection_endpoint", f"{KEYCLOAK_ISSUER}/protocol/openid-connect/token/introspect"),
+    }
+
+
+@app.get(
+    "/.well-known/openid-configuration",
+    tags=["OAuth Discovery"],
+    summary="OpenID Connect Discovery",
+    include_in_schema=False,
+)
+async def well_known_openid_configuration() -> Any:
+    """Proxy Keycloak's OpenID Connect discovery document."""
+    if not KEYCLOAK_ISSUER:
+        raise HTTPException(status_code=503, detail="Keycloak issuer not configured")
+
+    oidc_url = f"{KEYCLOAK_ISSUER}/.well-known/openid-configuration"
+    try:
+        async with httpx.AsyncClient(verify=ENV.keycloak_verify_ssl, timeout=10.0) as client:
+            resp = await client.get(oidc_url)
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as exc:
+        logger.error("Failed to proxy Keycloak OIDC discovery from %s: %s", oidc_url, exc)
+        raise HTTPException(status_code=502, detail=f"Could not reach Keycloak: {exc}")
 
 
 def ensure_dynamic_schema_migrations() -> None:
@@ -2069,11 +2179,22 @@ def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
 
 
 combined_apps_mcp = _create_combined_apps_mcp()
-combined_mcp_asgi_app = build_fastmcp_asgi_app(combined_apps_mcp, path="/")
+combined_mcp_asgi_app = build_fastmcp_asgi_app(
+    combined_apps_mcp,
+    path="/",
+    allowed_hosts=ENV.mcp_allowed_hosts,
+    allowed_origins=ENV.mcp_allowed_origins,
+)
 
 
 class JWTAuthASGIMiddleware:
-    """ASGI middleware that validates JWT tokens for mounted sub-applications."""
+    """ASGI middleware that validates JWT tokens for mounted sub-applications.
+
+    Implements the MCP OAuth 2.1 authentication flow:
+    - Valid Bearer token → proceed
+    - Missing token → 401 with resource_metadata discovery URL
+    - Expired/invalid token → 401 with error="invalid_token" challenge
+    """
 
     def __init__(self, wrapped_app):
         self.app = wrapped_app
@@ -2109,11 +2230,26 @@ class JWTAuthASGIMiddleware:
                 return
 
             if AUTH_ENABLED and not is_internal_health:
+                # Build the resource_metadata URL for MCP OAuth discovery.
+                scheme = "https"  # default for production
+                host = "localhost:8000"
+                for k, v in scope.get("headers", []):
+                    if k == b"x-forwarded-proto":
+                        scheme = v.decode("latin-1")
+                    elif k == b"host":
+                        host = v.decode("latin-1")
+                    elif k == b"x-forwarded-host":
+                        host = v.decode("latin-1")
+                resource_metadata_url = f"{scheme}://{host}/.well-known/oauth-protected-resource"
+
                 if not token:
+                    # MCP spec: return 401 with resource_metadata discovery URL
                     response = JSONResponse(
                         status_code=401,
-                        content={"detail": "Missing authentication token"},
-                        headers={"WWW-Authenticate": 'Bearer realm="Keycloak"'},
+                        content={"detail": "Authentication required. See WWW-Authenticate header for OAuth discovery."},
+                        headers={
+                            "WWW-Authenticate": f'Bearer resource_metadata="{resource_metadata_url}"',
+                        },
                     )
                     await response(scope, receive, send)
                     return
@@ -2125,7 +2261,13 @@ class JWTAuthASGIMiddleware:
                     response = JSONResponse(
                         status_code=401,
                         content={"detail": f"Token validation failed: {exc}"},
-                        headers={"WWW-Authenticate": 'Bearer error="invalid_token" realm="Keycloak"'},
+                        headers={
+                            "WWW-Authenticate": (
+                                f'Bearer error="invalid_token", '
+                                f'error_description="{exc}", '
+                                f'resource_metadata="{resource_metadata_url}"'
+                            ),
+                        },
                     )
                     await response(scope, receive, send)
                     return
