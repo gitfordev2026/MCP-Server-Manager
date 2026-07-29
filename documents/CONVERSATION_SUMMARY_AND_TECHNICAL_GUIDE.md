@@ -19,7 +19,7 @@ This document captures the complete chronological record, technical findings, ar
 | **Eliminated UI Flashing (FOUC)** | ✅ Fixed | Created `UserContext` and updated `AuthGuard` to verify user identity & role BEFORE mounting protected pages. Prevents unauthorized content flashes even for milliseconds. |
 | **Role-Based Component Rendering** | ✅ Fixed | Removed hard `/access-denied` redirect for non-admins on `/admin`. Non-admin users (e.g. `developer`, `operator`, `read_only`) can access `/admin`, which dynamically displays only allowable components, tabs, and actions unique to their role. |
 | **Light Theme User Message Color** | ✅ Fixed | Added `isUser` prop to `MessageContent` component and updated user message bubbles in Playground and Chat pages to render headers, bold text, italics, lists, tables, and paragraphs in high-contrast white/light-blue in Light Theme. |
-| **Ollama Tool Name Resolution & Execution** | ✅ Fixed | Implemented `_resolve_tool_name` with fuzzy alphanumeric matching to map Ollama tool output (e.g., `mcpclientsecure_healthhealth_get`) to the canonical MCP tool (`mcp_client_secure__health_health_get`). Added `replace` stream event support to replace raw JSON tool strings with human-readable tool execution cards. |
+| **Ollama Tool Name Resolution & Execution** | ✅ Fixed | Resolved `MCPAgent` execution timeout (increased from 4.0s to 45.0s) and implemented `_resolve_tool_name` with direct in-process `combined_apps_mcp` tool execution, forwarding user auth tokens to execute downstream API tools reliably. |
 
 ---
 
