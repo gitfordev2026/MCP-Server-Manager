@@ -565,16 +565,59 @@ def _extract_text_from_tool_result(result: Dict[str, Any]) -> str:
     return ""
 
 
-def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
-    if not isinstance(text, str):
+def _resolve_tool_name(candidate_name: str, allowed_tools: List[str]) -> Optional[str]:
+    if not candidate_name:
+        return None
+    allowed_set = set(allowed_tools)
+    if candidate_name in allowed_set:
+        return candidate_name
+
+    import re
+    def _norm(s: str) -> str:
+        return re.sub(r'[^a-zA-Z0-9]', '', s).lower()
+
+    cand_norm = _norm(candidate_name)
+    if not cand_norm:
         return None
 
-    candidate = text.strip()
-    
-    # Extract json block if present
+    # 1. Exact normalized match (e.g. mcpclientsecurehealthhealthget -> mcp_client_secure__health_health_get)
+    for tool in allowed_tools:
+        if _norm(tool) == cand_norm:
+            return tool
+
+    # 2. Substring / suffix match
+    for tool in allowed_tools:
+        tool_norm = _norm(tool)
+        if tool_norm.endswith(cand_norm) or cand_norm.endswith(tool_norm):
+            return tool
+
+    return None
+
+
+def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
+    # Check if text is an object or dict with tool_calls attribute/key
+    if hasattr(text, "tool_calls") and getattr(text, "tool_calls"):
+        tcs = getattr(text, "tool_calls")
+        if isinstance(tcs, list) and len(tcs) > 0:
+            tc = tcs[0]
+            if isinstance(tc, dict):
+                return tc.get("name"), tc.get("args") or tc.get("parameters") or {}
+
+    if isinstance(text, dict):
+        if "tool_calls" in text and text["tool_calls"]:
+            tc = text["tool_calls"][0]
+            if isinstance(tc, dict):
+                return tc.get("name"), tc.get("args") or tc.get("parameters") or {}
+        if "name" in text:
+            return text.get("name"), text.get("parameters") or text.get("arguments") or text.get("args") or {}
+
+    candidate = str(text or "").strip()
+    if not candidate:
+        return None
+
     import re
     import json
-    
+
     # Try to find ```json ... ``` block
     match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', candidate, re.DOTALL)
     if match:
@@ -589,7 +632,7 @@ def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
         payload = json.loads(candidate)
         if isinstance(payload, dict) and "name" in payload:
             name = str(payload.get("name") or "").strip()
-            args = payload.get("parameters") or payload.get("arguments") or {}
+            args = payload.get("parameters") or payload.get("arguments") or payload.get("args") or {}
             if name and isinstance(args, dict):
                 return name, args
     except Exception:
@@ -700,15 +743,19 @@ async def _maybe_execute_raw_tool_call(
     if parsed is None:
         return None
 
-    tool_name, arguments = parsed
-    if tool_name not in set(allowed_tools):
+    candidate_name, arguments = parsed
+    canonical_tool = _resolve_tool_name(candidate_name, allowed_tools)
+    if not canonical_tool:
+        logger.warning(f"Could not resolve raw tool call candidate '{candidate_name}' among allowed tools: {allowed_tools}")
         return None
+
+    logger.info(f"Executing tool '{canonical_tool}' (resolved from '{candidate_name}') with args: {arguments}")
 
     try:
         tool_result = await call_server_tool(
             ENV.agent_mcp_server_name,
             ENV.agent_mcp_server_url,
-            tool_name,
+            canonical_tool,
             arguments,
             timeout_sec=30.0,
         )
@@ -716,12 +763,12 @@ async def _maybe_execute_raw_tool_call(
         logger.warning(f"call_server_tool failed ({exc}), attempting direct combined_apps_mcp call")
         try:
             from app.main import combined_apps_mcp
-            res = await combined_apps_mcp.call_tool(tool_name, arguments)
+            res = await combined_apps_mcp.call_tool(canonical_tool, arguments)
             tool_result = getattr(res, "structured_content", res)
         except Exception as inner_exc:
-            return f"Error executing tool '{tool_name}': {inner_exc}"
+            return f"Error executing tool '{canonical_tool}': {inner_exc}"
 
-    return _format_tool_result_human_readable(tool_name, arguments, tool_result)
+    return _format_tool_result_human_readable(canonical_tool, arguments, tool_result)
 
 
 def _append_tool_usage_note(response_text: Any, agent: Any) -> str:
@@ -995,17 +1042,18 @@ async def _stream_agent_query(
         result = await task
         final_text = str(result.get("response") or "")
         
-        if final_text.startswith(streamed_text):
+        is_tool_call_stream = _parse_raw_tool_call(streamed_text) is not None
+        
+        if is_tool_call_stream or ("### 📄" in final_text) or ("Tool Executed:" in final_text):
+            yield _jsonl_event("replace", content=final_text)
+        elif final_text.startswith(streamed_text):
             remainder = final_text[len(streamed_text):]
             if remainder:
                 async for chunk in _stream_text_chunks(remainder):
                     yield chunk
         else:
-            # If the final text was modified in a way that doesn't match the stream exactly
-            # We just append the missing parts or the whole thing if it's completely different
             if streamed_text not in final_text:
-                async for chunk in _stream_text_chunks("\n\n" + final_text):
-                    yield chunk
+                yield _jsonl_event("replace", content=final_text)
             else:
                 remainder = final_text.split(streamed_text)[-1]
                 if remainder:

@@ -308,6 +308,15 @@ export default function PlaygroundPage() {
                         )
                     );
                 },
+                onReplace: (content) => {
+                    setMessages((prev) =>
+                        prev.map((message) =>
+                            message.id === assistantMessageId
+                                ? { ...message, content }
+                                : message
+                        )
+                    );
+                },
             });
         } catch (error) {
             console.error('Error:', error);
@@ -413,6 +422,11 @@ export default function PlaygroundPage() {
                         )
                     );
                 },
+                onReplace: (content) => {
+                    setMessages((prev) =>
+                        prev.map((m) => (m.id === newAssistantId ? { ...m, content } : m))
+                    );
+                },
             });
         } catch (error) {
             setMessages((prev) =>
@@ -491,6 +505,11 @@ export default function PlaygroundPage() {
                                 ? { ...m, content: m.content === 'Thinking...' ? chunk : `${m.content}${chunk}` }
                                 : m
                         )
+                    );
+                },
+                onReplace: (content) => {
+                    setMessages((prev) =>
+                        prev.map((m) => (m.id === newAssistantId ? { ...m, content } : m))
                     );
                 },
             });

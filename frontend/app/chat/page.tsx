@@ -180,6 +180,15 @@ export default function ChatPage() {
             )
           );
         },
+        onReplace: (content) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, content }
+                : message
+            )
+          );
+        },
       });
     } catch (error) {
       console.error('Error:', error);
