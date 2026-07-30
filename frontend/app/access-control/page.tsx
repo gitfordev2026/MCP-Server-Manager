@@ -1,18 +1,23 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { notFound } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import ApplicationCard from '@/components/access-control/ApplicationCard';
 import AccessControlModal from '@/components/access-control/AccessControlModal';
 import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import { Input } from '@/components/ui/Input';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { usePolicies } from '@/hooks/useAccessPolicies';
 import { OwnerPolicy, OwnerType } from '@/types/accessPolicies';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
+import { Shield, ShieldAlert, RefreshCw, Search, Lock, Server, AppWindow } from 'lucide-react';
+import { toast } from 'sonner';
 
-const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
-const ACCESS_CONTROL_ENABLED = false;
+const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL;
+const ACCESS_CONTROL_ENABLED = true;
 
 export default function AccessPolicyPage() {
   const { data, isLoading, isError, refetch } = usePolicies();
@@ -22,6 +27,7 @@ export default function AccessPolicyPage() {
   const [ownerEndpointIds, setOwnerEndpointIds] = useState<Record<string, string[]>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadOwnerEndpointIds = useCallback(async (): Promise<void> => {
     if (!NEXT_PUBLIC_BE_API_URL) {
@@ -106,20 +112,25 @@ export default function AccessPolicyPage() {
     setIsRefreshing(true);
     try {
       await Promise.all([refetch(), loadOwnerEndpointIds()]);
+      toast.success('Access policies refreshed');
+    } catch {
+      toast.error('Failed to refresh policies');
     } finally {
       setIsRefreshing(false);
     }
   }, [loadOwnerEndpointIds, refetch]);
 
   const owners = useMemo(() => {
-    return Object.keys(policies).map((ownerId) => ({
-      id: ownerId,
-      type: (ownerId.startsWith('mcp:') ? 'mcp' : 'app') as OwnerType,
-      name: ownerId,
-      url: ownerId,
-      endpointCount: (ownerEndpointIds[ownerId]?.length ?? 0) || Object.keys(policies[ownerId]?.endpointPolicies || {}).length,
-    }));
-  }, [policies, ownerEndpointIds]);
+    return Object.keys(policies)
+      .filter((ownerId) => ownerId.toLowerCase().includes(searchQuery.toLowerCase()))
+      .map((ownerId) => ({
+        id: ownerId,
+        type: (ownerId.startsWith('mcp:') ? 'mcp' : 'app') as OwnerType,
+        name: ownerId,
+        url: ownerId,
+        endpointCount: (ownerEndpointIds[ownerId]?.length ?? 0) || Object.keys(policies[ownerId]?.endpointPolicies || {}).length,
+      }));
+  }, [policies, ownerEndpointIds, searchQuery]);
 
   const selectedPolicy: OwnerPolicy | null = detailsModalOwnerId
     ? policies[detailsModalOwnerId]
@@ -128,79 +139,127 @@ export default function AccessPolicyPage() {
     ? (ownerEndpointIds[detailsModalOwnerId] ?? [])
     : [];
 
-  if (!ACCESS_CONTROL_ENABLED) {
-    notFound();
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 overflow-hidden">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-80 h-80 bg-violet-400/8 rounded-full blur-3xl animate-float"></div>
-        <div
-          className="absolute bottom-20 right-10 w-80 h-80 bg-cyan-400/8 rounded-full blur-3xl animate-float"
-          style={{ animationDelay: '1s' }}
-        ></div>
-      </div>
-
-      <Navigation pageTitle="Access Control" />
-
-      <main className="pt-24 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
-        <div className="flex items-start justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-600 to-cyan-600 bg-clip-text text-transparent">
-              Access Control
-            </h1>
-            <p className="text-slate-600 text-sm mt-1">
-              Manage default and per-tool access policies for your MCP servers and API applications.
-            </p>
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* ── Page Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[var(--border-default)]">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Access Control Policies</h1>
+            <Badge variant="purple">RBAC Enforcer</Badge>
           </div>
-          <Button
-            onClick={() => void handleRefresh()}
-            disabled={isRefreshing}
-            size="md"
-            variant="primary"
-            className="min-w-[120px]"
-          >
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
+            Manage global default policies and fine-grained tool authorization overrides across all registered MCP servers and APIs.
+          </p>
         </div>
 
-        {(isError || discoveryError) && (
-          <div className="mb-6 bg-amber-100 border border-amber-300 rounded-xl p-4 text-amber-700">
-            {isError && <p className="font-semibold">Failed to load access policies.</p>}
-            {discoveryError && <p className="text-sm">{discoveryError}</p>}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => void handleRefresh()}
+            loading={isRefreshing}
+            size="sm"
+            variant="outline"
+            leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
+          >
+            Refresh
+          </Button>
+        </div>
+      </div>
 
-        {isLoading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-4 border-violet-400 border-t-transparent rounded-full animate-spin"></div>
-            <span className="ml-3 text-slate-600 font-medium">Loading access policies...</span>
+      {/* ── Metric Summary ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-500">
+            <Shield className="w-5 h-5" />
           </div>
-        )}
-
-        {!isLoading && owners.length === 0 && (
-          <div className="bg-white/85 backdrop-blur-sm border border-slate-200 rounded-2xl p-8 text-center text-slate-600 shadow-lg">
-            <h3 className="text-lg font-medium mb-2">No Applications Found</h3>
-            <p>Connect an MCP server or register an application to see it here.</p>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Protected Entities</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">{Object.keys(policies).length}</div>
           </div>
-        )}
+        </Card>
 
-        {!isLoading && owners.length > 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white/85 backdrop-blur-sm shadow-lg p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {owners.map((owner) => (
-                <ApplicationCard
-                  key={owner.id}
-                  owner={owner}
-                  onClick={() => setDetailsModalOwnerId(owner.id)}
-                />
-              ))}
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500">
+            <Server className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">MCP Server Overrides</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">
+              {Object.keys(policies).filter(k => k.startsWith('mcp:')).length}
             </div>
           </div>
-        )}
-      </main>
+        </Card>
 
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500">
+            <AppWindow className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">App Policy Overrides</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">
+              {Object.keys(policies).filter(k => k.startsWith('app:')).length}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Search Bar ── */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter policies by owner ID or server name..."
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      {/* ── Alerts ── */}
+      {(isError || discoveryError) && (
+        <Card className="p-4 border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300 space-y-1">
+          <div className="flex items-center gap-2 font-bold text-xs">
+            <ShieldAlert className="w-4 h-4" />
+            <span>Policy Synchronization Notice</span>
+          </div>
+          {isError && <p className="text-xs">Failed to load current access policies from backend.</p>}
+          {discoveryError && <p className="text-xs">{discoveryError}</p>}
+        </Card>
+      )}
+
+      {/* ── Content Grid ── */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Card key={i} className="p-6 space-y-3">
+              <Skeleton width="60%" height="20px" />
+              <Skeleton width="40%" height="16px" />
+              <Skeleton width="100%" height="40px" />
+            </Card>
+          ))}
+        </div>
+      ) : owners.length === 0 ? (
+        <Card className="p-12 text-center space-y-3">
+          <Lock className="w-12 h-12 mx-auto text-[var(--text-muted)]" />
+          <h3 className="text-base font-bold text-[var(--text-primary)]">No Access Policies Configured</h3>
+          <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto">
+            {searchQuery ? 'No policies match your search filter.' : 'Register an MCP server or API application to configure RBAC access rules.'}
+          </p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {owners.map((owner) => (
+            <ApplicationCard
+              key={owner.id}
+              owner={owner}
+              onClick={() => setDetailsModalOwnerId(owner.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Edit Modal ── */}
       {selectedPolicy && detailsModalOwnerId && (
         <AccessControlModal
           isOpen={!!detailsModalOwnerId}
