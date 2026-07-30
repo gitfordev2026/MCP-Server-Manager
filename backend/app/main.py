@@ -1719,12 +1719,6 @@ async def invoke_openapi_tool(
 
     if user_token and user_token.strip():
         request_headers["Authorization"] = f"Bearer {user_token.strip()}"
-    else:
-        from app.services.keycloak_auth import get_keycloak_token
-        with SessionLocal() as db:
-            token = await get_keycloak_token(tool.domain_type, db)
-            if token:
-                request_headers["Authorization"] = f"Bearer {token}"
 
     request_kwargs: dict[str, Any] = {
         "params": params,
