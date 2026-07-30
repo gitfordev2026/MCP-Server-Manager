@@ -458,6 +458,11 @@ def auth_config():
         "auth_required": REQUIRE_AUTH,
     }
 
+@app.get("/auth/client-token", tags=["Auth"])
+@app.get("/auth/token", tags=["Auth"])
+@app.get("/token", tags=["Auth"])
+@app.post("/auth/token", tags=["Auth"])
+@app.post("/token", tags=["Auth"])
 @app.post("/auth/client-token", tags=["Auth"])
 async def get_client_token(req: ClientCredentialsRequest | None = None):
     """Act as a Confidential Client: Fetch M2M Access Token from Keycloak using client_credentials grant."""

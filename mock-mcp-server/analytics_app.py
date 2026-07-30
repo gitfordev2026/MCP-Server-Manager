@@ -23,10 +23,10 @@ load_dotenv()
 
 logger = logging.getLogger("analytics_app")
 
-KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://host.docker.internal:8080").rstrip("/")
-KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "mcp-realm")
-KEYCLOAK_CLIENT_ID = os.getenv("ANALYTICS_KEYCLOAK_CLIENT_ID", os.getenv("KEYCLOAK_CLIENT_ID", "ops-client"))
-KEYCLOAK_CLIENT_SECRET = os.getenv("ANALYTICS_KEYCLOAK_CLIENT_SECRET", os.getenv("KEYCLOAK_CLIENT_SECRET", ""))
+KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://10.139.10.176:8080").rstrip("/")
+KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "IAF")
+KEYCLOAK_CLIENT_ID = os.getenv("ANALYTICS_KEYCLOAK_CLIENT_ID", os.getenv("KEYCLOAK_CLIENT_ID", "mcp-client-secure"))
+KEYCLOAK_CLIENT_SECRET = os.getenv("ANALYTICS_KEYCLOAK_CLIENT_SECRET", os.getenv("KEYCLOAK_CLIENT_SECRET", "oORQ1ynZJoiCRduW6aMVqpYq4BFgkPP27f7LMqHbwRUCxviUGzuHGQG9xulwqLXHeRfJASDx1wV3KEsoaT8xyB"))
 REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("true", "1", "yes")
 
 security_scheme = HTTPBearer(auto_error=False)
@@ -162,6 +162,13 @@ async def login_user(req: UserLoginRequest):
         detail=f"Could not connect to Keycloak token endpoint for {cid}: {last_err}"
     )
 
+@app.get("/auth/m2m-token", tags=["Auth"])
+@app.get("/auth/client-token", tags=["Auth"])
+@app.get("/auth/token", tags=["Auth"])
+@app.get("/token", tags=["Auth"])
+@app.post("/auth/token", tags=["Auth"])
+@app.post("/token", tags=["Auth"])
+@app.post("/auth/client-token", tags=["Auth"])
 @app.post("/auth/m2m-token", tags=["Auth"])
 async def get_m2m_token():
     """Generate a Machine-to-Machine token using .env client_id & client_secret."""
