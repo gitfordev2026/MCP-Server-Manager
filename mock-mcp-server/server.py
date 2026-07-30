@@ -127,6 +127,7 @@ async def verify_keycloak_token(
     user_data = None
     last_err = None
 
+    import jwt
     async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
         for url in candidates:
             try:
@@ -134,24 +135,26 @@ async def verify_keycloak_token(
                 if res.is_success:
                     user_data = res.json()
                     break
-                elif res.status_code in (401, 403):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired Keycloak access token",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-            except HTTPException:
-                raise
             except Exception as exc:
                 last_err = str(exc)
                 continue
 
     if user_data is not None:
+        user_data["configured_client_id"] = KEYCLOAK_CLIENT_ID
         return user_data
+
+    # Fallback for M2M (client_credentials) tokens where Keycloak /userinfo returns 401
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+        if payload.get("iss") and f"/realms/{KEYCLOAK_REALM}" in payload["iss"]:
+            payload["configured_client_id"] = KEYCLOAK_CLIENT_ID
+            return payload
+    except Exception as exc:
+        last_err = str(exc)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=f"Keycloak verification failed. Could not reach Keycloak userinfo endpoint: {last_err}",
+        detail=f"Keycloak verification failed for {KEYCLOAK_CLIENT_ID}: {last_err}",
         headers={"WWW-Authenticate": "Bearer"},
     )
 

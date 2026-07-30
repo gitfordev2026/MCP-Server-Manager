@@ -32,7 +32,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.env import ENV
-from app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD
+from app.core.auth import AUTH_ENABLED, KEYCLOAK_ISSUER, KEYCLOAK_VERIFY_AUD, ACTIVE_USER_TOKEN
 from app.core.jwt_validator import TokenValidationError, validate_token
 from app.core.rbac import build_require_permission, get_request_actor
 from app.core.mcp_runtime import (
@@ -1796,8 +1796,9 @@ async def invoke_openapi_tool(
     request_cookies = {str(k): str(v) for k, v in cookie_args.items()}
     params = {str(k): v for k, v in query_args.items()}
 
-    if user_token and user_token.strip():
-        request_headers["Authorization"] = f"Bearer {user_token.strip()}"
+    effective_user_token = (user_token and user_token.strip()) or ACTIVE_USER_TOKEN.get(None)
+    if effective_user_token:
+        request_headers["Authorization"] = f"Bearer {effective_user_token.strip()}"
     else:
         from app.services.keycloak_auth import get_keycloak_token
         with SessionLocal() as db:

@@ -14,4 +14,7 @@ if KEYCLOAK_SERVER_URL and KEYCLOAK_REALM:
 else:
     KEYCLOAK_ISSUER = ""
     KEYCLOAK_JWKS_URL = ""
+from contextvars import ContextVar
+from typing import Optional
 
+ACTIVE_USER_TOKEN: ContextVar[Optional[str]] = ContextVar("ACTIVE_USER_TOKEN", default=None)

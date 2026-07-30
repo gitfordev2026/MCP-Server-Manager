@@ -4,7 +4,7 @@ from typing import Any, Callable
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 
-from app.core.auth import AUTH_ENABLED
+from app.core.auth import AUTH_ENABLED, ACTIVE_USER_TOKEN
 from app.core.jwt_validator import TokenValidationError, validate_token
 from app.env import ENV
 from app.core.logger import get_logger
@@ -188,12 +188,16 @@ def get_request_actor(request: Request) -> dict[str, Any]:
             detail="No application role assigned. Contact Support and Application Owner to request access.",
         )
 
+    if token:
+        ACTIVE_USER_TOKEN.set(token)
+
     actor = {
         "username": username,
         "roles": [primary_role],
         "primary_role": primary_role,
         "subject": sub,
         "sub": sub,
+        "token": token,
     }
     request.state._validated_actor = actor
     return actor
