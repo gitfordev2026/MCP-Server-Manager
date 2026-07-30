@@ -618,16 +618,7 @@ def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
     import re
     import json
 
-    # Try to find ```json ... ``` block
-    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', candidate, re.DOTALL)
-    if match:
-        candidate = match.group(1).strip()
-    else:
-        # Fallback: try to find any { "name": ... } block
-        match = re.search(r'(\{.*?"name"\s*:.*?\})', candidate, re.DOTALL)
-        if match:
-            candidate = match.group(1).strip()
-
+    # 1. Try direct JSON parse
     try:
         payload = json.loads(candidate)
         if isinstance(payload, dict) and "name" in payload:
@@ -637,6 +628,34 @@ def _parse_raw_tool_call(text: Any) -> Optional[Tuple[str, Dict[str, Any]]]:
                 return name, args
     except Exception:
         pass
+
+    # 2. Try code fence ```json ... ``` block
+    match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', candidate)
+    if match:
+        try:
+            payload = json.loads(match.group(1).strip())
+            if isinstance(payload, dict) and "name" in payload:
+                name = str(payload.get("name") or "").strip()
+                args = payload.get("parameters") or payload.get("arguments") or payload.get("args") or {}
+                if name and isinstance(args, dict):
+                    return name, args
+        except Exception:
+            pass
+
+    # 3. Try parsing substring between outer braces { ... }
+    first_brace = candidate.find('{')
+    last_brace = candidate.rfind('}')
+    if first_brace != -1 and last_brace > first_brace:
+        json_substr = candidate[first_brace:last_brace + 1]
+        try:
+            payload = json.loads(json_substr)
+            if isinstance(payload, dict) and "name" in payload:
+                name = str(payload.get("name") or "").strip()
+                args = payload.get("parameters") or payload.get("arguments") or payload.get("args") or {}
+                if name and isinstance(args, dict):
+                    return name, args
+        except Exception:
+            pass
 
     return None
 
