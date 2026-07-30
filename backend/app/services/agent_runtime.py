@@ -46,22 +46,52 @@ def _normalize_mcp_url(url: str) -> str:
     return val
 
 
+import time
+from app.core.auth import ACTIVE_USER_TOKEN
+
+_CLIENT_CACHE: dict[str, tuple[MCPClient, float]] = {}
+CACHE_TTL = 900.0  # 15 minutes TTL for client sessions
+
+
+def get_or_create_mcp_client(user_token: str | None = None) -> MCPClient:
+    token_key = (user_token or "").strip() or "anonymous"
+    now = time.time()
+
+    if token_key in _CLIENT_CACHE:
+        client, created_at = _CLIENT_CACHE[token_key]
+        if now - created_at < CACHE_TTL:
+            return client
+
+    server_entry: dict[str, Any] = {
+        "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
+    }
+
+    if user_token and user_token.strip():
+        server_entry["headers"] = {
+            "Authorization": f"Bearer {user_token.strip()}"
+        }
+
+    config = {
+        "mcpServers": {
+            ENV.agent_mcp_server_name: server_entry
+        }
+    }
+
+    client = MCPClient(config)
+    _CLIENT_CACHE[token_key] = (client, now)
+    return client
+
+
 def build_default_agent(
     disallowed_tools: list[str] | None = None,
     additional_instructions: str | None = None,
     max_steps: int | None = None,
     retry_on_error: bool | None = None,
     memory_enabled: bool | None = None,
+    user_token: str | None = None,
 ) -> MCPAgent:
-    config = {
-        "mcpServers": {
-            ENV.agent_mcp_server_name: {
-                "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
-            }
-        }
-    }
-
-    client = MCPClient(config)
+    effective_token = user_token or ACTIVE_USER_TOKEN.get(None)
+    client = get_or_create_mcp_client(effective_token)
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
 
     llm = ChatOllama(
@@ -91,16 +121,10 @@ def build_agent_with_model(
     retry_on_error: bool | None = None,
     memory_enabled: bool | None = None,
     extra_callbacks: list[Any] | None = None,
+    user_token: str | None = None,
 ) -> MCPAgent:
-    config = {
-        "mcpServers": {
-            ENV.agent_mcp_server_name: {
-                "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
-            }
-        }
-    }
-
-    client = MCPClient(config)
+    effective_token = user_token or ACTIVE_USER_TOKEN.get(None)
+    client = get_or_create_mcp_client(effective_token)
     callbacks = [LLMDebugCallback()] if ENV.agent_debug_callbacks else []
     if extra_callbacks:
         callbacks.extend(extra_callbacks)

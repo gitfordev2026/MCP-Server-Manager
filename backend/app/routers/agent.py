@@ -885,6 +885,7 @@ async def _run_agent_query(
         max_steps=8,
         retry_on_error=False,
         memory_enabled=False,
+        user_token=user_token,
     )
 
     if hasattr(agent, "tools_used_names"):
@@ -989,6 +990,7 @@ async def _run_playground_query(
         max_steps=8,
         retry_on_error=False,
         memory_enabled=False,
+        user_token=user_token,
     )
 
     try:
@@ -1051,8 +1053,12 @@ async def _stream_agent_query(
             async def on_llm_error(self, error, **kwargs):
                 await queue.put(None)
 
+        user_token = actor.get("token") if actor else None
+
         def custom_builder(*args, **kwargs):
             kwargs["extra_callbacks"] = [StreamCallback()]
+            if user_token and "user_token" not in kwargs:
+                kwargs["user_token"] = user_token
             return build_agent_with_model(*args, **kwargs)
 
         task = asyncio.create_task(runner(request, custom_builder, actor))
