@@ -45,6 +45,28 @@ def create_servers_router(
         cleaned = [str(item).strip() for item in value if str(item).strip()]
         return list(dict.fromkeys(cleaned))
 
+    def _sync_server_tools_selection(db: Any, server_name: str, selected_tools: list[str]) -> None:
+        owner_id = f"mcp:{server_name}"
+        selected_set = {str(t).strip() for t in selected_tools if str(t).strip()}
+
+        tools = db.scalars(
+            select(mcp_tool_model).where(mcp_tool_model.owner_id == owner_id)
+        ).all()
+
+        for tool in tools:
+            if tool.name in selected_set:
+                tool.owner_enabled = True
+                tool.is_enabled = bool(getattr(tool, "admin_enabled", True) and tool.owner_enabled)
+                tool.is_deleted = False
+                tool.registration_state = "selected"
+                tool.exposure_state = "active"
+            else:
+                tool.owner_enabled = False
+                tool.is_enabled = False
+                tool.is_deleted = True
+                tool.registration_state = "unselected"
+                tool.exposure_state = "disabled"
+
     class ServerUpdate(BaseModel):
         model_config = ConfigDict(extra="forbid")
 
@@ -207,11 +229,7 @@ def create_servers_router(
                     existing.is_enabled = True
                     existing.is_deleted = False
                     db.flush()
-                    ensure_default_access_policy_for_owner_fn(
-                        db,
-                        owner_id=f"mcp:{existing.name}",
-                        server_id=existing.id,
-                    )
+                    _sync_server_tools_selection(db, existing.name, existing.selected_tools)
                 else:
                     user_sub = actor.get("sub") or actor.get("subject") or actor.get("username")
                     user_email = actor.get("email") or f"{actor.get('username')}@example.com"
@@ -233,6 +251,7 @@ def create_servers_router(
                         owner_id=f"mcp:{server.name}",
                         server_id=server.id,
                     )
+                    _sync_server_tools_selection(db, server.name, server.selected_tools)
                 write_audit_log_fn(
                     db,
                     audit_log_model,
@@ -305,12 +324,12 @@ def create_servers_router(
                         mcp_tool_model.owner_id == f"mcp:{server_name}",
                         mcp_tool_model.is_deleted == False,  # noqa: E712
                         mcp_tool_model.admin_enabled == True,  # noqa: E712
-                        mcp_tool_model.owner_enabled == True,  # noqa: E712
                     )
                 ).all()
+                selected_tools_set = set(server.selected_tools) if (server and server.selected_tools is not None) else None
             tools_list = []
             for row in rows:
-                if selected_tools and row.name not in selected_tools:
+                if selected_tools_set is not None and row.name not in selected_tools_set:
                     continue
                 mode = policy_map.get(row.name, default_mode)
                 tools_list.append(

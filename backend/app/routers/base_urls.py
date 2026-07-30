@@ -102,11 +102,30 @@ def create_base_urls_router(
         db.execute(delete(api_server_link_model).where(api_server_link_model.raw_api_id == base_url_id))
         return {"tools": len(tool_ids), "endpoints": len(endpoint_ids)}
 
+    def _is_tool_matching_selected(method: str, path: str, tool_name: str, selected_set: set[str]) -> bool:
+        if not selected_set:
+            return False
+        m_upper = (method or "").upper().strip()
+        p_norm = (path or "").rstrip('/') or '/'
+        exact_key = f"{m_upper} {p_norm}"
+        raw_key = f"{m_upper} {path}"
+
+        for item in selected_set:
+            item_str = str(item).strip()
+            if not item_str:
+                continue
+            if item_str == exact_key or item_str == raw_key or item_str == tool_name:
+                return True
+            parts = item_str.split(' ', 1)
+            if len(parts) == 2:
+                i_method, i_path = parts[0].upper().strip(), parts[1].rstrip('/') or '/'
+                if i_method == m_upper and i_path == p_norm:
+                    return True
+        return False
+
     def _sync_app_tools_selection(db: Any, app_name: str, selected_endpoints: list[str]) -> None:
         owner_id = f"app:{app_name}"
         selected_set = {str(item).strip() for item in selected_endpoints if str(item).strip()}
-        all_enabled_by_default = (len(selected_set) == 0)
-        selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_set}
 
         tools = db.scalars(
             select(mcp_tool_model).where(mcp_tool_model.owner_id == owner_id)
@@ -115,15 +134,8 @@ def create_base_urls_router(
         for tool in tools:
             method = (getattr(tool, "method", "") or "").upper()
             path = getattr(tool, "path", "") or ""
-            endpoint_key = f"{method} {path}".strip()
-            norm_path = path.rstrip('/') or '/'
 
-            is_selected = all_enabled_by_default or (
-                endpoint_key in selected_set
-                or tool.name in selected_set
-                or path in selected_set
-                or norm_path in selected_paths
-            )
+            is_selected = _is_tool_matching_selected(method, path, tool.name, selected_set)
 
             if is_selected:
                 tool.owner_enabled = True
@@ -564,6 +576,94 @@ def create_base_urls_router(
             }
         except HTTPException:
             raise
+
+    class TestEndpointRequest(BaseModel):
+        url: str
+        method: str = "GET"
+        path: str = ""
+        domain_type: str = "ADM"
+        headers: dict[str, str] | None = None
+        params: dict[str, Any] | None = None
+        json_body: dict[str, Any] | None = None
+
+    @router.post(
+        "/test-endpoint",
+        summary="Test API Endpoint",
+        description="Execute a live test call against an API endpoint with current user token.",
+    )
+    async def test_endpoint(
+        req: TestEndpointRequest,
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
+        import time, httpx
+        from app.core.auth import ACTIVE_USER_TOKEN
+
+        target_url = req.url.strip()
+        if req.path:
+            p = req.path.strip()
+            if not target_url.endswith('/') and not p.startswith('/'):
+                target_url = f"{target_url}/{p}"
+            elif target_url.endswith('/') and p.startswith('/'):
+                target_url = f"{target_url}{p[1:]}"
+            else:
+                target_url = f"{target_url}{p}"
+
+        user_token = actor.get("token") or ACTIVE_USER_TOKEN.get(None)
+
+        req_headers = {"Accept": "application/json"}
+        if req.headers:
+            req_headers.update(req.headers)
+
+        if user_token and user_token.strip():
+            req_headers["Authorization"] = f"Bearer {user_token.strip()}"
+        else:
+            from app.services.keycloak_auth import get_keycloak_token
+            with session_local_factory() as db:
+                tok = await get_keycloak_token(req.domain_type or "ADM", db)
+                if tok:
+                    req_headers["Authorization"] = f"Bearer {tok}"
+
+        method = (req.method or "GET").upper()
+        start_t = time.time()
+        try:
+            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+                res = await client.request(
+                    method=method,
+                    url=target_url,
+                    headers=req_headers,
+                    params=req.params,
+                    json=req.json_body,
+                )
+                latency = round((time.time() - start_t) * 1000, 2)
+                try:
+                    res_body = res.json()
+                except Exception:
+                    res_body = res.text
+
+                return {
+                    "ok": res.is_success,
+                    "status_code": res.status_code,
+                    "status_text": f"{res.status_code} {res.reason_phrase}",
+                    "latency_ms": latency,
+                    "target_url": target_url,
+                    "method": method,
+                    "auth_token_attached": bool(user_token or req_headers.get("Authorization")),
+                    "content_type": res.headers.get("content-type", "unknown"),
+                    "body": res_body,
+                }
+        except Exception as exc:
+            latency = round((time.time() - start_t) * 1000, 2)
+            return {
+                "ok": False,
+                "status_code": 500,
+                "status_text": f"Error: {exc}",
+                "latency_ms": latency,
+                "target_url": target_url,
+                "method": method,
+                "auth_token_attached": bool(user_token or req_headers.get("Authorization")),
+                "content_type": "text/plain",
+                "body": {"detail": f"Failed to connect to endpoint: {exc}"},
+            }
         except Exception as exc:
             with session_local_factory() as db:
                 row = db.scalar(select(base_url_model).where(base_url_model.name == name))

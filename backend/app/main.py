@@ -1641,15 +1641,20 @@ async def build_openapi_tool_catalog(
             for tool in generated_tools:
                 selected_endpoints = [str(item).strip() for item in (base_url.get("selected_endpoints") or []) if str(item).strip()]
                 if selected_endpoints:
-                    endpoint_key = f"{tool.method.upper()} {tool.path}"
-                    norm_path = tool.path.rstrip('/') or '/'
-                    selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_endpoints}
-                    is_match = (
-                        endpoint_key in selected_endpoints
-                        or tool.name in selected_endpoints
-                        or tool.path in selected_endpoints
-                        or norm_path in selected_paths
-                    )
+                    m_upper = tool.method.upper().strip()
+                    p_norm = tool.path.rstrip('/') or '/'
+                    exact_key = f"{m_upper} {p_norm}"
+                    raw_key = f"{m_upper} {tool.path}"
+                    is_match = False
+                    for item in selected_endpoints:
+                        item_str = str(item).strip()
+                        if item_str in (exact_key, raw_key, tool.name):
+                            is_match = True
+                            break
+                        parts = item_str.split(' ', 1)
+                        if len(parts) == 2 and parts[0].upper().strip() == m_upper and (parts[1].rstrip('/') or '/') == p_norm:
+                            is_match = True
+                            break
                     if not is_match:
                         continue
                 if tool.name in tools:

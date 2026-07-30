@@ -147,6 +147,59 @@ export default function RegisterAppPage() {
     count?: number;
   } | null>(null);
 
+  const [testingEndpointId, setTestingEndpointId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{
+    endpointId: string;
+    ok: boolean;
+    status_code: number;
+    status_text: string;
+    latency_ms: number;
+    target_url: string;
+    auth_token_attached: boolean;
+    body: any;
+  } | null>(null);
+
+  const runEndpointTest = async (endpoint: DiscoveredEndpoint) => {
+    setTestingEndpointId(endpoint.id);
+    setTestResult(null);
+    try {
+      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/test-endpoint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: formData.url.trim(),
+          method: endpoint.method,
+          path: endpoint.path,
+          domain_type: formData.domain_type,
+        }),
+      });
+      const data = await response.json();
+      setTestResult({
+        endpointId: endpoint.id,
+        ok: data.ok ?? response.ok,
+        status_code: data.status_code || response.status,
+        status_text: data.status_text || `${response.status}`,
+        latency_ms: data.latency_ms || 0,
+        target_url: data.target_url || `${formData.url}${endpoint.path}`,
+        auth_token_attached: Boolean(data.auth_token_attached),
+        body: data.body ?? data,
+      });
+    } catch (err: any) {
+      setTestResult({
+        endpointId: endpoint.id,
+        ok: false,
+        status_code: 500,
+        status_text: 'Error',
+        latency_ms: 0,
+        target_url: `${formData.url}${endpoint.path}`,
+        auth_token_attached: false,
+        body: { detail: err?.message || 'Failed to connect to endpoint' },
+      });
+    } finally {
+      setTestingEndpointId(null);
+    }
+  };
+
   const CRITICAL_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
 
   const isCriticalEndpoint = (endpointId: string): { method: string; path: string } | null => {
@@ -995,12 +1048,44 @@ export default function RegisterAppPage() {
                 {!activeEndpoint && <p className="text-sm text-slate-600 dark:text-slate-400">Select an endpoint to view its configuration.</p>}
                 {activeEndpoint && (
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-slate-200 dark:border-slate-800">
-                      <span className={`px-2.5 py-1 text-xs font-bold rounded-md border uppercase ${getMethodBadgeClass(activeEndpoint.method)}`}>
-                        {activeEndpoint.method}
-                      </span>
-                      <h4 className="text-base font-mono font-bold text-slate-900 dark:text-white">{activeEndpoint.path}</h4>
+                    <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-800 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2.5 py-1 text-xs font-bold rounded-md border uppercase ${getMethodBadgeClass(activeEndpoint.method)}`}>
+                          {activeEndpoint.method}
+                        </span>
+                        <h4 className="text-base font-mono font-bold text-slate-900 dark:text-white">{activeEndpoint.path}</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void runEndpointTest(activeEndpoint)}
+                        disabled={testingEndpointId === activeEndpoint.id}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                      >
+                        {testingEndpointId === activeEndpoint.id ? '⏳ Testing Request...' : '🧪 Run Test Call'}
+                      </button>
                     </div>
+
+                    {testResult && testResult.endpointId === activeEndpoint.id && (
+                      <div className={`p-4 rounded-xl border ${testResult.ok ? 'border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-200' : 'border-rose-300 bg-rose-50/50 dark:bg-rose-950/20 text-rose-900 dark:text-rose-200'}`}>
+                        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 text-xs font-bold rounded-md ${testResult.ok ? 'bg-emerald-200 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' : 'bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-100'}`}>
+                              {testResult.status_text}
+                            </span>
+                            <span className="text-xs font-mono font-semibold">{testResult.latency_ms} ms</span>
+                          </div>
+                          {testResult.auth_token_attached && (
+                            <span className="px-2 py-0.5 text-[10px] font-semibold rounded bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300 dark:border-blue-700">
+                              🔒 Bearer Token Attached
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-mono break-all opacity-80 mb-2">{testResult.target_url}</p>
+                        <pre className="text-xs bg-slate-950 text-slate-100 border border-slate-800 rounded-xl p-3 max-h-48 overflow-auto font-mono">
+                          {formatJson(testResult.body)}
+                        </pre>
+                      </div>
+                    )}
                     <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">{activeEndpoint.summary || activeEndpoint.description || 'No description'}</p>
 
                     <div>
