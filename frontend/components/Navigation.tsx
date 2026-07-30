@@ -90,6 +90,12 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
       activeClass: 'bg-amber-600 text-white hover:bg-amber-700 hover:text-white shadow-md shadow-amber-500/25 font-bold',
     },
     {
+      href: '/inspector',
+      label: 'MCP Inspector',
+      isActive: pathname === '/inspector',
+      activeClass: 'bg-cyan-600 text-white hover:bg-cyan-700 hover:text-white shadow-md shadow-cyan-500/25 font-bold',
+    },
+    {
       href: '/chat',
       label: 'Chat',
       featureKey: 'chat',
@@ -122,6 +128,8 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
         return 'Chat';
       case '/playground':
         return 'Playground';
+      case '/inspector':
+        return 'MCP Inspector';
       case '/admin':
         return 'Admin Panel';
       case '/api-explorer':

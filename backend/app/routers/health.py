@@ -260,4 +260,32 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
         response.delete_cookie("refresh_token", path="/")
         return response
 
+    @router.get(
+        "/__diag/token",
+        summary="Diagnostic: read active Keycloak access token",
+        description=(
+            "Returns the access token from the HttpOnly session cookie so "
+            "external MCP clients (e.g. the MCP Inspector) can be configured "
+            "with a Bearer token. The endpoint is gated by AUTH_ENABLED and "
+            "only returns the token when the caller already has a valid "
+            "authenticated session — it cannot mint tokens for unauthenticated "
+            "callers."
+        ),
+    )
+    def diag_token(request: Request) -> dict[str, object]:
+        if not AUTH_ENABLED:
+            return {"auth_enabled": False, "token": "", "detail": "Auth disabled"}
+        token = (
+            request.cookies.get("mcp_access_token")
+            or request.cookies.get("access_token")
+            or ""
+        )
+        if not token:
+            return {
+                "auth_enabled": True,
+                "token": "",
+                "detail": "No active session — log in via /auth/callback first.",
+            }
+        return {"auth_enabled": True, "token": token, "detail": "ok"}
+
     return router

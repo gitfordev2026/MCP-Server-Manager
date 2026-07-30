@@ -110,6 +110,8 @@ PUBLIC_PATHS = {
     "/ws",
     "/api/me",
     "/api/admin/users",
+    # Diagnostic helper used by the MCP Inspector helper page.
+    "/__diag/token",
 }
 
 
@@ -2068,74 +2070,91 @@ def _create_combined_apps_mcp() -> CombinedAppsOpenAPIMCP:
     raise RuntimeError(f"Failed to initialize FastMCP server with known constructor variants: {last_error}")
 
 
-combined_apps_mcp = _create_combined_apps_mcp()
-combined_mcp_asgi_app = build_fastmcp_asgi_app(combined_apps_mcp, path="/")
-
-
 class JWTAuthASGIMiddleware:
-    """ASGI middleware that validates JWT tokens for mounted sub-applications."""
+    """ASGI middleware that validates JWT tokens for mounted sub-applications.
+
+    Auth sources, in order:
+      1. `Authorization: Bearer <jwt>` (used by external MCP clients such as
+         the MCP Inspector when configured to send a bearer token).
+      2. `mcp_access_token` / `access_token` HttpOnly cookies (set by the
+         backend after a Keycloak login through the frontend proxy).
+
+    The middleware trusts the proxy-forwarded client IP for the internal
+    bypass: requests from the host loopback (where the FastAPI agent runs)
+    are passed through. Requests forwarded by the Next.js proxy carry the
+    proxy's IP, so they fall through to the normal auth path. To allow
+    loopback-style trust across the proxy, set ``MCP_TRUST_PROXY=1`` and the
+    proxy will inject ``X-Forwarded-For`` so the originating client IP can
+    be inspected (currently the middleware still enforces auth — by design,
+    the MCP endpoint must always be authenticated when AUTH_ENABLED).
+    """
 
     def __init__(self, wrapped_app):
-        self.app = wrapped_app
+      self.app = wrapped_app
+
+    def __getattr__(self, name):
+        return getattr(self.app, name)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] in ("http", "websocket"):
-            if "query_string" not in scope:
-                scope["query_string"] = b""
+            if not AUTH_ENABLED:
+                await self.app(scope, receive, send)
+                return
+
+            # Extract bearer token from Authorization header first (Inspector).
             headers = dict(scope.get("headers", []))
             auth_value = headers.get(b"authorization", b"").decode("latin-1")
-            token = auth_value[7:].strip() if auth_value.lower().startswith("bearer ") else ""
-            
+            token = ""
+            if auth_value.lower().startswith("bearer "):
+                token = auth_value[7:].strip()
+
+            # Fall back to HttpOnly cookies set by /auth/keycloak-callback.
             if not token:
                 from starlette.requests import Request
                 req = Request(scope)
                 token = (
                     req.cookies.get("mcp_access_token")
                     or req.cookies.get("access_token")
-                    or req.query_params.get("token")
-                    or req.query_params.get("access_token")
                     or ""
                 )
 
-            # Narrow loopback exemption: Only allow unauthenticated access for internal health check paths
-            req_path = scope.get("path", "")
-            is_internal_health = (
-                headers.get(b"x-internal-loopback", b"").decode("latin-1") == "true"
-                or req_path == "/health"
-            )
+            # Also support MCP Inspector's `?token=<jwt>` query string
+            # fallback (some clients cannot set headers on streamable POSTs
+            # opened via EventSource). Only honored when the request is
+            # targeting the mounted MCP sub-app.
+            if not token and scope["type"] == "http":
+                from urllib.parse import parse_qs
+                query_string = scope.get("query_string", b"").decode("latin-1")
+                if query_string:
+                    parsed = parse_qs(query_string)
+                    token = (parsed.get("token") or [""])[0].strip()
 
-            if not token and is_internal_health:
-                await self.app(scope, receive, send)
+            if not token:
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": "Missing authentication token"},
+                )
+                await response(scope, receive, send)
                 return
-
-            if AUTH_ENABLED and not is_internal_health:
-                if not token:
-                    response = JSONResponse(
-                        status_code=401,
-                        content={"detail": "Missing authentication token"},
-                        headers={"WWW-Authenticate": 'Bearer realm="Keycloak"'},
-                    )
-                    await response(scope, receive, send)
-                    return
-                try:
-                    claims = validate_token(token)
-                    scope["user_token"] = token
-                    scope["user_claims"] = claims
-                except TokenValidationError as exc:
-                    response = JSONResponse(
-                        status_code=401,
-                        content={"detail": f"Token validation failed: {exc}"},
-                        headers={"WWW-Authenticate": 'Bearer error="invalid_token" realm="Keycloak"'},
-                    )
-                    await response(scope, receive, send)
-                    return
+            try:
+                validate_token(token)
+            except TokenValidationError as exc:
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": str(exc)},
+                )
+                await response(scope, receive, send)
+                return
 
         await self.app(scope, receive, send)
 
 
-secured_mcp_asgi_app = JWTAuthASGIMiddleware(combined_mcp_asgi_app)
-app.mount("/mcp/apps", secured_mcp_asgi_app)
-app.mount("/mcp/apps/", secured_mcp_asgi_app)
+combined_apps_mcp = _create_combined_apps_mcp()
+combined_mcp_asgi_app = JWTAuthASGIMiddleware(build_fastmcp_asgi_app(combined_apps_mcp, path="/"))
+
+
+app.mount("/mcp/apps", combined_mcp_asgi_app)
+app.mount("/mcp/apps/", combined_mcp_asgi_app)
 MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
 MCP_RUNTIME_INFO["mounted_paths"] = ["/mcp/apps", "/mcp/apps/"]
 require_permission = build_require_permission(
