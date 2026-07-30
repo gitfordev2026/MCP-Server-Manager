@@ -41,8 +41,8 @@ def create_dashboard_router(
                 "error": str(exc),
             }
 
-    async def probe_server_status(name: str, url: str, timeout_sec: float = 8.0) -> dict[str, Any]:
-        return await probe_server_status_fn(name, url, timeout_sec)
+    async def probe_server_status(name: str, url: str, timeout_sec: float = 8.0, token: str | None = None) -> dict[str, Any]:
+        return await probe_server_status_fn(name, url, timeout_sec, token=token)
 
     @router.get(
         "/dashboard/stats",
@@ -130,7 +130,8 @@ def create_dashboard_router(
         total_endpoints_count = db_endpoints_count + openapi_tools_count
 
         app_checks = [probe_app_status(app.name, app.url) for app in apps]
-        server_checks = [probe_server_status(server.name, server.url) for server in servers]
+        token = actor.get("token") if actor else None
+        server_checks = [probe_server_status(server.name, server.url, token=token) for server in servers]
         app_statuses = await asyncio.gather(*app_checks) if app_checks else []
         server_statuses = await asyncio.gather(*server_checks) if server_checks else []
 

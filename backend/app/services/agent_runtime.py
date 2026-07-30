@@ -91,11 +91,16 @@ def build_agent_with_model(
     retry_on_error: bool | None = None,
     memory_enabled: bool | None = None,
     extra_callbacks: list[Any] | None = None,
+    actor: dict[str, Any] | None = None,
 ) -> MCPAgent:
+    token = actor.get("token") if actor else None
+    headers = {"Authorization": f"Bearer {token}"} if token else None
+    
     config = {
         "mcpServers": {
             ENV.agent_mcp_server_name: {
                 "url": _normalize_mcp_url(ENV.agent_mcp_server_url),
+                "headers": headers,
             }
         }
     }

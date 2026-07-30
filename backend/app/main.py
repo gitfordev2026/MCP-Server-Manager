@@ -347,7 +347,6 @@ def sync_rbac_baseline() -> None:
             admin_user = UserModel(
                 username="admin",
                 keycloak_sub="admin",
-                email="admin@example.com",
                 role="admin",
             )
             db.add(admin_user)
@@ -1107,6 +1106,35 @@ def merge_openapi_parameters(path_level: list[dict[str, Any]], op_level: list[di
     return list(merged.values())
 
 
+def resolve_openapi_refs(schema: Any, spec: dict[str, Any], seen: set[str] | None = None) -> Any:
+    if seen is None:
+        seen = set()
+    if isinstance(schema, dict):
+        if "$ref" in schema and isinstance(schema["$ref"], str):
+            ref = schema["$ref"]
+            if ref in seen:
+                return {}
+            seen.add(ref)
+            if ref.startswith("#/components/schemas/"):
+                comp_name = ref.split("/")[-1]
+                comp_schema = spec.get("components", {}).get("schemas", {}).get(comp_name, {})
+                return resolve_openapi_refs(comp_schema, spec, seen)
+            elif ref.startswith("#/components/parameters/"):
+                comp_name = ref.split("/")[-1]
+                comp_schema = spec.get("components", {}).get("parameters", {}).get(comp_name, {})
+                return resolve_openapi_refs(comp_schema, spec, seen)
+            elif ref.startswith("#/components/requestBodies/"):
+                comp_name = ref.split("/")[-1]
+                comp_schema = spec.get("components", {}).get("requestBodies", {}).get(comp_name, {})
+                return resolve_openapi_refs(comp_schema, spec, seen)
+            return {}
+        return {k: resolve_openapi_refs(v, spec, seen.copy()) for k, v in schema.items()}
+    elif isinstance(schema, list):
+        return [resolve_openapi_refs(item, spec, seen.copy()) for item in schema]
+    return schema
+
+
+
 def build_tool_input_schema(
     parameters: list[dict[str, Any]],
     request_body: dict[str, Any] | None,
@@ -1240,6 +1268,7 @@ def build_app_operation_tools(
                 request_body = None
 
             input_schema, body_content_type = build_tool_input_schema(merged_parameters, request_body)
+            input_schema = resolve_openapi_refs(input_schema, spec)
 
             summary = operation.get("summary")
             description = operation.get("description")
@@ -2042,6 +2071,16 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
                 )
 
         user_token = _kwargs.get("user_token") or getattr(self, "_active_user_token", None)
+        if not user_token:
+            try:
+                import contextvars
+                # Check if it was set globally by middleware
+                global active_token_ctx
+                if "active_token_ctx" in globals():
+                    user_token = active_token_ctx.get(None)
+            except Exception:
+                pass
+                
         openapi_result = await invoke_openapi_tool(tool, args, user_token=user_token)
         return ToolResult(structured_content=openapi_result)
 
@@ -2145,6 +2184,14 @@ class JWTAuthASGIMiddleware:
                 )
                 await response(scope, receive, send)
                 return
+
+            import contextvars
+            global active_token_ctx
+            try:
+                active_token_ctx
+            except NameError:
+                active_token_ctx = contextvars.ContextVar("active_token", default=None)
+            active_token_ctx.set(token)
 
         await self.app(scope, receive, send)
 

@@ -21,12 +21,14 @@ async def list_server_tools(
     server_name: str,
     server_url: str,
     timeout_sec: float = 10.0,
+    token: str | None = None,
 ) -> list[Any]:
     _ = server_name
     normalized_url = _normalize_mcp_url(server_url)
+    headers = {"Authorization": f"Bearer {token}"} if token else None
 
     async def _run() -> list[Any]:
-        async with streamable_http_client(normalized_url, terminate_on_close=True) as (
+        async with streamable_http_client(normalized_url, terminate_on_close=True, headers=headers) as (
             read_stream,
             write_stream,
             _get_session_id,
@@ -45,12 +47,14 @@ async def call_server_tool(
     tool_name: str,
     arguments: dict[str, Any] | None = None,
     timeout_sec: float = 30.0,
+    token: str | None = None,
 ) -> dict[str, Any]:
     _ = server_name
     normalized_url = _normalize_mcp_url(server_url)
+    headers = {"Authorization": f"Bearer {token}"} if token else None
 
     async def _run() -> dict[str, Any]:
-        async with streamable_http_client(normalized_url, terminate_on_close=True) as (
+        async with streamable_http_client(normalized_url, terminate_on_close=True, headers=headers) as (
             read_stream,
             write_stream,
             _get_session_id,
@@ -77,10 +81,11 @@ async def probe_server_status(
     server_name: str,
     server_url: str,
     timeout_sec: float = 8.0,
+    token: str | None = None,
 ) -> dict[str, Any]:
     started = perf_counter()
     try:
-        tools = await list_server_tools(server_name, server_url, timeout_sec=timeout_sec)
+        tools = await list_server_tools(server_name, server_url, timeout_sec=timeout_sec, token=token)
         return {
             "name": server_name,
             "url": server_url,

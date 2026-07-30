@@ -109,20 +109,23 @@ def create_servers_router(
 
         return {"tools": len(tool_ids), "endpoints": len(endpoint_ids)}
 
-    async def probe_server_status(server_name: str, server_url: str, timeout_sec: float = 8.0) -> dict[str, Any]:
-        return await probe_server_status_fn(server_name, server_url, timeout_sec)
+    async def probe_server_status(server_name: str, server_url: str, timeout_sec: float = 8.0, token: str | None = None) -> dict[str, Any]:
+        return await probe_server_status_fn(server_name, server_url, timeout_sec, token=token)
 
     @router.post(
         "/discover-server-tools",
         summary="Discover MCP Server Tools",
         description="Discover tools from MCP server URL without registering it. Source: backend/app/routers/servers.py",
     )
-    async def discover_server_tools(payload: ServerDiscoveryRequest) -> dict[str, Any]:
+    async def discover_server_tools(
+        payload: ServerDiscoveryRequest,
+        actor: dict[str, Any] = Depends(get_actor_dep),
+    ) -> dict[str, Any]:
         normalized_url = payload.url
         if normalized_url.endswith("/mcp"):
             normalized_url += "/"
             
-        probe_result = await probe_server_status(payload.name, normalized_url, timeout_sec=8.0)
+        probe_result = await probe_server_status(payload.name, normalized_url, timeout_sec=8.0, token=actor.get("token"))
         if probe_result["status"] != "alive":
             error_detail = probe_result.get("error") or "Unknown connection error"
             raise HTTPException(
@@ -130,7 +133,7 @@ def create_servers_router(
                 detail=f"Server endpoint is not reachable or not MCP-compatible: {error_detail}",
             )
 
-        tools = await list_server_tools_fn(payload.name, normalized_url, timeout_sec=8.0)
+        tools = await list_server_tools_fn(payload.name, normalized_url, timeout_sec=8.0, token=actor.get("token"))
 
         return {
             "name": payload.name,
@@ -164,7 +167,7 @@ def create_servers_router(
             normalized_url += "/"
 
         try:
-            probe_result = await probe_server_status(data.name, normalized_url, timeout_sec=8.0)
+            probe_result = await probe_server_status(data.name, normalized_url, timeout_sec=8.0, token=actor.get("token"))
             if probe_result["status"] != "alive":
                 error_detail = probe_result.get("error") or "Unknown connection error"
                 raise HTTPException(
@@ -406,6 +409,7 @@ def create_servers_router(
         if cached is not None:
             return cached
         try:
+            token = current_user.get("token") if current_user else None
             with session_local_factory() as db:
                 rows = db.scalars(
                     select(server_model).where(
@@ -415,11 +419,16 @@ def create_servers_router(
                 ).all()
                 servers = [{"name": row.name, "url": row.url} for row in rows]
 
-            checks = [probe_server_status(s["name"], s["url"]) for s in servers]
-            statuses = await asyncio.gather(*checks)
+            if servers:
+                checks = [probe_server_status(s["name"], s["url"], token=token) for s in servers]
+                statuses = await asyncio.gather(*checks)
 
-            alive_count = sum(1 for s in statuses if s["status"] == "alive")
-            down_count = len(statuses) - alive_count
+                alive_count = sum(1 for s in statuses if s["status"] == "alive")
+                down_count = len(statuses) - alive_count
+            else:
+                statuses = []
+                alive_count = 0
+                down_count = 0
 
             result = {
                 "servers": statuses,
@@ -455,7 +464,7 @@ def create_servers_router(
             if not server:
                 raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
 
-            result = await probe_server_status(server.name, server.url)
+            result = await probe_server_status(server.name, server.url, token=actor.get("token"))
             cache_set_json(cache_key, result, ENV.redis_status_ttl_sec)
             return result
         except HTTPException:
@@ -628,7 +637,7 @@ def create_servers_router(
                 server.last_sync_status = "in_progress"
                 db.commit()
 
-            probe_result = await probe_server_status(server.name, server.url, timeout_sec=15.0)
+            probe_result = await probe_server_status(server.name, server.url, timeout_sec=15.0, token=actor.get("token"))
             
             snapshot_tools = []
             if probe_result["status"] == "alive":

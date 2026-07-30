@@ -38,6 +38,7 @@ interface PlaygroundPayload {
 export default function PlaygroundPage() {
     const [servers, setServers] = useState<ServerItem[]>([]);
     const [catalogTools, setCatalogTools] = useState<CatalogTool[]>([]);
+    const [catalogApps, setCatalogApps] = useState<any[]>([]);
     const [ollamaModels, setOllamaModels] = useState<string[]>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [modelError, setModelError] = useState<string | null>(null);
@@ -85,14 +86,16 @@ export default function PlaygroundPage() {
         try {
             setLoading(true);
             // Fetch both servers and the public catalog of tools
-            const [serversRes, catalogRes, modelsRes] = await Promise.allSettled([
-                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=true`),
-                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/models`),
+            const results = await Promise.allSettled([
+                authenticatedFetch(`/api/proxy/servers`, { cache: 'no-store' }),
+                authenticatedFetch(`/api/proxy/mcp/openapi/catalog?force_refresh=false`, { cache: 'no-store' }),
+                authenticatedFetch(`/api/proxy/agent/models`, { cache: 'no-store' }),
             ]);
 
             let loadedServers: ServerItem[] = [];
             let loadedTools: CatalogTool[] = [];
+
+            const [serversRes, catalogRes, modelsRes] = results;
 
             if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
                 const payload = await serversRes.value.json();
@@ -104,6 +107,8 @@ export default function PlaygroundPage() {
                 const payload = await catalogRes.value.json();
                 loadedTools = Array.isArray(payload?.tools) ? payload.tools : [];
                 setCatalogTools(loadedTools);
+                const loadedApps = Array.isArray(payload?.apps) ? payload.apps : [];
+                setCatalogApps(loadedApps);
             }
 
             if (modelsRes.status === 'fulfilled' && modelsRes.value.ok) {
@@ -206,7 +211,7 @@ export default function PlaygroundPage() {
                 payload.selected_tools = Array.from(selectedToolNames);
             }
 
-            const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/playground/query`, {
+            const response = await authenticatedFetch(`/api/proxy/agent/playground/query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -260,8 +265,8 @@ export default function PlaygroundPage() {
         await submitMessage(promptText, historyBeforeEdit);
     };
 
-    // Get unique app names from the catalog tools
-    const uniqueApps = Array.from(new Set(catalogTools.map(t => t.app))).sort();
+    // Get unique app names from all registered apps
+    const uniqueApps = Array.from(new Set(catalogApps.map(a => typeof a === 'string' ? a : (a as any).name))).filter(Boolean).sort();
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 flex flex-col overflow-hidden">
@@ -273,6 +278,7 @@ export default function PlaygroundPage() {
 
             {/* Navigation */}
             <Navigation pageTitle="Playground" />
+            <div className="text-red-500 text-xs">DEBUG: {JSON.stringify(catalogApps.map(a => a.name))}</div>
 
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col pt-24 pb-4 relative z-10">

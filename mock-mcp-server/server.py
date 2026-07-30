@@ -20,13 +20,16 @@ import datetime
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
+import contextvars
+
+mcp_token_var = contextvars.ContextVar("mcp_token", default=None)
 
 from dotenv import load_dotenv
 import httpx
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -187,11 +190,13 @@ def call_external_protected_api(target_url: str, client_id: str = "", client_sec
     """Act as a Confidential Client: Fetch Keycloak M2M token and call a downstream protected API."""
     import asyncio
     async def _run():
-        token_data = await get_confidential_client_token(
-            client_id=client_id or None,
-            client_secret=client_secret or None,
-        )
-        access_token = token_data.get("access_token")
+        access_token = mcp_token_var.get()
+        if not access_token:
+            token_data = await get_confidential_client_token(
+                client_id=client_id or None,
+                client_secret=client_secret or None,
+            )
+            access_token = token_data.get("access_token")
         if not access_token:
             return {"error": "Failed to acquire token from Keycloak"}
 
@@ -382,6 +387,13 @@ app = FastAPI(
 )
 
 app.mount("/mcp/", mcp_app)
+
+@app.middleware("http")
+async def extract_token_middleware(request: Request, call_next):
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        mcp_token_var.set(auth.split(" ")[1])
+    return await call_next(request)
 
 # ─────────────────────────────────────────────────────────────
 #  5. Mount Individual Sub-Apps (Independent FastAPI instances)

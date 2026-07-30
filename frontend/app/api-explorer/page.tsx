@@ -232,7 +232,7 @@ function ApiExplorerContent() {
       const isGet = method === 'GET' || method === 'HEAD';
 
       const start = Date.now();
-      const res = await fetch(`/api/proxy${proxyPath}`, {
+      const res = await authenticatedFetch(`/api/proxy${proxyPath}`, {
         method,
         headers: !isGet ? { 'Content-Type': 'application/json' } : undefined,
         body: !isGet && testRequestBody ? testRequestBody : undefined,

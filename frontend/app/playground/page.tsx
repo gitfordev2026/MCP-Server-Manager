@@ -152,7 +152,7 @@ export default function PlaygroundPage() {
             setLoading(true);
             const [serversRes, catalogRes, modelsRes] = await Promise.allSettled([
                 authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=true`),
+                authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&public_only=false`),
                 authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/agent/models`),
             ]);
 

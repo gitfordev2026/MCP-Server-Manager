@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
+export const dynamic = 'force-dynamic';
+
 async function handleProxy(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   try {
     const resolvedParams = await params;
@@ -81,7 +83,7 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
         fetchHeaders.delete('host');
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
         const res = await fetch(targetUrl, {
           method,
@@ -90,11 +92,14 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
           redirect: 'manual',
           signal: controller.signal,
         });
-        clearTimeout(timeoutId);
+        const text = await res.clone().text();
+        console.log(`PROXY RESPONSE FOR ${targetUrl}:`, text.substring(0, 200));
+        
         response = res;
         break;
       } catch (err: any) {
         lastError = err;
+        console.error(`Fetch failed for ${targetUrl}:`, err.message);
       }
     }
 

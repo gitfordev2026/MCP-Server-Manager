@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
 
 from app.core.cache import cache_delete_prefix, cache_get_json, cache_set_json
+from app.core.rbac import verify_resource_ownership
 from app.env import ENV
 
 def create_base_urls_router(

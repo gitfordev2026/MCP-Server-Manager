@@ -18,8 +18,8 @@ class HMACVerificationMiddleware:
 
         path = scope.get("path", "")
 
-        # Skip HMAC verification for auth endpoints, docs, and health
-        if path.startswith("/auth") or path in ["/", "/health", "/docs", "/openapi.json", "/__diag/token"]:
+        # Skip HMAC verification for auth endpoints, docs, health, and internal mcp connections
+        if path.startswith(("/auth", "/mcp", "/.well-known")) or path in ["/", "/health", "/docs", "/openapi.json", "/__diag/token"]:
             await self.app(scope, receive, send)
             return
 

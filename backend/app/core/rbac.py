@@ -30,6 +30,14 @@ ROLE_PERMISSION_FALLBACK: dict[str, set[str]] = {
         "policy:manage",
         "audit:view",
     },
+    "developer": {
+        "dashboard:view",
+        "application:manage",
+        "mcp_server:manage",
+        "tool:manage",
+        "endpoint:manage",
+        "policy:manage",
+    },
     "read_only": {
         "dashboard:view",
         "audit:view",
@@ -75,7 +83,7 @@ def get_request_actor(request: Request) -> dict[str, Any]:
         if not roles:
             roles = ["admin"]
         primary = resolve_primary_role(roles) or "admin"
-        return {"username": username, "roles": roles, "primary_role": primary, "subject": username, "sub": username, "email": f"{username}@local"}
+        return {"username": username, "roles": roles, "primary_role": primary, "subject": username, "sub": username, "email": f"{username}@local", "token": None}
 
     # --- AUTH_ENABLED=true: require a valid JWT ---
     token = _extract_bearer_token(request)
@@ -194,6 +202,7 @@ def get_request_actor(request: Request) -> dict[str, Any]:
         "primary_role": primary_role,
         "subject": sub,
         "sub": sub,
+        "token": token,
     }
     request.state._validated_actor = actor
     return actor

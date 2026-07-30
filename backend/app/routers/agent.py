@@ -808,22 +808,31 @@ async def _run_agent_query(
             t for t in all_tools if t not in selected_tools
         ],
         additional_instructions=instructions,
-        max_steps=8,
-        retry_on_error=False,
-        memory_enabled=False,
+        max_steps=12,
+        retry_on_error=True,
+        memory_enabled=True,
+        actor=actor,
     )
 
     if hasattr(agent, "tools_used_names"):
         agent.tools_used_names.clear()
 
     try:
-        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
-        rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=30.0)
+        rescued = await _maybe_execute_raw_tool_call(result, all_tools)
         if rescued is not None:
             result = rescued
         else:
             result = _append_tool_usage_note(result, agent)
+    except asyncio.TimeoutError:
+        logger.error("MCPAgent execution timed out.")
+        raise HTTPException(status_code=504, detail="Agent execution timed out.")
     except Exception as exc:
+        err_str = str(exc)
+        if "401" in err_str or "unauthorized" in err_str.lower():
+            logger.error(f"MCPAgent authentication failed: {err_str}")
+            raise HTTPException(status_code=401, detail=f"Authentication failed during tool execution: {err_str}")
+
         logger.warning(f"MCPAgent execution failed ({exc}), falling back to direct LLM response")
         raw_direct = await generate_direct_response(
             effective_prompt,
@@ -911,26 +920,35 @@ async def _run_playground_query(
             t for t in all_tools if t not in selected_tools
         ],
         additional_instructions=instructions,
-        max_steps=8,
-        retry_on_error=False,
-        memory_enabled=False,
+        max_steps=12,
+        retry_on_error=True,
+        memory_enabled=True,
+        actor=actor,
     )
 
     try:
-        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=4.0)
+        result = await asyncio.wait_for(agent.run(effective_prompt), timeout=60.0)
         rescued = await _maybe_execute_raw_tool_call(result, selected_tools)
         if rescued is not None:
             result = rescued
         else:
             result = _append_tool_usage_note(result, agent)
+    except asyncio.TimeoutError:
+        logger.error("MCPAgent execution timed out in playground.")
+        raise HTTPException(status_code=504, detail="Agent execution timed out.")
     except Exception as exc:
+        err_str = str(exc)
+        if "401" in err_str or "unauthorized" in err_str.lower():
+            logger.error(f"MCPAgent authentication failed in playground: {err_str}")
+            raise HTTPException(status_code=401, detail=f"Authentication failed during tool execution: {err_str}")
+
         logger.warning(f"MCPAgent execution failed ({exc}), falling back to direct LLM response")
         raw_direct = await generate_direct_response(
             effective_prompt,
             model=model,
-            additional_instructions=instructions,
+            additional_instructions="",
         )
-        rescued = await _maybe_execute_raw_tool_call(raw_direct, selected_tools)
+        rescued = await _maybe_execute_raw_tool_call(raw_direct, all_tools)
         result = rescued if rescued is not None else raw_direct
 
     return {"response": result, "mode": "mcp_agent"}
