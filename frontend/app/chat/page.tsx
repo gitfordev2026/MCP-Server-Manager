@@ -232,13 +232,10 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col overflow-hidden transition-colors duration-200">
-      {/* Navigation */}
-      <Navigation pageTitle="Chat" />
-
+    <div className="h-[calc(100vh-var(--header-height)-64px)] flex flex-col overflow-hidden">
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col pt-4 pb-6 relative z-10">
-        <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-full">
+      <main className="flex-1 flex flex-col min-h-0 relative z-10">
+        <div className="max-w-5xl w-full mx-auto flex flex-col h-full">
           {/* Messages Container */}
           <div className="flex-1 bg-white dark:bg-slate-900 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-xs">
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">

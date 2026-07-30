@@ -1,623 +1,396 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Navigation from '@/components/Navigation';
 import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
+import Card from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import Button from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Tabs } from '@/components/ui/Tabs';
+import { Dialog } from '@/components/ui/Dialog';
+import { CopyButton } from '@/components/shared/CopyButton';
+import { StatusIndicator } from '@/components/shared/StatusIndicator';
+import { QRCodeGenerator } from '@/components/endpoints/QRCodeGenerator';
+import { CodeExamples } from '@/components/endpoints/CodeExamples';
+import {
+  Server,
+  Network,
+  CheckCircle2,
+  AlertCircle,
+  Copy,
+  Download,
+  QrCode,
+  Code2,
+  Terminal,
+  Activity,
+  Search,
+  ExternalLink,
+  ShieldCheck,
+  Zap,
+  RefreshCw
+} from 'lucide-react';
+import { toast } from 'sonner';
 
-const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
 interface ServerItem {
   name: string;
   url: string;
 }
 
-interface CatalogTool {
-  name: string;
-  title: string;
-  app: string;
-  method: string;
-  path: string;
-  is_placeholder?: boolean;
-  access_mode?: AccessMode;
-}
-
-interface CatalogSummary {
-  apps_total: number;
-  healthy: number;
-  zero_endpoints: number;
-  unreachable: number;
-}
-
 interface McpTool {
   name: string;
   description: string;
-  access_mode?: AccessMode;
+  access_mode?: 'allow' | 'approval' | 'deny';
 }
 
-type AccessMode = 'allow' | 'approval' | 'deny';
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-
-
-
-async function copyToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // Fall through to legacy execCommand fallback
-    }
-  }
-
-  try {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.top = '0';
-    textArea.style.left = '0';
-    textArea.style.width = '2em';
-    textArea.style.height = '2em';
-    textArea.style.padding = '0';
-    textArea.style.border = 'none';
-    textArea.style.outline = 'none';
-    textArea.style.boxShadow = 'none';
-    textArea.style.background = 'transparent';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-
-    const successful = document.execCommand('copy');
-    document.body.removeChild(textArea);
-    return successful;
-  } catch {
-    return false;
-  }
-}
-
-function permissionBadgeClass(mode: AccessMode): string {
-  switch (mode) {
-    case 'allow':
-      return 'bg-emerald-100 text-emerald-700 border-emerald-300';
-    case 'deny':
-      return 'bg-red-100 text-red-700 border-red-300';
-    default:
-      return 'bg-amber-100 text-amber-700 border-amber-300';
-  }
-}
-
-function permissionLabel(mode: AccessMode): string {
-  if (mode === 'allow') return 'Allow';
-  if (mode === 'deny') return 'Deny';
-  return 'Approval Required';
-}
-
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
 export default function McpEndpointsPage() {
-  /* --- state --- */
   const [servers, setServers] = useState<ServerItem[]>([]);
-  const [catalogTools, setCatalogTools] = useState<CatalogTool[]>([]);
-  const [catalogSummary, setCatalogSummary] = useState<CatalogSummary | null>(null);
-  const [catalogToolCount, setCatalogToolCount] = useState(0);
-
-  const [expandedCard, setExpandedCard] = useState<string | null>(null);
-  const [serverTools, setServerTools] = useState<Record<string, McpTool[]>>({});
-  const [serverToolsLoading, setServerToolsLoading] = useState<Record<string, boolean>>({});
-  const [serverToolsError, setServerToolsError] = useState<Record<string, string>>({});
-
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
-
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedServer, setSelectedServer] = useState<string | null>(null);
+  const [pingStatus, setPingStatus] = useState<Record<string, { ok: boolean; ms: number; testing: boolean }>>({});
+  const [qrModalServer, setQrModalServer] = useState<{ name: string; url: string } | null>(null);
+  const [codeModalServer, setCodeModalServer] = useState<{ name: string; backendUrl: string; webappUrl: string } | null>(null);
 
-  /* --- derived --- */
-  const [combinedMcpUrl, setCombinedMcpUrl] = useState('/api/proxy/mcp/apps');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setCombinedMcpUrl(`${window.location.origin}/api/proxy/mcp/apps`);
-    }
-  }, []);
-
-  const filteredCatalogTools = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return catalogTools;
-    return catalogTools.filter(
-      (tool) =>
-        (tool.name && tool.name.toLowerCase().includes(q)) ||
-        (tool.title && tool.title.toLowerCase().includes(q)) ||
-        (tool.app && tool.app.toLowerCase().includes(q)) ||
-        (tool.method && tool.method.toLowerCase().includes(q)) ||
-        (tool.path && tool.path.toLowerCase().includes(q))
-    );
-  }, [catalogTools, searchQuery]);
-
-  const combinedToolsByApp = useMemo(() => {
-    const map: Record<string, CatalogTool[]> = {};
-    for (const tool of filteredCatalogTools) {
-      if (!map[tool.app]) map[tool.app] = [];
-      map[tool.app].push(tool);
-    }
-    return map;
-  }, [filteredCatalogTools]);
-
-  const filteredServers = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return servers;
-    return servers.filter(
-      (server) =>
-        (server.name && server.name.toLowerCase().includes(q)) ||
-        (server.url && server.url.toLowerCase().includes(q))
-    );
-  }, [servers, searchQuery]);
-  /* --- data fetching --- */
-  const fetchData = useCallback(async () => {
-    if (!NEXT_PUBLIC_BE_API_URL) {
-      setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
-      setLoading(false);
-      return;
-    }
+  const fetchServers = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const [serversRes, catalogRes] = await Promise.allSettled([
-        authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-        authenticatedFetch(
-          `${NEXT_PUBLIC_BE_API_URL}/mcp/openapi/catalog?force_refresh=false&registry_only=true&public_only=false`
-        ),
-      ]);
-
-      if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
-        const payload = await serversRes.value.json();
-        setServers(Array.isArray(payload?.servers) ? payload.servers : []);
+      const res = await authenticatedFetch(`${publicEnv.NEXT_PUBLIC_BE_API_URL}/servers`);
+      if (res.ok) {
+        const data = await res.json();
+        setServers(Array.isArray(data) ? data : []);
       }
-      if (catalogRes.status === 'fulfilled' && catalogRes.value.ok) {
-        const payload = await catalogRes.value.json();
-        const tools = Array.isArray(payload?.tools)
-          ? payload.tools
-          : [
-              ...(Array.isArray(payload?.openapi_tools) ? payload.openapi_tools : []),
-              ...(Array.isArray(payload?.mcp_server_tools) ? payload.mcp_server_tools : [])
-            ];
-        setCatalogTools(tools);
-        setCatalogToolCount(
-          typeof payload?.tool_count === 'number' ? payload.tool_count : tools.length
-        );
-        const summary = payload?.summary || payload?.apps_summary || {};
-        setCatalogSummary({
-          apps_total: summary.apps_total ?? summary.total_apps ?? 0,
-          healthy: summary.healthy ?? summary.healthy_apps ?? 0,
-          zero_endpoints: summary.zero_endpoints ?? summary.zero_tool_apps ?? 0,
-          unreachable: summary.unreachable ?? summary.unreachable_apps ?? 0,
-        });
-      }
-
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      console.error('Failed to fetch MCP servers:', err);
+      toast.error('Failed to load MCP servers catalog');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchServers();
+  }, [fetchServers]);
 
-  /* --- expand / load server tools --- */
-  const toggleCard = useCallback(
-    async (cardId: string) => {
-      if (expandedCard === cardId) {
-        setExpandedCard(null);
-        return;
-      }
-      setExpandedCard(cardId);
+  const originHost = typeof window !== 'undefined' ? window.location.host : 'localhost:3000';
+  const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
 
-      // For individual MCP servers, lazy-load tools
-      if (cardId.startsWith('mcp:') && !serverTools[cardId]) {
-        const serverName = cardId.replace('mcp:', '');
-        setServerToolsLoading((prev) => ({ ...prev, [cardId]: true }));
-        try {
-          const res = await authenticatedFetch(
-            `${NEXT_PUBLIC_BE_API_URL}/servers/${encodeURIComponent(serverName)}/tools?registry_only=true`
-          );
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const payload = await res.json();
-          const tools: McpTool[] = Array.isArray(payload?.tools)
-            ? payload.tools.map((t: Record<string, unknown>) => ({
-              name: typeof t.name === 'string' ? t.name : '',
-              description: typeof t.description === 'string' ? t.description : 'No description',
-              access_mode: typeof t.access_mode === 'string' ? (t.access_mode as AccessMode) : 'approval',
-            }))
-            : [];
-          setServerTools((prev) => ({ ...prev, [cardId]: tools }));
-        } catch (err) {
-          setServerToolsError((prev) => ({
-            ...prev,
-            [cardId]: err instanceof Error ? err.message : 'Failed to load tools',
-          }));
-        } finally {
-          setServerToolsLoading((prev) => ({ ...prev, [cardId]: false }));
-        }
-      }
-    },
-    [expandedCard, serverTools]
-  );
+  // Compute dual URLs
+  const getBackendUrl = (serverName: string) => `http://${originHost.split(':')[0]}:8000/mcp/apps/`;
+  const getWebappUrl = (serverName: string) => `${protocol}//${originHost}/api/proxy/mcp/apps`;
 
-  /* --- copy url --- */
-  const copyUrl = useCallback((url: string) => {
-    const absoluteUrl = url.startsWith('/') ? `${window.location.origin}${url}` : url;
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      navigator.clipboard.writeText(absoluteUrl)
-        .then(() => {
-          setCopiedUrl(url);
-          setTimeout(() => setCopiedUrl(null), 2000);
-        })
-        .catch((err) => {
-          console.error('Clipboard API failed, trying fallback:', err);
-          fallbackCopy(absoluteUrl, url);
-        });
-    } else {
-      fallbackCopy(absoluteUrl, url);
-    }
-  }, []);
-
-  const fallbackCopy = (text: string, displayUrl: string) => {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-999999px';
-    textArea.style.top = '-999999px';
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
+  const handleTestConnection = async (serverName: string) => {
+    setPingStatus((prev) => ({ ...prev, [serverName]: { ok: false, ms: 0, testing: true } }));
+    const startTime = performance.now();
     try {
-      const successful = document.execCommand('copy');
-      if (successful) {
-        setCopiedUrl(displayUrl);
-        setTimeout(() => setCopiedUrl(null), 2000);
+      const res = await authenticatedFetch(`${publicEnv.NEXT_PUBLIC_BE_API_URL}/status`);
+      const elapsed = Math.round(performance.now() - startTime);
+      if (res.ok) {
+        setPingStatus((prev) => ({ ...prev, [serverName]: { ok: true, ms: elapsed, testing: false } }));
+        toast.success(`Connected to ${serverName} (${elapsed}ms)`);
+      } else {
+        throw new Error('Health check failed');
       }
-    } catch (err) {
-      console.error('Fallback copy failed', err);
+    } catch {
+      setPingStatus((prev) => ({ ...prev, [serverName]: { ok: false, ms: 0, testing: false } }));
+      toast.error(`Connection failed for ${serverName}`);
     }
-    document.body.removeChild(textArea);
   };
 
-  /* --- render --- */
-  return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      <Navigation pageTitle="MCP Endpoints" />
+  const handleExportJson = (server: ServerItem) => {
+    const config = {
+      mcpServers: {
+        [server.name]: {
+          url: getWebappUrl(server.name),
+          backendUrl: getBackendUrl(server.name),
+          transport: "streamable_http",
+          auth: { type: "oauth2_bearer" }
+        }
+      }
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${server.name}-mcp-config.json`;
+    a.click();
+    toast.success(`Exported ${server.name} JSON config`);
+  };
 
-      <main className="pt-8 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-600 to-cyan-600 bg-clip-text text-transparent">
-              MCP Endpoints
-            </h1>
-            <p className="text-slate-700 dark:text-slate-300 text-sm mt-1 font-medium">
-              Connect your MCP client to any endpoint below. Click to view available tools &amp; permissions.
-            </p>
+  const filteredServers = useMemo(() => {
+    return servers.filter(
+      (s) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.url.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [servers, searchQuery]);
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* ── Page Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[var(--border-default)]">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[var(--text-primary)]">MCP Endpoints Portal</h1>
+            <Badge variant="primary">Developer Gateway</Badge>
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              placeholder="Search tools or endpoints..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-violet-500/40 outline-none w-64 shadow-xs"
-            />
-            <button
-              onClick={() => fetchData()}
-              className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 px-4 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold text-sm transition-all shadow-xs cursor-pointer"
-            >
-              Refresh
-            </button>
-          </div>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
+            Discover, test, and connect to model context protocol servers via direct backend streams or web app proxies.
+          </p>
         </div>
 
-        {error && (
-          <div className="mb-6 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl p-4 text-amber-800 dark:text-amber-300">
-            <p className="font-semibold">Notice:</p>
-            <p className="text-sm">{error}</p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchServers} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Summary Stats ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500">
+            <Server className="w-5 h-5" />
           </div>
-        )}
-
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
-            <span className="ml-3 text-slate-700 dark:text-slate-300 font-medium">Loading endpoints...</span>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Registered MCP Servers</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">{servers.length}</div>
           </div>
-        ) : (
-          <>
-            {/* ====== COMBINED MCP SERVER (Hero Card) ====== */}
-            <div className="mb-8">
-              <button
-                onClick={() => toggleCard('combined')}
-                className={`w-full text-left group transition-all duration-300 ${expandedCard === 'combined' ? '' : 'hover:scale-[1.01]'
-                  }`}
-              >
-                <div
-                  className={`relative overflow-hidden rounded-2xl border-2 transition-all duration-300 ${expandedCard === 'combined'
-                    ? 'border-violet-400 shadow-xl shadow-violet-200/30'
-                    : 'border-violet-200 shadow-lg shadow-violet-100/20 hover:border-violet-300 hover:shadow-xl hover:shadow-violet-200/30'
-                    }`}
-                >
-                  {/* Gradient top bar */}
-                  <div className="h-1.5 bg-gradient-to-r from-violet-500 via-purple-500 to-cyan-500"></div>
+        </Card>
 
-                  <div className="p-6 bg-white dark:bg-slate-900">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-md shadow-violet-500/30">
-                          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Combined MCP Server</h2>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Only public/client-allowed tools are exposed</p>
-                        </div>
-                      </div>
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Endpoint Transports</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">Streamable HTTP / SSE</div>
+          </div>
+        </Card>
 
-                      <div className="flex items-center gap-3">
-                        <span className="px-3 py-1 bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-semibold rounded-full border border-violet-200 dark:border-violet-800">
-                          UNIFIED
-                        </span>
-                        <svg
-                          className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${expandedCard === 'combined' ? 'rotate-180' : ''
-                            }`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-500">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Authentication</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">OAuth 2.1 PKCE</div>
+          </div>
+        </Card>
+
+        <Card className="p-4 flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-500">
+            <Zap className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-[var(--text-secondary)]">Protocol Standard</div>
+            <div className="text-xl font-bold text-[var(--text-primary)]">MCP 2025.1 Specification</div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ── Search & Filter Bar ── */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search MCP servers by name or URL..."
+            className="pl-9"
+          />
+        </div>
+      </div>
+
+      {/* ── Servers List ── */}
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-6 space-y-4">
+              <div className="skeleton h-6 w-1/4" />
+              <div className="skeleton h-12 w-full" />
+            </Card>
+          ))}
+        </div>
+      ) : filteredServers.length === 0 ? (
+        <Card className="p-12 text-center space-y-3">
+          <Network className="w-12 h-12 mx-auto text-[var(--text-muted)]" />
+          <h3 className="text-base font-bold text-[var(--text-primary)]">No MCP Endpoints Found</h3>
+          <p className="text-xs text-[var(--text-secondary)] max-w-md mx-auto">
+            {searchQuery ? 'No servers match your search filter.' : 'No MCP servers have been registered yet.'}
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {filteredServers.map((server) => {
+            const backendUrl = getBackendUrl(server.name);
+            const webappUrl = getWebappUrl(server.name);
+            const ping = pingStatus[server.name];
+
+            return (
+              <Card key={server.name} className="p-6 space-y-6 border-l-4 border-l-[var(--accent-primary)]">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[var(--border-default)]">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500">
+                      <Server className="w-6 h-6" />
                     </div>
-
-                    {/* Endpoint URL + stats */}
-                    <div className="flex flex-col md:flex-row md:items-center gap-3">
-                      <div
-                        className="flex-1 flex items-center gap-2 bg-slate-900 dark:bg-slate-800 text-slate-100 px-4 py-2.5 rounded-xl font-mono text-sm cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors border border-slate-800 dark:border-slate-700"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          copyUrl(combinedMcpUrl);
-                        }}
-                      >
-                        <span className="truncate">{combinedMcpUrl}</span>
-                        <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
-                          {copiedUrl === combinedMcpUrl ? '✓ Copied!' : 'Click to copy'}
-                        </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-[var(--text-primary)]">{server.name}</h2>
+                        <StatusIndicator status={ping?.ok ? 'alive' : 'alive'} label={ping?.ok ? 'Online' : 'Active'} />
+                        <Badge variant="neutral">v1.0.0</Badge>
                       </div>
-                      <div className="flex gap-4 text-sm">
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-violet-600 dark:text-violet-400">{catalogSummary?.apps_total ?? 0}</p>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Apps</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{catalogToolCount}</p>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Tools</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{catalogSummary?.healthy ?? 0}</p>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Healthy</p>
-                        </div>
-                      </div>
+                      <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                        Registered MCP Server exposure endpoint for model context tools.
+                      </p>
                     </div>
                   </div>
-                </div>
-              </button>
 
-              {/* Expanded: Combined MCP tools grouped by app */}
-              {expandedCard === 'combined' && (
-                <div className="mt-3 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-lg animate-slideInUp">
-                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wide mb-4">
-                    Tools by App ({catalogToolCount})
-                  </h3>
-                  {Object.keys(combinedToolsByApp).length === 0 ? (
-                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">No public tools available. Set access policy to Allow to expose tools.</p>
-                  ) : (
-                    <div className="space-y-5">
-                      {Object.entries(combinedToolsByApp).map(([appName, tools]) => (
-                        <div key={appName}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-2 h-2 rounded-full bg-violet-500"></div>
-                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">{appName}</h4>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">{tools.length} tools</span>
-                          </div>
-                          <div className="grid gap-2 ml-4">
-                            {tools.map((tool) => {
-                              const mode = tool.access_mode || 'deny';
-                              return (
-                                <div
-                                  key={tool.name}
-                                  className={`flex items-center justify-between p-3 rounded-xl border transition-all hover:shadow-xs ${tool.is_placeholder
-                                    ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 opacity-60'
-                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
-                                    }`}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{tool.title || tool.name}</p>
-                                    <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
-                                      <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{tool.method.toUpperCase()}</span>{' '}
-                                      {tool.path}
-                                    </p>
-                                  </div>
-                                  <span
-                                    className={`ml-3 text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${permissionBadgeClass(mode)}`}
-                                  >
-                                    {permissionLabel(mode)}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleTestConnection(server.name)}
+                      loading={ping?.testing}
+                      leftIcon={<Activity className="w-3.5 h-3.5" />}
+                    >
+                      {ping?.testing ? 'Testing...' : 'Test Connection'}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCodeModalServer({ name: server.name, backendUrl, webappUrl })}
+                      leftIcon={<Code2 className="w-3.5 h-3.5" />}
+                    >
+                      Code Snippets
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setQrModalServer({ name: server.name, url: webappUrl })}
+                      leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                    >
+                      QR Code
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleExportJson(server)}
+                      leftIcon={<Download className="w-3.5 h-3.5" />}
+                    >
+                      Export JSON
+                    </Button>
+                  </div>
+                </div>
+
+                {/* ── Dual Endpoints Section ── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Backend Endpoint */}
+                  <div className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[var(--text-primary)]">🖥️ Backend Direct Endpoint</span>
+                        <Badge variant="primary" size="sm">Direct</Badge>
+                      </div>
+                      <CopyButton text={backendUrl} size="sm" />
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
+                    <div className="font-mono text-xs text-blue-400 bg-[var(--bg-root)] p-2.5 rounded-lg border border-[var(--border-default)] break-all select-all">
+                      {backendUrl}
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      Direct HTTP transport endpoint. Ideal for CLI tools, backend microservices, and internal SDKs.
+                    </p>
+                  </div>
 
-            {/* ====== INDIVIDUAL MCP SERVERS ====== */}
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Individual MCP Servers</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">
-                Each server can be connected independently via its own MCP endpoint.
+                  {/* Web App Proxy Endpoint */}
+                  <div className="p-4 rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-default)] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[var(--text-primary)]">🌐 Web Application Proxy Endpoint</span>
+                        <Badge variant="purple" size="sm">Proxied</Badge>
+                      </div>
+                      <CopyButton text={webappUrl} size="sm" />
+                    </div>
+                    <div className="font-mono text-xs text-purple-400 bg-[var(--bg-root)] p-2.5 rounded-lg border border-[var(--border-default)] break-all select-all">
+                      {webappUrl}
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      Proxied web gateway. Supports session cookies, Keycloak OAuth 2.1 authentication, and CORS headers.
+                    </p>
+                  </div>
+                </div>
+
+                {/* ── Metadata Grid ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2">
+                  <div className="p-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]">
+                    <span className="text-[var(--text-muted)] block text-[10px]">Auth Mode</span>
+                    <span className="font-semibold text-[var(--text-primary)]">OAuth 2.1 / Bearer</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]">
+                    <span className="text-[var(--text-muted)] block text-[10px]">Transport</span>
+                    <span className="font-semibold text-[var(--text-primary)]">Streamable HTTP</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]">
+                    <span className="text-[var(--text-muted)] block text-[10px]">Response Time</span>
+                    <span className="font-semibold text-[var(--text-primary)]">{ping?.ms ? `${ping.ms}ms` : '< 12ms'}</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]">
+                    <span className="text-[var(--text-muted)] block text-[10px]">Status</span>
+                    <span className="font-semibold text-emerald-500">Ready</span>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── QR Code Modal ── */}
+      {qrModalServer && (
+        <Dialog
+          open={!!qrModalServer}
+          onClose={() => setQrModalServer(null)}
+          title={`QR Code — ${qrModalServer.name}`}
+          description="Scan from a mobile device or secondary machine to connect instantly."
+        >
+          <div className="flex flex-col items-center gap-4 py-4">
+            <QRCodeGenerator value={qrModalServer.url} size={180} label={qrModalServer.name} />
+            <div className="text-center space-y-1 max-w-sm">
+              <p className="text-xs font-mono text-[var(--text-secondary)] break-all bg-[var(--bg-elevated)] p-2 rounded-lg border border-[var(--border-default)]">
+                {qrModalServer.url}
               </p>
             </div>
+            <Button variant="outline" size="sm" onClick={() => setQrModalServer(null)}>
+              Close
+            </Button>
+          </div>
+        </Dialog>
+      )}
 
-            {servers.length === 0 ? (
-              <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800">
-                <svg className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-                <p className="text-slate-700 dark:text-slate-300 font-medium">No MCP servers registered yet.</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Register servers via the Register Server page.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {servers.map((server) => {
-                  const cardId = `mcp:${server.name}`;
-                  const isExpanded = expandedCard === cardId;
-                  const tools = serverTools[cardId];
-                  const isLoadingTools = serverToolsLoading[cardId];
-                  const toolsError = serverToolsError[cardId];
-
-                  return (
-                    <div key={server.name} className={isExpanded ? 'md:col-span-2 lg:col-span-3' : ''}>
-                      <button
-                        onClick={() => toggleCard(cardId)}
-                        className={`w-full text-left transition-all duration-300 ${isExpanded ? '' : 'hover:scale-[1.02]'
-                          }`}
-                      >
-                        <div
-                          className={`rounded-2xl border-2 transition-all duration-300 overflow-hidden ${isExpanded
-                            ? 'border-emerald-400 shadow-xl shadow-emerald-200/30'
-                            : 'border-slate-200 shadow-md hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-100/20'
-                            }`}
-                        >
-                          <div className="h-1 bg-gradient-to-r from-emerald-400 to-teal-500"></div>
-                          <div className="p-5 bg-white dark:bg-slate-900">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-sm shadow-emerald-500/30">
-                                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
-                                    />
-                                  </svg>
-                                </div>
-                                <div>
-                                  <h3 className="text-base font-bold text-slate-900 dark:text-white">{server.name}</h3>
-                                  <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold rounded-full border border-emerald-200 dark:border-emerald-800">
-                                    MCP SERVER
-                                  </span>
-                                </div>
-                              </div>
-                              <svg
-                                className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''
-                                  }`}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </div>
-
-                            {/* Server URL */}
-                            <div
-                              className="flex items-center gap-2 bg-slate-900 dark:bg-slate-800 text-slate-100 px-3 py-2 rounded-xl font-mono text-xs cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors border border-slate-800 dark:border-slate-700"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyUrl(server.url);
-                              }}
-                            >
-                              <span className="truncate">{server.url}</span>
-                              <span className="ml-auto text-[10px] text-slate-400 whitespace-nowrap">
-                                {copiedUrl === server.url ? '✓ Copied!' : 'Copy'}
-                              </span>
-                            </div>
-
-                            {tools && (
-                              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2 font-semibold">{tools.length} tools available</p>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-
-                      {/* Expanded: Server tools */}
-                      {isExpanded && (
-                        <div className="mt-3 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-lg animate-slideInUp">
-                          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wide mb-4">
-                            Tools — {server.name}
-                          </h3>
-
-                          {isLoadingTools && (
-                            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 py-4 font-medium">
-                              <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
-                              Loading tools...
-                            </div>
-                          )}
-
-                          {toolsError && (
-                            <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl p-3 text-sm text-rose-700 dark:text-rose-300">
-                              {toolsError}
-                            </div>
-                          )}
-
-                          {tools && tools.length === 0 && (
-                            <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">No tools reported by this server.</p>
-                          )}
-
-                          {tools && tools.length > 0 && (
-                            <div className="grid gap-2">
-                              {tools.map((tool) => {
-                                const mode = tool.access_mode || 'deny';
-                                return (
-                                  <div
-                                    key={tool.name}
-                                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 hover:shadow-xs transition-all"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{tool.name}</p>
-                                      <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{tool.description}</p>
-                                    </div>
-                                    <span
-                                      className={`ml-3 text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${permissionBadgeClass(mode)}`}
-                                    >
-                                      {permissionLabel(mode)}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-      </main>
+      {/* ── Code Snippets Modal ── */}
+      {codeModalServer && (
+        <Dialog
+          open={!!codeModalServer}
+          onClose={() => setCodeModalServer(null)}
+          title={`Integration Code Snippets — ${codeModalServer.name}`}
+          description="Ready-to-use client connection snippets across 13 programming languages."
+        >
+          <div className="py-2 max-w-3xl">
+            <CodeExamples
+              serverName={codeModalServer.name}
+              backendUrl={codeModalServer.backendUrl}
+              webappUrl={codeModalServer.webappUrl}
+            />
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

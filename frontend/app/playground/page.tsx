@@ -539,13 +539,10 @@ export default function PlaygroundPage() {
     const uniqueApps = Array.from(new Set(catalogTools.map(t => t.app))).sort();
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col overflow-hidden transition-colors duration-200">
-            {/* Navigation */}
-            <Navigation pageTitle="Playground" />
-
+        <div className="h-[calc(100vh-var(--header-height)-64px)] flex flex-col overflow-hidden">
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col pt-8 pb-4 relative z-10">
-                <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col h-full gap-6">
+            <main className="flex-1 flex flex-col min-h-0 relative z-10">
+                <div className="max-w-6xl w-full mx-auto flex flex-col h-full gap-4">
                     {/* Header Controls */}
                     <div className="bg-white dark:bg-slate-900 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div>
