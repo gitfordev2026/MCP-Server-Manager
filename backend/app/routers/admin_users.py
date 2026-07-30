@@ -12,6 +12,8 @@ Endpoints:
 from __future__ import annotations
 
 from typing import Any
+import os
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -21,6 +23,13 @@ from app.models.db_models import UserModel
 from app.core.logger import get_logger
 
 logger = get_logger(__name__)
+
+MAINTENANCE_MODE_STATE: dict[str, Any] = {
+    "enabled": False,
+    "message": "System is currently undergoing scheduled maintenance. Please check back shortly.",
+    "updated_at": None,
+    "updated_by": None,
+}
 
 
 class RoleUpdateRequest(BaseModel):
@@ -32,8 +41,38 @@ class CreateUserRequest(BaseModel):
     role: str = "developer"  # "admin" or "developer"
 
 
+class MaintenanceToggleRequest(BaseModel):
+    enabled: bool
+    message: str | None = None
+
+
 def create_admin_users_router(session_local_factory) -> APIRouter:
     router = APIRouter()
+
+    @router.get(
+        "/api/system/maintenance",
+        summary="Get System Maintenance Status",
+        description="Public endpoint to check if system maintenance mode is currently active.",
+    )
+    def get_maintenance_status() -> dict[str, Any]:
+        return MAINTENANCE_MODE_STATE
+
+    @router.post(
+        "/api/admin/maintenance",
+        summary="Toggle System Maintenance Mode (Admin Only)",
+        description="Enables or disables system maintenance mode. Admin / Super Admin only.",
+    )
+    def toggle_maintenance_mode(
+        body: MaintenanceToggleRequest,
+        actor: dict[str, Any] = Depends(require_role(["admin", "super_admin"])),
+    ) -> dict[str, Any]:
+        MAINTENANCE_MODE_STATE["enabled"] = body.enabled
+        if body.message:
+            MAINTENANCE_MODE_STATE["message"] = body.message
+        MAINTENANCE_MODE_STATE["updated_at"] = datetime.utcnow().isoformat()
+        MAINTENANCE_MODE_STATE["updated_by"] = actor.get("username")
+        logger.info(f"[MaintenanceMode] Toggled by {actor.get('username')}: enabled={body.enabled}")
+        return MAINTENANCE_MODE_STATE
 
     @router.get(
         "/api/me",

@@ -357,6 +357,54 @@ export default function AdminPanelPage() {
   const [rbacUsers, setRbacUsers] = useState<UserRoleInfo[]>([]);
   const [togglingFeature, setTogglingFeature] = useState<string | null>(null);
 
+  // System Maintenance Mode State
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [maintenanceMsg, setMaintenanceMsg] = useState('System is currently undergoing scheduled maintenance. Please check back shortly.');
+  const [togglingMaint, setTogglingMaint] = useState(false);
+
+  // Maintenance Warning Modal State
+  const [maintModalOpen, setMaintModalOpen] = useState(false);
+  const [maintDraftMsg, setMaintDraftMsg] = useState('System is currently undergoing scheduled maintenance. Please check back shortly.');
+  const [maintEstimatedTime, setMaintEstimatedTime] = useState('30 minutes');
+
+  const fetchMaintenanceStatus = useCallback(async () => {
+    try {
+      const res = await authenticatedFetch('/api/proxy/api/system/maintenance');
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceEnabled(Boolean(data.enabled));
+        if (data.message) {
+          setMaintenanceMsg(data.message);
+          setMaintDraftMsg(data.message);
+        }
+      }
+    } catch (_) {}
+  }, []);
+
+  const handleToggleMaintenance = async (newMode: boolean, customMsg?: string) => {
+    try {
+      setTogglingMaint(true);
+      const msgToSend = customMsg !== undefined ? customMsg : maintenanceMsg;
+      const res = await authenticatedFetch('/api/proxy/api/admin/maintenance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newMode, message: msgToSend }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMaintenanceEnabled(Boolean(data.enabled));
+        if (data.message) setMaintenanceMsg(data.message);
+        toast.success(newMode ? 'System Maintenance Mode ENABLED' : 'System Maintenance Mode DISABLED');
+      } else {
+        toast.error('Failed to update maintenance mode');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error updating maintenance mode');
+    } finally {
+      setTogglingMaint(false);
+    }
+  };
+
   // Search/filter state
   const [appSearch, setAppSearch] = useState('');
   const [serverSearch, setServerSearch] = useState('');
@@ -404,6 +452,7 @@ export default function AdminPanelPage() {
   const canHardDelete      = useMemo(() => actorRole === 'super_admin', [actorRole]);
   const canViewAudit = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
   const canApproveExposure = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
+  const canManageMaintenance = useMemo(() => ['super_admin', 'admin'].includes(actorRole), [actorRole]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
 
@@ -435,6 +484,7 @@ export default function AdminPanelPage() {
       } else {
         setAuditLogs([]);
       }
+      void fetchMaintenanceStatus();
     } catch (err) {
       setGlobalError(err instanceof Error ? err.message : 'Failed to load admin data');
     } finally {
@@ -943,6 +993,158 @@ export default function AdminPanelPage() {
         {/* ── OVERVIEW TAB ─────────────────────────────────────────────────── */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* System Maintenance Control Card (Admin / Super Admin Only) */}
+            {canManageMaintenance && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/20 p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${maintenanceEnabled ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      System Maintenance Mode
+                    </h3>
+                    <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-md ${maintenanceEnabled ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'}`}>
+                      {maintenanceEnabled ? 'MAINTENANCE MODE ACTIVE' : 'SYSTEM ONLINE'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl">
+                    When enabled, public visitors accessing root routes are shown a System Maintenance page. Admin users and the secret <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-indigo-500 font-mono">/new</code> route remain accessible for administration.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <input
+                    type="text"
+                    value={maintenanceMsg}
+                    onChange={(e) => setMaintenanceMsg(e.target.value)}
+                    placeholder="Custom maintenance message..."
+                    className="text-xs px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 flex-1 md:w-64"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!maintenanceEnabled) {
+                        setMaintDraftMsg(maintenanceMsg);
+                        setMaintModalOpen(true);
+                      } else {
+                        void handleToggleMaintenance(false);
+                      }
+                    }}
+                    disabled={togglingMaint}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex-shrink-0 shadow-sm ${
+                      maintenanceEnabled
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                        : 'bg-amber-600 hover:bg-amber-500 text-white'
+                    }`}
+                  >
+                    {togglingMaint ? 'Updating...' : maintenanceEnabled ? 'Turn OFF Maintenance' : 'Turn ON Maintenance...'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Maintenance Mode Confirmation & Customization Modal */}
+            {maintModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+                <div className="max-w-xl w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
+                  {/* Header */}
+                  <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 font-bold text-lg">
+                        ⚠️
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">Enable System Maintenance Mode</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Configure warning notice & public visitor settings</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setMaintModalOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg text-sm"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Warning Callout Banner */}
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <span>⚠️</span> Warning: Public Traffic Will Be Blocked
+                    </p>
+                    <p className="opacity-90 leading-relaxed">
+                      Enabling maintenance mode will immediately show the Maintenance Screen to all non-admin public visitors across root endpoints. The secret <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono font-bold">/new</code> route & logged-in admins remain active.
+                    </p>
+                  </div>
+
+                  {/* Form Fields */}
+                  <div className="space-y-4 text-left">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Custom Maintenance Message (Seen by Public Visitors)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={maintDraftMsg}
+                        onChange={(e) => setMaintDraftMsg(e.target.value)}
+                        placeholder="Explain why the system is under maintenance..."
+                        className="w-full text-xs p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        Estimated Duration / Additional Info
+                      </label>
+                      <input
+                        type="text"
+                        value={maintEstimatedTime}
+                        onChange={(e) => setMaintEstimatedTime(e.target.value)}
+                        placeholder="e.g. 30 Minutes or Scheduled DB Upgrade"
+                        className="w-full text-xs px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+
+                    {/* Live Preview Card */}
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 font-bold">
+                        Live Visitor Preview
+                      </label>
+                      <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-300 space-y-2">
+                        <div className="flex items-center justify-between text-amber-400 font-bold border-b border-slate-800 pb-1.5">
+                          <span>SCHEDULED MAINTENANCE</span>
+                          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">ACTIVE</span>
+                        </div>
+                        <p className="text-slate-300 italic">{maintDraftMsg || 'System is under maintenance.'}</p>
+                        <div className="flex justify-between text-[11px] text-slate-500 font-mono pt-1">
+                          <span>Duration: {maintEstimatedTime || 'Underway'}</span>
+                          <span>Admin Secret Access: Enabled</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Actions */}
+                  <div className="flex items-center justify-end gap-3 border-t border-slate-200 dark:border-slate-800 pt-4">
+                    <button
+                      onClick={() => setMaintModalOpen(false)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMaintenanceMsg(maintDraftMsg);
+                        void handleToggleMaintenance(true, maintDraftMsg);
+                        setMaintModalOpen(false);
+                      }}
+                      disabled={togglingMaint}
+                      className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-md cursor-pointer"
+                    >
+                      {togglingMaint ? 'Activating...' : 'Confirm & Turn ON Maintenance Mode'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {statCards.map((card) => (
                 <div

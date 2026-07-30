@@ -6,13 +6,6 @@ import { useCallback, useEffect, useState } from 'react';
 import ThemeToggle from '@/components/ThemeToggle';
 import { useTheme } from '@/context/ThemeContext';
 import { publicEnv } from '@/lib/env';
-import {
-  buildLogoutUrl,
-  clearTokens,
-  fetchAuthConfig,
-  getStoredToken,
-  type AuthConfig,
-} from '@/lib/auth';
 
 import UserHeader from '@/components/UserHeader';
 import CommandKModal from '@/components/CommandKModal';
@@ -22,16 +15,12 @@ interface NavigationProps {
   isDark?: boolean;
 }
 
-export default function Navigation({ pageTitle, isDark: isDarkProp }: NavigationProps) {
+export default function Navigation({ pageTitle }: NavigationProps) {
   const pathname = usePathname();
   const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === 'dark';
 
-  const [loggingOut, setLoggingOut] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandKOpen, setCommandKOpen] = useState(false);
-  const [authEnabled, setAuthEnabled] = useState<boolean | null>(null);
-  const [hasToken, setHasToken] = useState(false);
   const [role, setRole] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
   
@@ -123,7 +112,7 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
       activeClass: 'bg-purple-600 text-white shadow-md shadow-purple-500/25 font-bold',
       icon: (
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 005.656-5.656l-1.1 1.1" />
         </svg>
       ),
     },
@@ -239,9 +228,37 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
     }
   };
 
-  const handleCopyApiUrl = () => {
-    const url = `${window.location.origin}/api/proxy/mcp/apps/`;
-    navigator.clipboard?.writeText(url);
+  const handleCopyApiUrl = async () => {
+    const url = `${window.location.origin}/api/proxy/mcp/apps`;
+    let success = false;
+    
+    // Try modern clipboard API first
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(url);
+        success = true;
+      } catch (_) {
+        // Fallback below
+      }
+    }
+
+    // Fallback for non-HTTPS / IP origins
+    if (!success) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = url;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch (_) {}
+    }
+
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
   };
@@ -280,6 +297,11 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
               ⌘K
             </kbd>
           </button>
+
+          {/* Theme Toggle placed to the LEFT of Copy Proxy URL */}
+          <div className="flex items-center border-l border-slate-200 dark:border-slate-800 pl-3">
+            <ThemeToggle />
+          </div>
 
           {/* Quick Copy API Endpoint */}
           <button
@@ -400,16 +422,6 @@ export default function Navigation({ pageTitle, isDark: isDarkProp }: Navigation
 
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-slate-200/90 dark:border-slate-800 flex-shrink-0 space-y-2">
-          {/* Theme Mode Control */}
-          <div className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between px-1'}`}>
-            {!isCollapsed && (
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Theme Mode
-              </span>
-            )}
-            <ThemeToggle />
-          </div>
-
           {/* User Profile Card */}
           <div className="w-full pt-1">
             <UserHeader isCollapsed={isCollapsed} />

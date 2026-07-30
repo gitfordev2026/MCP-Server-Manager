@@ -58,8 +58,8 @@ export default function McpInspectorPage() {
   // endpoint, applying the HMAC signature and forwarding cookies /
   // Authorization headers.
   const endpointUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '/api/proxy/mcp/apps/';
-    return `${window.location.origin}/api/proxy/mcp/apps/`;
+    if (typeof window === 'undefined') return '/api/proxy/mcp/apps';
+    return `${window.location.origin}/api/proxy/mcp/apps`;
   }, []);
 
   const fetchToken = useCallback(async () => {

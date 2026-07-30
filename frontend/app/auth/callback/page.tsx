@@ -42,7 +42,16 @@ function CallbackContent() {
           storeTokens(tokenResponse);
         }
 
-        // 2. --- STRICT PRE-CHECK: Verify DB Role BEFORE Redirecting to Dashboard ---
+        // 2. --- STRICT PRE-CHECK: Verify Maintenance Mode & DB Role ---
+        let isMaintActive = false;
+        try {
+          const maintRes = await fetch('/api/proxy/api/system/maintenance', { cache: 'no-store' });
+          if (maintRes.ok) {
+            const maintData = await maintRes.json();
+            isMaintActive = Boolean(maintData.enabled);
+          }
+        } catch (_) {}
+
         const meRes = await authenticatedFetch('/api/proxy/api/me');
         if (meRes.status === 403) {
           // Unregistered user / No DB role assigned -> Go straight to /access-denied
@@ -52,6 +61,18 @@ function CallbackContent() {
           clearTokens();
           window.location.href = '/login';
           return;
+        }
+
+        if (meRes.ok) {
+          const profile = await meRes.json();
+          const role = profile.primary_role;
+          const isAdmin = role === 'admin' || role === 'super_admin';
+
+          if (isMaintActive && !isAdmin) {
+            clearTokens();
+            setError('System Maintenance Mode is currently ACTIVE. Login access is restricted to System Administrators only.');
+            return;
+          }
         }
 
         // 3. Allowed user -> Go to target destination
