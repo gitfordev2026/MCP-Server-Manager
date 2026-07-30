@@ -12,7 +12,7 @@ COPY package.json package-lock.json* ./
 COPY node_modules* ./node_modules/
 
 # Install dependencies if node_modules is missing
-RUN if [ ! -d "./node_modules/next" ] || [ ! -d "./node_modules/typescript" ]; then npm install ; fi
+RUN if [ ! -d "./node_modules/next" ] || [ ! -d "./node_modules/typescript" ] || [ ! -d "./node_modules/lucide-react" ]; then npm install ; fi
 
 COPY . .
 
