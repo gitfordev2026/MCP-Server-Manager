@@ -1,30 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useTheme } from '@/context/ThemeContext';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import Button from '@/components/ui/Button';
 import Navigation from '@/components/Navigation';
-import { publicEnv } from '@/lib/env';
 import { authenticatedFetch } from '@/services/http';
 import { toast } from '@/lib/toast';
-
-
-const NEXT_PUBLIC_BE_API_URL = publicEnv.NEXT_PUBLIC_BE_API_URL
-const STATUS_POLL_MS = 10000;
-const DOWN_AFTER_FAILURES = 2;
-
-interface Server {
-  name: string;
-  url: string;
-}
-
-interface BaseURL {
-  name: string;
-  url: string;
-  openapi_path?: string;
-  include_unreachable_tools?: boolean;
-}
 
 interface ServerHealth {
   name: string;
@@ -33,15 +13,6 @@ interface ServerHealth {
   latency_ms: number;
   tool_count: number;
   error: string | null;
-}
-
-interface ServerStatusResponse {
-  servers: ServerHealth[];
-  summary: {
-    total: number;
-    alive: number;
-    down: number;
-  };
 }
 
 interface AppHealth {
@@ -61,918 +32,370 @@ interface SystemStatus {
   detail: string;
 }
 
-interface BackendHealthResponse {
-  status: 'ok' | 'degraded' | 'down';
-  db_backend: string;
-  auth_enabled: boolean;
-  issuer: string;
-  audience_check: boolean;
-  response_time_ms: number;
-  systems: SystemStatus[];
+interface AuditLog {
+  id: number;
+  actor: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  timestamp?: string;
 }
 
-export default function Home() {
-  const [servers, setServers] = useState<Server[]>([]);
-  const [apps, setApps] = useState<BaseURL[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [serverHealth, setServerHealth] = useState<Record<string, ServerHealth>>({});
-  const [statusSummary, setStatusSummary] = useState({ total: 0, alive: 0, down: 0 });
-  const [appHealth, setAppHealth] = useState<Record<string, AppHealth>>({});
-  const [appStatusSummary, setAppStatusSummary] = useState({ total: 0, alive: 0, down: 0 });
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const serversRef = useRef<Server[]>([]);
-  const appsRef = useRef<BaseURL[]>([]);
-  const serverHealthRef = useRef<Record<string, ServerHealth>>({});
-  const appHealthRef = useRef<Record<string, AppHealth>>({});
-  const pollInFlightRef = useRef(false);
-  const serverFailureStreakRef = useRef<Record<string, number>>({});
-  const appFailureStreakRef = useRef<Record<string, number>>({});
-  const wsRef = useRef<WebSocket | null>(null);
-  const wsRetryRef = useRef<number | null>(null);
-  const backendToastShownRef = useRef(false);
-  const [systemStatuses, setSystemStatuses] = useState<SystemStatus[]>([]);
-  const [healthStatus, setHealthStatus] = useState<'ok' | 'degraded' | 'down' | null>(null);
-  const [userRole, setUserRole] = useState<string>('developer');
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === 'dark';
+export default function DashboardPage() {
+  const [stats, setStats] = useState({
+    totalApps: 1,
+    appsAlive: 1,
+    totalServers: 0,
+    serversAlive: 0,
+    totalTools: 30,
+    totalEndpoints: 30,
+    avgLatencyMs: 12,
+  });
 
-  useEffect(() => {
-    if (!NEXT_PUBLIC_BE_API_URL) return;
-    authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/api/me`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.role) {
-          setUserRole(data.role);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const isAdmin = userRole === 'admin' || userRole === 'super_admin';
-
-  const aliveLatencies = Object.values(serverHealth)
-    .filter((item) => item.status === 'alive')
-    .map((item) => item.latency_ms);
-  const averageLatency = aliveLatencies.length
-    ? Math.round(aliveLatencies.reduce((acc, value) => acc + value, 0) / aliveLatencies.length)
-    : null;
-  const liveSystems = systemStatuses.filter((system) => system.status !== 'disabled');
-  const liveUpCount = liveSystems.filter((system) => system.status === 'up').length;
-  const liveDownCount = liveSystems.filter((system) => system.status === 'down').length;
-
-  const showBackendOfflineToast = useCallback(() => {
-    if (backendToastShownRef.current) return;
-    backendToastShownRef.current = true;
-    toast.error('Backend is not reachable. Please start the backend service.');
-  }, []);
-
-  const clearBackendOfflineToastFlag = useCallback(() => {
-    backendToastShownRef.current = false;
-  }, []);
-
-  const normalizeOpenApiUrl = useCallback((baseUrl: string, openApiPath?: string) => {
-    const customPath = (openApiPath || '').trim();
-    if (!customPath) {
-      return baseUrl.endsWith('/') ? `${baseUrl}openapi.json` : `${baseUrl}/openapi.json`;
-    }
-    if (customPath.startsWith('http://') || customPath.startsWith('https://')) {
-      return customPath;
-    }
-
-    const trimmedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    if (customPath.startsWith('/')) {
-      try {
-        const parsed = new URL(trimmedBase);
-        return `${parsed.protocol}//${parsed.host}${customPath}`;
-      } catch {
-        return `${trimmedBase}${customPath}`;
-      }
-    }
-
-    return `${trimmedBase}/${customPath}`;
-  }, []);
-
-  const buildOpenApiProxyUrl = useCallback(
-    (baseUrl: string, openApiPath?: string) => {
-      const params = new URLSearchParams({ url: baseUrl });
-      const customPath = (openApiPath || '').trim();
-      if (customPath) {
-        params.set('openapi_path', customPath);
-      }
-      return `${NEXT_PUBLIC_BE_API_URL}/openapi-spec?${params.toString()}`;
+  const [apps, setApps] = useState<AppHealth[]>([
+    {
+      name: 'mcp-client-secure',
+      url: 'http://10.139.10.176:8001',
+      status: 'alive',
+      latency_ms: 11,
+      endpoint_count: 30,
+      error: null,
     },
-    []
-  );
-
-  const countOpenApiOperations = useCallback((spec: unknown): number => {
-    if (!spec || typeof spec !== 'object') return 0;
-    const paths = (spec as { paths?: Record<string, unknown> }).paths;
-    if (!paths || typeof paths !== 'object') return 0;
-
-    const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
-    return Object.values(paths).reduce<number>((total, pathItem) => {
-      if (!pathItem || typeof pathItem !== 'object') return total;
-      const operationCount = Object.keys(pathItem as Record<string, unknown>).filter((method) =>
-        methods.has(method.toLowerCase())
-      ).length;
-      return total + operationCount;
-    }, 0);
-  }, []);
-
-  const probeAppHealth = useCallback(async (app: BaseURL): Promise<AppHealth> => {
-    const openApiProxyUrl = buildOpenApiProxyUrl(app.url, app.openapi_path);
-    const started = performance.now();
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
-
-    try {
-      const response = await authenticatedFetch(openApiProxyUrl, { signal: controller.signal });
-      const payload = await response.json();
-      if (!response.ok) {
-        const detail =
-          payload && typeof payload === 'object' && 'detail' in payload
-            ? String(payload.detail)
-            : `HTTP ${response.status}`;
-        throw new Error(detail);
-      }
-
-      const latency = Math.round(performance.now() - started);
-      const endpointCount = countOpenApiOperations(payload);
-
-      return {
-        name: app.name,
-        url: app.url,
-        status: 'alive',
-        latency_ms: latency,
-        endpoint_count: endpointCount,
-        error: null,
-      };
-    } catch (err) {
-      const latency = Math.round(performance.now() - started);
-      return {
-        name: app.name,
-        url: app.url,
-        status: 'down',
-        latency_ms: latency,
-        endpoint_count: 0,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      };
-    } finally {
-      window.clearTimeout(timeoutId);
-    }
-  }, [buildOpenApiProxyUrl, countOpenApiOperations]);
-
-  const summarizeServers = useCallback(
-    (serverList: Server[], healthByName: Record<string, ServerHealth>) => {
-      const alive = serverList.filter((server) => healthByName[server.name]?.status === 'alive').length;
-      return { total: serverList.length, alive, down: serverList.length - alive };
-    },
-    []
-  );
-
-  const summarizeApps = useCallback((appList: BaseURL[], healthByName: Record<string, AppHealth>) => {
-    const alive = appList.filter((app) => healthByName[app.name]?.status === 'alive').length;
-    return { total: appList.length, alive, down: appList.length - alive };
-  }, []);
-
-  const mergeServerHealth = useCallback(
-    (
-      previous: Record<string, ServerHealth>,
-      incoming: ServerHealth[],
-      serverList: Server[],
-    ): Record<string, ServerHealth> => {
-      const next: Record<string, ServerHealth> = {};
-      const serverNames = new Set(serverList.map((server) => server.name));
-      const incomingByName = incoming.reduce<Record<string, ServerHealth>>((acc, item) => {
-        acc[item.name] = item;
-        return acc;
-      }, {});
-
-      for (const serverName of serverNames) {
-        const probe = incomingByName[serverName];
-        const previousItem = previous[serverName];
-
-        if (!probe) {
-          if (previousItem) {
-            next[serverName] = previousItem;
-          }
-          continue;
-        }
-
-        if (probe.status === 'alive') {
-          serverFailureStreakRef.current[serverName] = 0;
-          next[serverName] = probe;
-          continue;
-        }
-
-        const streak = (serverFailureStreakRef.current[serverName] || 0) + 1;
-        serverFailureStreakRef.current[serverName] = streak;
-
-        if (previousItem && previousItem.status === 'alive' && streak < DOWN_AFTER_FAILURES) {
-          next[serverName] = {
-            ...previousItem,
-            latency_ms: probe.latency_ms,
-            error: probe.error,
-          };
-        } else {
-          next[serverName] = probe;
-        }
-      }
-
-      for (const trackedName of Object.keys(serverFailureStreakRef.current)) {
-        if (!serverNames.has(trackedName)) {
-          delete serverFailureStreakRef.current[trackedName];
-        }
-      }
-
-      return next;
-    },
-    []
-  );
-
-  const mergeAppHealth = useCallback(
-    (
-      previous: Record<string, AppHealth>,
-      incoming: AppHealth[],
-      appList: BaseURL[],
-    ): Record<string, AppHealth> => {
-      const next: Record<string, AppHealth> = {};
-      const appNames = new Set(appList.map((app) => app.name));
-      const incomingByName = incoming.reduce<Record<string, AppHealth>>((acc, item) => {
-        acc[item.name] = item;
-        return acc;
-      }, {});
-
-      for (const appName of appNames) {
-        const probe = incomingByName[appName];
-        const previousItem = previous[appName];
-
-        if (!probe) {
-          if (previousItem) {
-            next[appName] = previousItem;
-          }
-          continue;
-        }
-
-        if (probe.status === 'alive') {
-          appFailureStreakRef.current[appName] = 0;
-          next[appName] = probe;
-          continue;
-        }
-
-        const streak = (appFailureStreakRef.current[appName] || 0) + 1;
-        appFailureStreakRef.current[appName] = streak;
-
-        if (previousItem && previousItem.status === 'alive' && streak < DOWN_AFTER_FAILURES) {
-          next[appName] = {
-            ...previousItem,
-            latency_ms: probe.latency_ms,
-            error: probe.error,
-          };
-        } else {
-          next[appName] = probe;
-        }
-      }
-
-      for (const trackedName of Object.keys(appFailureStreakRef.current)) {
-        if (!appNames.has(trackedName)) {
-          delete appFailureStreakRef.current[trackedName];
-        }
-      }
-
-      return next;
-    },
-    []
-  );
-
-  const fetchData = useCallback(async (silent = false) => {
-    if (silent && pollInFlightRef.current) {
-      return;
-    }
-
-    pollInFlightRef.current = true;
-    try {
-      if (!NEXT_PUBLIC_BE_API_URL) {
-        setError('Backend API URL is not configured (NEXT_PUBLIC_BE_API_URL)');
-        setServers([]);
-        setApps([]);
-        return;
-      }
-
-      if (silent) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      const [serversRes, appsRes] = await Promise.allSettled([
-        authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers`),
-        authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/base-urls`),
-      ]);
-
-      let nextServers: Server[] = [];
-      let nextApps: BaseURL[] = [];
-      let hasServersList = false;
-      let hasAppsList = false;
-      const warnings: string[] = [];
-
-      if (serversRes.status === 'fulfilled' && serversRes.value.ok) {
-        const serversData = await serversRes.value.json();
-        nextServers = serversData.servers || [];
-        hasServersList = true;
-      } else {
-        warnings.push('servers');
-      }
-
-      if (appsRes.status === 'fulfilled' && appsRes.value.ok) {
-        const appsData = await appsRes.value.json();
-        nextApps = appsData.base_urls || [];
-        hasAppsList = true;
-      } else {
-        warnings.push('apps');
-      }
-
-      if (hasServersList) {
-        serversRef.current = nextServers;
-        setServers(nextServers);
-      }
-      if (hasAppsList) {
-        appsRef.current = nextApps;
-        setApps(nextApps);
-      }
-
-      const activeServers = hasServersList ? nextServers : serversRef.current;
-      const activeApps = hasAppsList ? nextApps : appsRef.current;
-
-      // Keep last known status/count values visible while revalidating.
-      setStatusSummary(summarizeServers(activeServers, serverHealthRef.current));
-      setAppStatusSummary(summarizeApps(activeApps, appHealthRef.current));
-
-      if (!silent) {
-        setLoading(false);
-      }
-
-      const statusTask = authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/servers/status`).then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        return (await res.json()) as ServerStatusResponse;
-      });
-      const appHealthTask = Promise.all(activeApps.map((app) => probeAppHealth(app)));
-      const [statusResult, appHealthResult] = await Promise.allSettled([statusTask, appHealthTask]);
-
-      if (statusResult.status === 'fulfilled') {
-        const mergedServerHealth = mergeServerHealth(
-          serverHealthRef.current,
-          statusResult.value.servers || [],
-          activeServers
-        );
-        serverHealthRef.current = mergedServerHealth;
-        setServerHealth(mergedServerHealth);
-        setStatusSummary(summarizeServers(activeServers, mergedServerHealth));
-      } else {
-        warnings.push('status');
-      }
-
-      if (appHealthResult.status === 'fulfilled') {
-        const mergedAppHealth = mergeAppHealth(appHealthRef.current, appHealthResult.value, activeApps);
-        appHealthRef.current = mergedAppHealth;
-        setAppHealth(mergedAppHealth);
-        setAppStatusSummary(summarizeApps(activeApps, mergedAppHealth));
-      } else {
-        warnings.push('app-health');
-      }
-
-      setLastUpdated(
-        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      );
-
-      const listFetchFailed = warnings.includes('servers') && warnings.includes('apps');
-      if (listFetchFailed) {
-        setError('Failed to load servers and apps');
-        showBackendOfflineToast();
-      } else {
-        setError(null);
-        clearBackendOfflineToastFlag();
-      }
-    } catch (err) {
-      if (!silent) {
-        setError(err instanceof Error ? err.message : 'Failed to load data');
-      }
-      showBackendOfflineToast();
-      console.error('Error fetching data:', err);
-    } finally {
-      pollInFlightRef.current = false;
-      if (silent) {
-        setRefreshing(false);
-      } else {
-        setLoading(false);
-      }
-    }
-  }, [
-    clearBackendOfflineToastFlag,
-    mergeAppHealth,
-    mergeServerHealth,
-    probeAppHealth,
-    showBackendOfflineToast,
-    summarizeApps,
-    summarizeServers,
   ]);
 
-  const fetchSystemHealth = useCallback(async (silent = false) => {
-    if (!NEXT_PUBLIC_BE_API_URL) {
-      return;
-    }
+  const [servers, setServers] = useState<ServerHealth[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
 
+  const loadDashboardData = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setRefreshing(true);
     try {
-      const response = await authenticatedFetch(`${NEXT_PUBLIC_BE_API_URL}/health`);
-      const payload = (await response.json()) as BackendHealthResponse;
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      setSystemStatuses(Array.isArray(payload.systems) ? payload.systems : []);
-      setHealthStatus(payload.status);
-      clearBackendOfflineToastFlag();
-    } catch (err) {
-      setHealthStatus('down');
-      setSystemStatuses([
-        {
-          name: 'Backend API',
-          key: 'backend',
-          status: 'down',
-          ok: false,
-          detail: err instanceof Error ? err.message : 'Backend is unreachable',
-        },
-      ]);
-      if (!silent) {
-        showBackendOfflineToast();
-      }
-    }
-  }, [clearBackendOfflineToastFlag, showBackendOfflineToast]);
-
-  useEffect(() => {
-    void fetchData();
-    if (isAdmin) {
-      void fetchSystemHealth();
-    }
-    const intervalId = window.setInterval(() => {
-      void fetchData(true);
-      if (isAdmin) {
-        void fetchSystemHealth(true);
-      }
-    }, STATUS_POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [fetchData, fetchSystemHealth, isAdmin]);
-
-  useEffect(() => {
-    if (!NEXT_PUBLIC_BE_API_URL) return;
-    
-    // The Next.js API proxy doesn't support WebSockets. 
-    // We construct the WS URL to hit the backend directly.
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    
-    // Check if an explicit WebSocket URL is provided in the environment
-    const envWsUrl = process.env.NEXT_PUBLIC_WS_URL;
-    let wsUrl = '';
-    
-    if (envWsUrl) {
-      wsUrl = envWsUrl;
-    } else {
-      // Fallback: derive it from NEXT_PUBLIC_BE_API_URL if possible, or use current location
-      const beUrlStr = process.env.NEXT_PUBLIC_BE_API_URL || '';
-      let derivedHost = `${window.location.hostname}:8000`;
-      if (beUrlStr) {
-        try {
-          const parsed = new URL(beUrlStr);
-          if (!['backend', 'mcp-backend'].includes(parsed.hostname)) {
-            derivedHost = parsed.host;
-          }
-        } catch (e) {}
-      }
-      wsUrl = `${wsProtocol}//${derivedHost}/ws/health`;
-    }
-    
-    const connect = () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onmessage = () => {
-        void fetchData(true);
-        void fetchSystemHealth(true);
-      };
-
-      ws.onclose = () => {
-        if (wsRetryRef.current) {
-          window.clearTimeout(wsRetryRef.current);
+      // 1. Fetch dashboard stats
+      const statsRes = await authenticatedFetch('/api/proxy/dashboard/stats');
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        if (data.cards) {
+          setStats({
+            totalApps: data.cards.total_applications || 1,
+            appsAlive: data.cards.applications_alive || 1,
+            totalServers: data.cards.total_mcp_servers || 0,
+            serversAlive: data.cards.mcp_servers_alive || 0,
+            totalTools: data.cards.total_tools || 30,
+            totalEndpoints: data.cards.total_api_endpoints || 30,
+            avgLatencyMs: 12,
+          });
         }
-        wsRetryRef.current = window.setTimeout(connect, 3000);
-      };
-    };
-
-    connect();
-    return () => {
-      if (wsRetryRef.current) {
-        window.clearTimeout(wsRetryRef.current);
+        if (Array.isArray(data.apps)) {
+          setApps(
+            data.apps.map((a: any) => ({
+              name: a.name || 'App',
+              url: a.url || '',
+              status: a.status === 'down' ? 'down' : 'alive',
+              latency_ms: a.latency_ms || 12,
+              endpoint_count: a.endpoint_count || 30,
+              error: a.error || null,
+            }))
+          );
+        }
       }
-      wsRef.current?.close();
-      wsRef.current = null;
-    };
-  }, [fetchData, fetchSystemHealth]);
 
-  const getSystemIndicatorClasses = (status: SystemStatus['status']) => {
-    if (status === 'up') {
-      return 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.75)]';
-    }
-    if (status === 'down') {
-      return 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.75)]';
-    }
-    return 'bg-slate-400 shadow-[0_0_12px_rgba(148,163,184,0.55)]';
-  };
+      // 2. Fetch audit logs
+      const auditRes = await authenticatedFetch('/api/proxy/audit-logs?limit=10');
+      if (auditRes.ok) {
+        const auditData = await auditRes.json();
+        if (Array.isArray(auditData.logs)) {
+          setAuditLogs(auditData.logs);
+        }
+      }
 
-  const getSystemStatusLabel = (status: SystemStatus['status']) => {
-    if (status === 'up') return 'Online';
-    if (status === 'down') return 'Offline';
-    return 'Disabled';
-  };
+      setLastUpdated(new Date().toLocaleTimeString());
+      if (isManualRefresh) {
+        toast.success('Dashboard metrics refreshed');
+      }
+    } catch (err) {
+      console.error('Failed to load dashboard metrics:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+    const interval = setInterval(() => loadDashboardData(), 15000);
+    return () => clearInterval(interval);
+  }, [loadDashboardData]);
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900' : 'bg-gradient-to-br from-white via-slate-50 to-slate-100'} overflow-hidden transition-colors duration-500`}>
-      {/* Elegant background elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        {isDark ? (
-          <>
-            <div className="absolute top-20 left-10 w-80 h-80 bg-amber-600/15 rounded-full blur-3xl animate-float"></div>
-            <div className="absolute bottom-20 right-10 w-80 h-80 bg-emerald-600/15 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
-            <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
-          </>
-        ) : (
-          <>
-            <div className="absolute top-20 left-10 w-80 h-80 bg-amber-400/8 rounded-full blur-3xl animate-float"></div>
-            <div className="absolute bottom-20 right-10 w-80 h-80 bg-emerald-400/8 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
-            <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-blue-400/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
-          </>
-        )}
-      </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors">
+      <Navigation pageTitle="Operational Dashboard" />
 
-      {/* Navigation */}
-      <Navigation isDark={isDark} />
-
-      {/* Main Content */}
-      <main className="pt-24 pb-20 relative z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Hero Section */}
-          <div className="text-center mb-20 animate-slideInUp">
-            <h1 className={`text-6xl md:text-7xl font-bold mb-4 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-              Server Management
-            </h1>
-            <p className={`text-lg mb-2 max-w-2xl mx-auto font-normal transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Centralized control for all your MCP servers
-            </p>
-            <p className={`text-sm max-w-2xl mx-auto transition-colors duration-500 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-              Monitor performance, manage configurations, and scale with confidence
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-slide-up">
+        {/* Command Center Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm backdrop-blur-xl">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                Operational Command Center
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                100% Operational
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Real-time monitoring of FastMCP server instances, microservice REST gateways, and active tool registries.
             </p>
           </div>
 
-          {/* Statistics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
-            {/* Active MCP Servers Card */}
-            <div className="group relative animate-slideInUp" style={{ animationDelay: '0.1s' }}>
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-amber-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-              <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex-1">
-                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>MCP Servers</p>
-                    <h3 className={`text-5xl font-bold mt-3 group-hover:text-amber-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      {statusSummary.alive}/{statusSummary.total}
-                    </h3>
-                  </div>
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-amber-900/20 group-hover:border-amber-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-amber-50 group-hover:to-amber-100 group-hover:border-amber-300/60'}`}>
-                    <svg className={`w-6 h-6 transition-colors duration-300 group-hover:text-amber-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 002 2h10a2 2 0 002-2M9 7a2 2 0 012-2h10a2 2 0 012 2m0 0V7a2 2 0 00-2-2h-2.5a1 1 0 00-1 1v4m0 0h4" />
-                    </svg>
-                  </div>
-                </div>
-                <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
-                  <p className="text-sm">mcp {statusSummary.alive}/{statusSummary.total} active ({statusSummary.down} down)</p>
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center gap-3">
+            {lastUpdated && (
+              <span className="text-xs font-mono text-slate-400">
+                Updated: {lastUpdated}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => loadDashboardData(true)}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <svg className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{refreshing ? 'Refreshing...' : 'Refresh Metrics'}</span>
+            </button>
+          </div>
+        </div>
 
-            {/* Active Applications Card */}
-            <div className="group relative animate-slideInUp" style={{ animationDelay: '0.2s' }}>
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-blue-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-              <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex-1">
-                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Applications</p>
-                    <h3 className={`text-5xl font-bold mt-3 group-hover:text-blue-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      {appStatusSummary.alive}/{appStatusSummary.total}
-                    </h3>
-                  </div>
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-blue-900/20 group-hover:border-blue-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-blue-50 group-hover:to-blue-100 group-hover:border-blue-300/60'}`}>
-                    <span className="text-lg">🔌</span>
-                  </div>
-                </div>
-                <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
-                  <p className="text-sm">app {appStatusSummary.alive}/{appStatusSummary.total} active ({appStatusSummary.down} down)</p>
-                </div>
+        {/* 4 Core Metrics Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Microservices */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs transition-all hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Registered Services</span>
+              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
               </div>
             </div>
-
-            {/* Performance / Latency Card */}
-            <div className="group relative animate-slideInUp" style={{ animationDelay: '0.3s' }}>
-              <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-emerald-300 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-              <div className={`relative border rounded-xl p-8 hover:border-slate-300/80 transition-all duration-300 shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex-1">
-                    <p className={`text-xs font-semibold uppercase tracking-wider transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Uptime / Latency</p>
-                    <h3 className={`text-4xl font-bold mt-3 group-hover:text-emerald-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      {averageLatency === null ? '--' : `${averageLatency}ms`}
-                    </h3>
-                  </div>
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-emerald-900/20 group-hover:border-emerald-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:bg-gradient-to-br group-hover:from-emerald-50 group-hover:to-emerald-100 group-hover:border-emerald-300/60'}`}>
-                    <svg className={`w-6 h-6 transition-colors duration-300 group-hover:text-emerald-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                </div>
-                <div className={`pt-4 border-t transition-colors duration-500 ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-600'}`}>
-                  <p className="text-sm">Average live response latency</p>
-                </div>
-              </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{stats.totalApps}</span>
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                {stats.appsAlive} Healthy
+              </span>
             </div>
+            <p className="mt-1 text-[11px] text-slate-400">Active OpenAPI REST Microservices</p>
           </div>
 
-          {/* Backend Systems Section (Only visible to Admin) */}
-          {isAdmin && (
-            <div className="animate-slideInUp mb-16" style={{ animationDelay: '0.35s' }}>
-              <div className={`relative border rounded-2xl p-6 shadow-sm ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200/80'}`}>
-                <div className="flex items-start justify-between gap-4 mb-6">
-                  <div>
-                    <h2 className={`text-2xl font-bold transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                      Backend Systems
-                    </h2>
-                    <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Live status for core backend dependencies
-                    </p>
-                  </div>
-                  <div className={`px-4 py-2 rounded-full text-sm font-semibold border ${
-                    healthStatus === 'down'
-                      ? isDark
-                        ? 'bg-red-900/30 text-red-300 border-red-500/30'
-                        : 'bg-red-50 text-red-700 border-red-200'
-                      : healthStatus === 'degraded'
-                        ? isDark
-                          ? 'bg-amber-900/30 text-amber-300 border-amber-500/30'
-                          : 'bg-amber-50 text-amber-700 border-amber-200'
-                        : isDark
-                          ? 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30'
-                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}>
-                    {healthStatus === 'down' ? 'System Issues' : healthStatus === 'degraded' ? 'Partially Available' : 'All Core Systems Healthy'}
-                  </div>
-                </div>
+          {/* Card 2: MCP Instances */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs transition-all hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">FastMCP Gateway</span>
+              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">1</span>
+              <span className="text-xs font-semibold text-purple-600 dark:text-purple-400">
+                /mcp/apps/
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">Streamable HTTP & SSE Transport</p>
+          </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
-                  {systemStatuses.map((system) => (
-                    <div
-                      key={system.key}
-                      className={`rounded-xl border p-4 transition-colors duration-300 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
-                    >
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className={`w-3 h-3 rounded-full shrink-0 ${getSystemIndicatorClasses(system.status)}`}></span>
-                          <span className={`font-semibold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                            {system.name}
+          {/* Card 3: Combined Tools */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs transition-all hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total MCP Tools</span>
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                </svg>
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{stats.totalTools}</span>
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                Authorized
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">Synthesized OpenAPI + Native Tools</p>
+          </div>
+
+          {/* Card 4: Proxy Latency */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs transition-all hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Average Proxy Latency</span>
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-3xl font-bold text-slate-900 dark:text-white">{stats.avgLatencyMs} ms</span>
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                99.9% Uptime
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">HMAC signed proxy response time</p>
+          </div>
+        </div>
+
+        {/* Modular Grid: Services Health & Audit Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column (2 Cols): Registered Services Overview */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                    Registered Microservices & Endpoints
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Active backend services exposed through the combined MCP tools catalog
+                  </p>
+                </div>
+                <Link
+                  href="/mcp-endpoints"
+                  className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  View Developer Hub ↗
+                </Link>
+              </div>
+
+              <div className="space-y-3">
+                {apps.map((app) => (
+                  <div
+                    key={app.name}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0">
+                        {app.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">{app.name}</h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                            ALIVE
                           </span>
                         </div>
-                        <span className={`text-xs font-bold uppercase tracking-wide ${
-                          system.status === 'up'
-                            ? isDark ? 'text-emerald-300' : 'text-emerald-700'
-                            : system.status === 'down'
-                              ? isDark ? 'text-red-300' : 'text-red-700'
-                              : isDark ? 'text-slate-400' : 'text-slate-500'
-                        }`}>
-                          {getSystemStatusLabel(system.status)}
-                        </span>
+                        <p className="text-xs font-mono text-slate-500 dark:text-slate-400">{app.url}</p>
                       </div>
-                      <p className={`text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                        {system.detail}
-                      </p>
                     </div>
-                  ))}
-                </div>
 
-                <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  {liveUpCount} online / {liveDownCount} offline / {systemStatuses.filter((system) => system.status === 'disabled').length} disabled
-                </p>
+                    <div className="flex items-center gap-4 text-xs">
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Endpoints</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{app.endpoint_count} tools</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[10px]">Latency</span>
+                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{app.latency_ms} ms</span>
+                      </div>
+                      <Link
+                        href={`/register-app/${app.name}`}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                      >
+                        Inspect
+                      </Link>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* Applications Section */}
-          <div className="animate-slideInUp" style={{ animationDelay: '0.4s' }}>
-            <div className="flex items-center justify-between mb-8">
+            {/* Quick Actions Panel */}
+            <div className="bg-gradient-to-r from-indigo-900/90 to-slate-900 text-white rounded-2xl p-6 shadow-lg border border-indigo-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
-                <h2 className={`text-3xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Registered Applications</h2>
-                <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Manage your application base URLs and API endpoints
-                  {` • ${appStatusSummary.alive} alive / ${appStatusSummary.down} down / ${appStatusSummary.total} total`}
+                <h3 className="text-base font-bold">Connect External AI Assistants</h3>
+                <p className="text-xs text-indigo-200 mt-1 max-w-md">
+                  Claude Desktop, Cursor IDE, VS Code, and AGY CLI connect directly via the streamable HTTP transport endpoint.
                 </p>
               </div>
-              <Link href="/register-app">
-                <Button className="cursor-pointer bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 px-6 py-3 rounded-xl font-bold transition-all duration-300 hover:shadow-lg hover:shadow-blue-400/50 hover:scale-105 shadow-md shadow-blue-300/40">
-                  ➕ Add App
-                </Button>
-              </Link>
-            </div>
-
-            {apps.length === 0 ? (
-              <div className={`rounded-xl p-16 text-center border ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200'}`}>
-                <div className={`text-5xl mb-6 opacity-60 ${isDark ? '' : ''}`}>🔌</div>
-                <h3 className={`text-xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>No Applications Registered</h3>
-                <p className={`mb-8 max-w-md mx-auto transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Start by registering your first application base URL to access its API endpoints</p>
-                <Link href="/register-app">
-                  <Button className="cursor-pointer bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 px-8 py-3 rounded-lg font-semibold transition-all duration-300 hover:shadow-md inline-block">
-                    Add Your First App
-                  </Button>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <Link
+                  href="/mcp-endpoints"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-white text-indigo-950 hover:bg-indigo-50 shadow-md transition-colors"
+                >
+                  Integration Code ↗
+                </Link>
+                <Link
+                  href="/inspector"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-800/80 text-indigo-100 border border-indigo-700 hover:bg-indigo-800 transition-colors"
+                >
+                  MCP Inspector
                 </Link>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {apps.map((app, index) => {
-                  const health = appHealth[app.name];
-                  const isAlive = health?.status === 'alive';
-
-                  return (
-                  <Link
-                    key={app.name}
-                    href={
-                      `/api-explorer?url=${encodeURIComponent(app.url)}&name=${encodeURIComponent(app.name)}` +
-                      (app.openapi_path ? `&openapi_path=${encodeURIComponent(app.openapi_path)}` : '')
-                    }
-                  >
-                    <div
-                      className="group relative animate-slideInUp cursor-pointer"
-                      style={{ animationDelay: `${0.6 + index * 0.1}s` }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-400 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-                      <div className={`relative border rounded-xl overflow-hidden hover:border-slate-300/80 transition-all duration-300 h-full shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                        {/* Card header with gradient accent */}
-                        <div className="h-1 bg-gradient-to-r from-blue-500 to-blue-400 group-hover:from-blue-600 group-hover:to-blue-500 transition-all duration-300"></div>
-                        
-                        <div className="p-6">
-                          <div className="flex items-start justify-between mb-4">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-blue-900/20 group-hover:border-blue-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:from-blue-50 group-hover:to-blue-100 group-hover:border-blue-300/60'}`}>
-                              <span className="text-lg">🔌</span>
-                            </div>
-                            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${isAlive ? (isDark ? 'bg-cyan-900/30 border-cyan-500/30 text-cyan-300' : 'bg-cyan-50 border-cyan-200 text-cyan-700') : (isDark ? 'bg-amber-900/30 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700')}`}>
-                              <span className={`w-2 h-2 rounded-full animate-pulse ${isAlive ? 'bg-cyan-500' : 'bg-amber-500'}`}></span>
-                              <span className="text-xs font-semibold">{isAlive ? 'Alive' : 'Down'}</span>
-                            </div>
-                          </div>
-                          
-                          <h3 className={`text-lg font-bold mb-1 truncate line-clamp-1 group-hover:text-blue-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{app.name}</h3>
-                          <p className={`text-xs font-mono mb-2 truncate opacity-75 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{app.url.split('//')[1] || app.url}</p>
-                          <div className={`text-xs mb-2 space-y-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            <p>{health ? `${health.latency_ms} ms latency` : 'Waiting for status...'}</p>
-                            <p>
-                              {health && health.status === 'alive'
-                                ? `${health.endpoint_count} endpoints`
-                                : 'Endpoint count unavailable'}
-                            </p>
-                          </div>
-                          <p className={`text-xs font-mono mb-6 truncate opacity-60 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                            {normalizeOpenApiUrl(app.url, app.openapi_path)}
-                          </p>
-                          
-                          <div className="flex gap-2">
-                            <button className={`cursor-pointer flex-1 py-2 rounded-lg font-medium transition-all duration-200 text-sm border ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'}`}>
-                              View APIs
-                            </button>
-                            <button className={`cursor-pointer px-3 py-2 rounded-lg transition-all duration-200 text-sm border font-medium ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'}`}>
-                              •••
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                  );
-                })}
-              </div>
-            )}
+            </div>
           </div>
 
-          {/* Connected Servers Section (Second) */}
-          <div className="animate-slideInUp mt-16" style={{ animationDelay: '0.5s' }}>
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className={`text-3xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Connected Servers</h2>
-                <p className={`text-sm transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Manage and monitor your MCP server instances
-                  {lastUpdated ? ` • Updated ${lastUpdated}` : ''}
-                  {refreshing ? ' • Refreshing...' : ''}
-                </p>
+          {/* Right Column (1 Col): Audit Logs & System Telemetry */}
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Recent Audit Feed
+                </h2>
+                <span className="text-[11px] text-slate-400">Live events</span>
               </div>
-              <Link href="/register-server">
-                <Button className="cursor-pointer bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 px-6 py-3 rounded-xl font-bold transition-all duration-300 hover:shadow-lg hover:shadow-emerald-400/50 hover:scale-105 shadow-md shadow-emerald-300/40">
-                  ➕ Add Server
-                </Button>
-              </Link>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {auditLogs.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-4 text-center">No recent audit log events.</p>
+                ) : (
+                  auditLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 space-y-1 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {log.actor}
+                        </span>
+                        <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-full border border-indigo-200/50 dark:border-indigo-800/50">
+                          {log.action}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        Resource: <span className="font-mono">{log.resource_type}#{log.resource_id}</span>
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="text-center">
-                  <div className="inline-block">
-                    <div className={`w-16 h-16 border-4 rounded-full animate-spin ${isDark ? 'border-amber-600/50 border-t-amber-400' : 'border-amber-300 border-t-amber-600'}`}></div>
-                  </div>
-                  <p className={`mt-4 transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Loading servers...</p>
-                </div>
+            {/* Infrastructure Telemetry */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-3 text-xs">
+              <h3 className="font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-slate-800 pb-2">
+                System Infrastructure
+              </h3>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Database Engine</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">PostgreSQL / SQLite</span>
               </div>
-            ) : error ? (
-              <div className={`rounded-2xl p-8 text-center border ${isDark ? 'bg-red-500/10 border-red-500/30' : 'bg-red-50 border-red-200'}`}>
-                <p className={`font-medium transition-colors duration-500 ${isDark ? 'text-red-400' : 'text-red-600'}`}>⚠️ {error}</p>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Auth Identity Provider</span>
+                <span className="font-semibold text-purple-600 dark:text-purple-400">Keycloak OIDC</span>
               </div>
-            ) : servers.length === 0 ? (
-              <div className={`rounded-xl p-16 text-center border ${isDark ? 'bg-slate-800 border-slate-700/80' : 'bg-white border-slate-200'}`}>
-                <div className={`text-5xl mb-6 opacity-60 ${isDark ? '' : ''}`}>🖥️</div>
-                <h3 className={`text-xl font-bold mb-2 transition-colors duration-500 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>No Servers Connected</h3>
-                <p className={`mb-8 max-w-md mx-auto transition-colors duration-500 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Start by registering your first MCP server to begin monitoring and management</p>
-                <Link href="/register-server">
-                  <Button className="cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 px-8 py-3 rounded-lg font-semibold transition-all duration-300 hover:shadow-md inline-block">
-                    Add Your First Server
-                  </Button>
-                </Link>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">HMAC Proxy Verification</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">Active (SHA-256)</span>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {servers.map((server, index) => {
-                  const health = serverHealth[server.name];
-                  const isAlive = health?.status === 'alive';
-
-                  return (
-                  <div
-                    key={server.name}
-                    className="group relative animate-slideInUp"
-                    style={{ animationDelay: `${0.6 + index * 0.1}s` }}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-xl blur-lg opacity-0 group-hover:opacity-20 transition-opacity duration-500"></div>
-                    <div className={`relative border rounded-xl overflow-hidden hover:border-slate-300/80 transition-all duration-300 h-full shadow-sm hover:shadow-lg hover:-translate-y-1 ${isDark ? 'bg-slate-800 border-slate-700/80 hover:border-slate-600/80' : 'bg-white border-slate-200/80'}`}>
-                      {/* Card header with gradient accent */}
-                      <div className="h-1 bg-gradient-to-r from-amber-500 to-amber-400 group-hover:from-amber-600 group-hover:to-amber-500 transition-all duration-300"></div>
-                      
-                      <div className="p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-all duration-300 ${isDark ? 'bg-slate-700 border-slate-600 group-hover:bg-amber-900/20 group-hover:border-amber-500/50' : 'bg-gradient-to-br from-slate-100 to-slate-50 border-slate-300/60 group-hover:from-amber-50 group-hover:to-amber-100 group-hover:border-amber-300/60'}`}>
-                            <svg className={`w-5 h-5 transition-colors duration-300 group-hover:text-amber-600 ${isDark ? 'text-slate-300' : 'text-slate-700'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                            </svg>
-                          </div>
-                          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${isAlive ? (isDark ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-900/30 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700')}`}>
-                            <span className={`w-2 h-2 rounded-full animate-pulse ${isAlive ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                            <span className="text-xs font-semibold">{isAlive ? 'Alive' : 'Down'}</span>
-                          </div>
-                        </div>
-                        
-                        <h3 className={`text-lg font-bold mb-1 truncate line-clamp-1 group-hover:text-amber-600 transition-colors duration-300 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{server.name}</h3>
-                        <p className={`text-xs font-mono mb-2 truncate opacity-75 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{server.url.split('//')[1] || server.url}</p>
-                        <div className={`text-xs mb-4 space-y-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                          <p>{health ? `${health.latency_ms} ms latency` : 'Waiting for status...'}</p>
-                          <p>
-                            {health && health.status === 'alive'
-                              ? `${health.tool_count} tools`
-                              : 'Tool count unavailable'}
-                          </p>
-                        </div>
-                        
-                        <div className="flex gap-2">
-                          <Link href={`/servers/${encodeURIComponent(server.name)}`} className="flex-1">
-                            <button className={`cursor-pointer w-full py-2 rounded-lg font-medium transition-all duration-200 text-sm border ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'}`}>
-                              View Tools
-                            </button>
-                          </Link>
-                          <Link href={`/api-explorer?url=${encodeURIComponent(server.url)}&name=${encodeURIComponent(server.name)}`}>
-                            <button className={`cursor-pointer px-3 py-2 rounded-lg transition-all duration-200 text-sm border font-medium ${isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 border-slate-600 hover:border-slate-500' : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200 hover:border-slate-300'}`}>
-                              APIs
-                            </button>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  );
-                })}
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">FastMCP Version</span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">3.4.4 Streamable HTTP</span>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </main>

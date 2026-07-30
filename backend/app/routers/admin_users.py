@@ -41,12 +41,19 @@ def create_admin_users_router(session_local_factory) -> APIRouter:
         description="Returns profile information and assigned primary role for the current user.",
     )
     def get_me(actor: dict[str, Any] = Depends(get_request_actor)) -> dict[str, Any]:
-        return {
+        is_prod = any(
+            os.getenv(k, "").strip().lower() in ("production", "prod")
+            for k in ("ENV", "ENVIRONMENT", "APP_ENV", "NODE_ENV")
+        ) or os.getenv("MINIMIZE_USER_DATA", "false").strip().lower() in ("true", "1", "yes")
+
+        data: dict[str, Any] = {
             "username": actor.get("username"),
-            "sub": actor.get("subject") or actor.get("sub"),
             "roles": actor.get("roles", []),
             "primary_role": actor.get("primary_role"),
         }
+        if not is_prod:
+            data["sub"] = actor.get("subject") or actor.get("sub")
+        return data
 
     @router.get(
         "/api/admin/users",

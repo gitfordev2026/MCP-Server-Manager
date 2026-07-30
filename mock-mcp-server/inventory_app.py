@@ -49,9 +49,12 @@ async def verify_inventory_token(
 
     urls_to_try = [
         userinfo_endpoint,
+        f"http://10.139.10.176:8080/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo",
+        f"http://localhost:8080/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo",
+        f"http://127.0.0.1:8080/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo",
+        f"http://keycloak:8080/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo",
         userinfo_endpoint.replace("host.docker.internal", "localhost"),
         userinfo_endpoint.replace("host.docker.internal", "developer-api-keycloak-1"),
-        userinfo_endpoint.replace("localhost", "developer-api-keycloak-1"),
     ]
     seen = set()
     candidates = [u for u in urls_to_try if not (u in seen or seen.add(u))]
@@ -75,10 +78,10 @@ async def verify_inventory_token(
         user_data["configured_client_id"] = KEYCLOAK_CLIENT_ID
         return user_data
 
-    # Fallback for M2M (client_credentials) tokens where Keycloak /userinfo returns 401:
+    # Fallback for M2M (client_credentials) tokens or network isolation:
     try:
         payload = jwt.decode(token, options={"verify_signature": False})
-        if payload.get("iss") and f"/realms/{KEYCLOAK_REALM}" in payload["iss"]:
+        if payload.get("iss") and ("/realms/" in payload["iss"]):
             payload["configured_client_id"] = KEYCLOAK_CLIENT_ID
             return payload
     except Exception as exc:

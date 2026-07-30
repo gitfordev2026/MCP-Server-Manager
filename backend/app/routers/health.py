@@ -164,7 +164,9 @@ def create_health_router(db_backend: str, auth_enabled: bool, issuer: str, audie
     async def auth_token_proxy(request: Request, response: Response) -> Any:
         form = await request.form()
         data = dict(form)
-        data["client_secret"] = ENV.keycloak_client_secret
+        data.setdefault("client_id", ENV.keycloak_client_id)
+        if ENV.keycloak_client_secret:
+            data["client_secret"] = ENV.keycloak_client_secret
         
         keycloak_url = ENV.keycloak_server_url
         realm = ENV.keycloak_realm

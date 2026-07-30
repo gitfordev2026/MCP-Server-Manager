@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import sys
 import asyncio
 import re
@@ -1663,13 +1664,69 @@ def combine_base_and_path(base_url: str, path: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, final_path, "", "", ""))
 
 
+def _scrub_sensitive_fields(obj: Any) -> Any:
+    SENSITIVE_KEYS = {
+        "password",
+        "client_secret",
+        "secret",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "internal_url",
+    }
+    if isinstance(obj, dict):
+        cleaned = {}
+        for k, v in obj.items():
+            if k.lower() in SENSITIVE_KEYS:
+                continue
+            cleaned[k] = _scrub_sensitive_fields(v)
+        return cleaned
+    elif isinstance(obj, list):
+        return [_scrub_sensitive_fields(item) for item in obj]
+    return obj
+
+
+def is_production_environment() -> bool:
+    """Returns True if any environment indicator is set to production or prod."""
+    for key in ("ENV", "ENVIRONMENT", "APP_ENV", "NODE_ENV"):
+        val = os.getenv(key, "").strip().lower()
+        if val in ("production", "prod"):
+            return True
+    return os.getenv("HIDE_INTERNAL_METADATA", "false").strip().lower() in ("true", "1", "yes")
+
+
+def _sanitize_tool_response(data: dict[str, Any]) -> dict[str, Any]:
+    """Sanitizes tool execution response for security and production safety.
+
+    - In PRODUCTION: Omits raw internal API URLs, HTTP methods, and internal app names.
+    - In DEVELOPMENT: Retains full metadata (url, method, app, status_code) for debugging.
+    - Recursively scrubs sensitive credentials or secret keys from body payloads.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    sanitized = dict(data)
+
+    if is_production_environment():
+        # Hide internal raw endpoint infrastructure metadata in production
+        sanitized.pop("url", None)
+        sanitized.pop("method", None)
+        sanitized.pop("app", None)
+
+    if "body" in sanitized:
+        sanitized["body"] = _scrub_sensitive_fields(sanitized["body"])
+
+    return sanitized
+
+
 async def invoke_openapi_tool(
     tool: OpenAPIToolDefinition,
     arguments: dict[str, Any],
     user_token: str | None = None,
 ) -> dict[str, Any]:
     if tool.is_placeholder:
-        return {
+        return _sanitize_tool_response({
             "app": tool.app_name,
             "tool": tool.name,
             "method": "PLACEHOLDER",
@@ -1683,7 +1740,7 @@ async def invoke_openapi_tool(
                 "reason": tool.placeholder_reason,
                 "suggestion": "Check app health diagnostics and OpenAPI path configuration.",
             },
-        }
+        })
 
     path_args = arguments.get("path") if isinstance(arguments.get("path"), dict) else None
     query_args = arguments.get("query") if isinstance(arguments.get("query"), dict) else None
@@ -1747,7 +1804,7 @@ async def invoke_openapi_tool(
     else:
         parsed_body = response.text
 
-    return {
+    return _sanitize_tool_response({
         "app": tool.app_name,
         "tool": tool.name,
         "method": tool.method,
@@ -1756,7 +1813,7 @@ async def invoke_openapi_tool(
         "ok": response.is_success,
         "content_type": content_type,
         "body": parsed_body,
-    }
+    })
 
 
 async def _fetch_all_mcp_server_tools() -> dict[str, tuple[str, str, Any]]:
@@ -1913,6 +1970,16 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
             catalog = OpenAPIToolCatalog(generated_at=0.0, tools={}, sync_errors=[], apps=[])
             mcp_tools = {}
 
+        def _normalize_mcp_schema(raw: Any) -> dict[str, Any]:
+            if not isinstance(raw, dict):
+                schema: dict[str, Any] = {"type": "object", "properties": {}}
+            else:
+                schema = dict(raw)
+                schema["type"] = "object"
+                if "properties" not in schema or not isinstance(schema["properties"], dict):
+                    schema["properties"] = {}
+            return schema
+
         tools: list[Any] = []
         seen_names: set[str] = set()
 
@@ -1925,7 +1992,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
                     name=tool.name,
                     title=str(row.get("title") or tool.title or tool.name),
                     description=str(row.get("description") or tool.description or ""),
-                    parameters=tool.input_schema or {},
+                    parameters=_normalize_mcp_schema(tool.input_schema),
                     version=str(row.get("version") or "1.0.0"),
                 )
             )
@@ -1940,7 +2007,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
                     name=prefixed_name,
                     title=str(row.get("title") or getattr(tool_obj, "name", prefixed_name)),
                     description=str(row.get("description") or getattr(tool_obj, "description", "") or "No description"),
-                    parameters=getattr(tool_obj, "inputSchema", {}) or {},
+                    parameters=_normalize_mcp_schema(getattr(tool_obj, "inputSchema", {})),
                     version=str(row.get("version") or "1.0.0"),
                 )
             )
@@ -1955,7 +2022,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
                     name=name,
                     title=str(row.get("title") or name),
                     description=str(row.get("description") or ""),
-                    parameters={},
+                    parameters=_normalize_mcp_schema({}),
                     version=str(row.get("version") or "1.0.0"),
                 )
             )
@@ -2023,7 +2090,7 @@ class CombinedAppsOpenAPIMCP(FastMCP[Any]):
                 args,
                 timeout_sec=30.0,
             )
-            return ToolResult(structured_content=native_result)
+            return ToolResult(structured_content=_sanitize_tool_response(native_result))
 
         # ---- OpenAPI app tool ----
         catalog = await build_openapi_tool_catalog()

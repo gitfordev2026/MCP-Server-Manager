@@ -86,14 +86,37 @@ export default function McpInspectorPage() {
   }, []);
 
   const copy = useCallback(async (value: string, key: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
+    let success = false;
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(value);
+        success = true;
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!success) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = value;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        success = document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch {
+        success = false;
+      }
+    }
+
+    if (success) {
       setCopied(key);
       setTimeout(() => setCopied((cur) => (cur === key ? null : cur)), 1500);
-    } catch {
-      // Clipboard not available — surface as a state change so the user
-      // can copy manually.
-      setCopied(key);
     }
   }, []);
 

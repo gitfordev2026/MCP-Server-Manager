@@ -22,7 +22,7 @@ services:
       dockerfile: Dockerfile.dev
     image: mcp-backend:latest
     container_name: mcp-backend
-    # network_mode: host
+    network_mode: host
     ports:
       - "8000:8000"
       - "8099:8099"
@@ -45,7 +45,7 @@ services:
       dockerfile: Dockerfile.dev
     image: mcp-frontend:latest
     container_name: mcp-frontend
-    # network_mode: host
+    network_mode: host
     ports:
       - "3000:3000"
     volumes:
@@ -69,7 +69,7 @@ services:
       dockerfile: Dockerfile.dev
     image: mcp-mock-server:latest
     container_name: mcp-mock-server
-    # network_mode: host
+    network_mode: host
     ports:
       - "8001:8001"
     volumes:
@@ -86,7 +86,7 @@ services:
   mock-inventory-app:
     image: mcp-mock-server:latest
     container_name: mcp-inventory-app
-    # network_mode: host
+    network_mode: host
     ports:
       - "8002:8002"
     volumes:
@@ -103,7 +103,7 @@ services:
   mock-portal-app:
     image: mcp-mock-server:latest
     container_name: mcp-portal-app
-    # network_mode: host
+    network_mode: host
     ports:
       - "8003:8003"
     volumes:
@@ -120,7 +120,7 @@ services:
   mock-analytics-app:
     image: mcp-mock-server:latest
     container_name: mcp-analytics-app
-    # network_mode: host
+    network_mode: host
     ports:
       - "8004:8004"
     volumes:
