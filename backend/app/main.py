@@ -2364,8 +2364,7 @@ def get_app_specific_mcp_asgi(app_name: str) -> Any:
         server = AppSpecificOpenAPIMCP(
             target_app_name=norm,
             name=f"MCP-{app_name}",
-            instructions=f"Isolated MCP server exposing tools strictly for application '{app_name}'.",
-            streamable_http_path="/"
+            instructions=f"Isolated MCP server exposing tools strictly for application '{app_name}'."
         )
         asgi = JWTAuthASGIMiddleware(build_fastmcp_asgi_app(server, path="/"))
         _app_specific_cache[norm] = asgi

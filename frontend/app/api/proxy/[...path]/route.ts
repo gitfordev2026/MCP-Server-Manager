@@ -25,6 +25,8 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       targetPath = '/mcp/apps/';
     } else if (normalized === '/mcp') {
       targetPath = '/mcp/';
+    } else if (normalized.startsWith('/mcp/app/')) {
+      targetPath = `${normalized}/`;
     }
 
     const searchParams = req.nextUrl.searchParams;

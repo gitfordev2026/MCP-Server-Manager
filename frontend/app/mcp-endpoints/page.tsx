@@ -64,11 +64,6 @@ export default function McpEndpointsPortal() {
     return `${window.location.origin}${path}`;
   }, [selectedApp]);
 
-  const backendEndpointUrl = useMemo(() => {
-    const path = selectedApp === 'all' ? '/mcp/apps/' : `/mcp/app/${selectedApp}/`;
-    return `http://10.139.10.176:8000${path}`;
-  }, [selectedApp]);
-
   useEffect(() => {
     async function loadCatalogData() {
       try {
@@ -113,7 +108,7 @@ export default function McpEndpointsPortal() {
           status: '200 OK',
           latencyMs: latency,
           authenticated: Boolean(data.token),
-          transport: 'Streamable HTTP & SSE',
+          transport: 'Streamable HTTP & SSE Proxy',
           activeTools: tools.length || 30,
         });
         toast.success(`Connection Test Successful (${latency}ms)`);
@@ -179,7 +174,7 @@ import httpx
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-BASE_URL = "${backendEndpointUrl}"
+BASE_URL = "${webAppEndpointUrl}"
 TOKEN = "YOUR_KEYCLOAK_JWT_TOKEN"
 
 async function main():
@@ -258,7 +253,7 @@ export function McpToolList() {
 const app = express();
 
 app.get('/mcp-proxy', async (req, res) => {
-  const upstream = await fetch('${backendEndpointUrl}', {
+  const upstream = await fetch('${webAppEndpointUrl}', {
     headers: { Authorization: req.headers.authorization }
   });
   const data = await upstream.json();
@@ -271,7 +266,7 @@ app.listen(4000);`,
 import httpx
 
 app = FastAPI()
-MCP_URL = "${backendEndpointUrl}"
+MCP_URL = "${webAppEndpointUrl}"
 
 @app.get("/proxy-mcp")
 async def proxy_mcp(authorization: str = Header(None)):
@@ -290,7 +285,7 @@ import (
 
 func main() {
 	client := &http.Client{}
-	req, _ := http.NewRequest("POST", "${backendEndpointUrl}", nil)
+	req, _ := http.NewRequest("POST", "${webAppEndpointUrl}", nil)
 	req.Header.Set("Authorization", "Bearer YOUR_JWT_TOKEN")
 
 	resp, err := client.Do(req)
@@ -307,7 +302,7 @@ func main() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    const URL: &str = "${backendEndpointUrl}";
+    const URL: &str = "${webAppEndpointUrl}";
     const TOKEN: &str = "Bearer YOUR_JWT_TOKEN";
 
     let client = reqwest::Client::new();
@@ -327,7 +322,7 @@ public class McpClient {
     public static void main(String[] args) throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create("${backendEndpointUrl}"))
+            .uri(URI.create("${webAppEndpointUrl}"))
             .header("Authorization", "Bearer YOUR_JWT_TOKEN")
             .GET()
             .build();
@@ -346,14 +341,14 @@ class Program {
         using var client = new HttpClient();
         client.DefaultRequestHeaders.Add("Authorization", "Bearer YOUR_JWT_TOKEN");
         
-        var response = await client.GetAsync("${backendEndpointUrl}");
+        var response = await client.GetAsync("${webAppEndpointUrl}");
         string content = await response.ContentReadAsStringAsync();
         Console.WriteLine($"Status: {response.StatusCode}, Content: {content}");
     }
 }`,
 
     php: `<?php
-$url = "${backendEndpointUrl}";
+$url = "${webAppEndpointUrl}";
 $token = "YOUR_JWT_TOKEN";
 
 $options = [
@@ -495,29 +490,17 @@ echo $result;
             </p>
 
             <div className="space-y-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Web App API Proxy (Next.js)</span>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Frontend Proxy Endpoint URL</span>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
                 <span className="flex-1 truncate">
                   {typeof window !== 'undefined' ? `${window.location.origin}/api/proxy/mcp/apps/` : '/api/proxy/mcp/apps/'}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleCopy(typeof window !== 'undefined' ? `${window.location.origin}/api/proxy/mcp/apps/` : '/api/proxy/mcp/apps/', 'combined-proxy')}
-                  className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-indigo-600 text-white hover:bg-indigo-700 flex-shrink-0 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 flex-shrink-0 cursor-pointer shadow-sm"
                 >
-                  {copiedKey === 'combined-proxy' ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Direct Backend (FastAPI :8000)</span>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
-                <span className="flex-1 truncate">http://10.139.10.176:8000/mcp/apps/</span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy('http://10.139.10.176:8000/mcp/apps/', 'combined-direct')}
-                  className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-slate-700 text-white hover:bg-slate-600 flex-shrink-0 cursor-pointer"
-                >
-                  {copiedKey === 'combined-direct' ? 'Copied!' : 'Copy'}
+                  {copiedKey === 'combined-proxy' ? 'Copied!' : 'Copy URL'}
                 </button>
               </div>
             </div>
@@ -547,27 +530,15 @@ echo $result;
             </p>
 
             <div className="space-y-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Web App API Proxy (Next.js)</span>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Frontend Proxy Endpoint URL</span>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
                 <span className="flex-1 truncate">{webAppEndpointUrl}</span>
                 <button
                   type="button"
                   onClick={() => handleCopy(webAppEndpointUrl, 'app-proxy')}
-                  className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600 text-white hover:bg-emerald-700 flex-shrink-0 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 flex-shrink-0 cursor-pointer shadow-sm"
                 >
-                  {copiedKey === 'app-proxy' ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Direct Backend (FastAPI :8000)</span>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
-                <span className="flex-1 truncate">{backendEndpointUrl}</span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(backendEndpointUrl, 'app-direct')}
-                  className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-slate-700 text-white hover:bg-slate-600 flex-shrink-0 cursor-pointer"
-                >
-                  {copiedKey === 'app-direct' ? 'Copied!' : 'Copy'}
+                  {copiedKey === 'app-proxy' ? 'Copied!' : 'Copy URL'}
                 </button>
               </div>
             </div>
