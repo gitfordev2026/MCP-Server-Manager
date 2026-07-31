@@ -843,7 +843,13 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 )
             ).all()
             for row in rows:
-                if row.name in selected_names:
+                is_selected = _is_endpoint_selected(
+                    method=row.method or "",
+                    path=row.path or "",
+                    tool_name=row.name,
+                    selected_endpoints=selected_endpoints
+                )
+                if is_selected:
                     row.is_deleted = False
                     row.owner_enabled = True
                     row.is_enabled = bool(row.admin_enabled and row.owner_enabled)
