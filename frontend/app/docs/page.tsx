@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Navigation from '@/components/Navigation';
 import { toast } from '@/lib/toast';
+import AnimatedSystemFlowchart from '@/components/AnimatedSystemFlowchart';
 
 interface DocSection {
   id: string;
@@ -130,9 +131,12 @@ export default function DocumentationPage() {
               </p>
 
               <div className="p-4 rounded-xl bg-slate-950 text-slate-200 font-mono text-xs overflow-x-auto space-y-1 border border-slate-800">
-                <p className="text-emerald-400">// Architecture Flow</p>
-                <p>Browser / AI Assistant ──► Next.js API Proxy (:3000) ──► HMAC Signing ──► FastAPI Gateway (:8000) ──► FastMCP 3.4.4 (/mcp/apps/)</p>
+                <p className="text-emerald-400">// High-Level Architecture Sequence</p>
+                <p>Browser / AI Assistant ──► Next.js API Proxy (:3000) ──► Keycloak OIDC ──► HMAC Gateway (:8000) ──► FastMCP 3.4.4 (/mcp/apps/)</p>
               </div>
+
+              {/* Interactive Animated Flowchart Graphic */}
+              <AnimatedSystemFlowchart />
             </section>
 
             {/* Section 2: Quick Start */}
