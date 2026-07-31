@@ -1,10 +1,22 @@
+# Airgapped Bundle & Tarball Artifacts
+airgap_bundle/
+dist_offline/
+docker_images/
+*.tar
 *.tar.gz
+mcp-server-manager-airgap-bundle.tar.gz
+
+# Node & Frontend Build
 node_modules/
-*.log
+.next/
+
+# Python & Environment
 .venv/
+__pycache__/
 *.pyc
 *.db
-.gitignore
-.DS_Store
-.gitignore
 backend/app/servers.db
+
+# Logs & System
+*.log
+.DS_Store

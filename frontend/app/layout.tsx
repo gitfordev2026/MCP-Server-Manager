@@ -4,6 +4,8 @@ import { Providers } from "./providers";
 import { publicEnv } from '@/lib/env';
 import AuthGuard from '@/components/AuthGuard';
 
+export const dynamic = 'force-dynamic';
+
 void publicEnv;
 
 export const metadata: Metadata = {

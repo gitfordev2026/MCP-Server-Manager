@@ -10,6 +10,7 @@ export function usePolicies() {
   return useQuery({
     queryKey: POLICIES_KEY,
     queryFn: api.fetchPolicies,
+    enabled: typeof window !== 'undefined',
   });
 }
 
