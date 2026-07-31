@@ -720,10 +720,12 @@ def _is_endpoint_selected(
 
 
 def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"]) -> None:
-    """Upsert OpenAPI-discovered tools into mcp_tools."""
+    """Upsert OpenAPI-discovered tools into mcp_tools without collapsing endpoints."""
     with SessionLocal() as db:
         synced_at = datetime.datetime.now(datetime.UTC)
         selected_names_by_owner: dict[str, set[str]] = {}
+        claimed_tool_ids: set[int] = set()
+
         for tool in tools.values():
             owner_id = f"app:{tool.app_name}"
             raw_api = db.scalar(select(BaseURLModel).where(BaseURLModel.name == tool.app_name))
@@ -769,32 +771,54 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                     default=str,
                 ).encode("utf-8")
             ).hexdigest()
-            # Look up by stable key: owner_id + source_type + method + path.
-            # This is more robust than name which can change across syncs.
-            norm_path_key = tool.path.rstrip('/') or '/'
+
+            # Multi-stage matching to prevent endpoint collapsing
+            # Stage 1: Exact match by owner_id + name or external_id
             existing = db.scalar(
                 select(MCPToolModel).where(
                     MCPToolModel.source_type == "openapi",
                     MCPToolModel.owner_id == owner_id,
-                    or_(
-                        and_(MCPToolModel.method == tool.method, MCPToolModel.path == tool.path),
-                        and_(MCPToolModel.method == tool.method, MCPToolModel.path == norm_path_key),
-                    ),
+                    or_(MCPToolModel.name == tool.name, MCPToolModel.external_id == tool.name),
+                    MCPToolModel.id.not_in(claimed_tool_ids) if claimed_tool_ids else True,
                 )
             )
+
+            # Stage 2: Match by owner_id + method + exact path
+            if not existing:
+                existing = db.scalar(
+                    select(MCPToolModel).where(
+                        MCPToolModel.source_type == "openapi",
+                        MCPToolModel.owner_id == owner_id,
+                        MCPToolModel.method == tool.method,
+                        MCPToolModel.path == tool.path,
+                        MCPToolModel.id.not_in(claimed_tool_ids) if claimed_tool_ids else True,
+                    )
+                )
+
+            # Stage 3: Match by owner_id + method + normalized path
+            if not existing:
+                norm_path_key = tool.path.rstrip('/') or '/'
+                existing = db.scalar(
+                    select(MCPToolModel).where(
+                        MCPToolModel.source_type == "openapi",
+                        MCPToolModel.owner_id == owner_id,
+                        MCPToolModel.method == tool.method,
+                        MCPToolModel.path == norm_path_key,
+                        MCPToolModel.id.not_in(claimed_tool_ids) if claimed_tool_ids else True,
+                    )
+                )
+
             if existing:
-                existing.name = tool.name          # update name in case sanitization changed
+                claimed_tool_ids.add(existing.id)
+                existing.name = tool.name
                 existing.method = tool.method
                 existing.path = tool.path
-                # NEVER overwrite user-set description.
-                # Only update description if current value is blank (never been customized).
                 if not (existing.description or "").strip():
                     existing.description = tool.description or ""
                 existing.display_name = tool.title
                 existing.external_id = tool.name
                 existing.registration_state = "selected"
                 existing.exposure_state = "active"
-                # Restore soft-deleted tools on re-sync.
                 if existing.is_deleted:
                     existing.is_deleted = False
                     existing.owner_enabled = True
@@ -805,28 +829,32 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 existing.discovery_hash = discovery_hash
                 existing.sync_error = None
                 existing.raw_api_id = raw_api.id if raw_api else existing.raw_api_id
+                if raw_api and raw_api.created_by_user_id:
+                    existing.created_by_user_id = raw_api.created_by_user_id
                 continue
 
-            db.add(
-                MCPToolModel(
-                    source_type="openapi",
-                    owner_id=owner_id,
-                    name=tool.name,
-                    method=tool.method,
-                    path=tool.path,
-                    description=tool.description or "",
-                    external_id=tool.name,
-                    display_name=tool.title,
-                    registration_state="selected",
-                    exposure_state="active",
-                    last_discovered_on=synced_at,
-                    last_synced_on=synced_at,
-                    source_updated_on=synced_at,
-                    discovery_hash=discovery_hash,
-                    sync_error=None,
-                    raw_api_id=raw_api.id if raw_api else None,
-                )
+            new_tool = MCPToolModel(
+                source_type="openapi",
+                owner_id=owner_id,
+                name=tool.name,
+                method=tool.method,
+                path=tool.path,
+                description=tool.description or "",
+                external_id=tool.name,
+                display_name=tool.title,
+                registration_state="selected",
+                exposure_state="active",
+                last_discovered_on=synced_at,
+                last_synced_on=synced_at,
+                source_updated_on=synced_at,
+                discovery_hash=discovery_hash,
+                sync_error=None,
+                raw_api_id=raw_api.id if raw_api else None,
+                created_by_user_id=raw_api.created_by_user_id if raw_api else None,
             )
+            db.add(new_tool)
+            db.flush()
+            claimed_tool_ids.add(new_tool.id)
 
         # If owner has explicit selection, hide unselected OpenAPI tools.
         base_rows = db.scalars(select(BaseURLModel)).all()

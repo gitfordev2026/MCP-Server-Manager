@@ -63,6 +63,7 @@ function formatJson(value: unknown): string {
 function buildEndpointsFromOpenApi(spec: Record<string, unknown>): DiscoveredEndpoint[] {
   const paths = (spec?.paths as Record<string, Record<string, unknown>>) || {};
   const items: DiscoveredEndpoint[] = [];
+  const seenIds = new Set<string>();
 
   for (const [path, methods] of Object.entries(paths)) {
     const methodEntries = Object.entries((methods || {}) as Record<string, unknown>);
@@ -72,8 +73,18 @@ function buildEndpointsFromOpenApi(spec: Record<string, unknown>): DiscoveredEnd
       const op = rawOp as Record<string, unknown> | undefined;
       if (!op || typeof op !== 'object') continue;
       const operationId = String(op.operationId || `${method}_${path.replace(/[^a-zA-Z0-9]/g, '_')}`);
+
+      let baseId = `${method.toUpperCase()} ${path}`;
+      let uniqueId = baseId;
+      let counter = 1;
+      while (seenIds.has(uniqueId)) {
+        counter++;
+        uniqueId = `${baseId} #${counter}`;
+      }
+      seenIds.add(uniqueId);
+
       items.push({
-        id: `${method.toUpperCase()} ${path}`,
+        id: uniqueId,
         method: method.toUpperCase(),
         path,
         operationId,
