@@ -679,6 +679,46 @@ def sync_api_server_links_by_host() -> None:
 
 
 
+def _is_endpoint_selected(
+    method: str,
+    path: str,
+    tool_name: str,
+    selected_endpoints: list[str] | set[str] | None
+) -> bool:
+    if not selected_endpoints:
+        return True
+    selected_set = {str(item).strip() for item in selected_endpoints if str(item).strip()}
+    if not selected_set:
+        return True
+
+    norm_method = (method or "").upper().strip()
+    norm_path = (path or "").rstrip("/") or "/"
+    target_key = f"{norm_method} {norm_path}"
+
+    has_method_keys = False
+    normalized_keys: set[str] = set()
+    for item in selected_set:
+        parts = item.split(" ", 1)
+        if len(parts) == 2 and parts[0].upper() in {"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"}:
+            m = parts[0].upper()
+            p = parts[1].rstrip("/") or "/"
+            normalized_keys.add(f"{m} {p}")
+            has_method_keys = True
+        else:
+            normalized_keys.add(item)
+            normalized_keys.add(item.rstrip("/") or "/")
+
+    if target_key in normalized_keys or tool_name in selected_set:
+        return True
+
+    if not has_method_keys:
+        raw_path = path or ""
+        if raw_path in selected_set or norm_path in normalized_keys:
+            return True
+
+    return False
+
+
 def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"]) -> None:
     """Upsert OpenAPI-discovered tools into mcp_tools."""
     with SessionLocal() as db:
@@ -692,16 +732,12 @@ def sync_mcp_tool_registry_from_openapi(tools: dict[str, "OpenAPIToolDefinition"
                 if raw_api is not None
                 else []
             )
-            endpoint_key = f"{tool.method.upper()} {tool.path}"
-            norm_path = tool.path.rstrip('/') or '/'
-            selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_endpoints}
 
-            # Flexible matching: allow method+path key, tool name, exact path, or normalized path
-            is_selected = not selected_endpoints or (
-                endpoint_key in selected_endpoints
-                or tool.name in selected_endpoints
-                or tool.path in selected_endpoints
-                or norm_path in selected_paths
+            is_selected = _is_endpoint_selected(
+                method=tool.method,
+                path=tool.path,
+                tool_name=tool.name,
+                selected_endpoints=selected_endpoints
             )
             if not is_selected:
                 continue
@@ -1563,14 +1599,11 @@ async def build_openapi_tool_catalog(
             for tool in generated_tools:
                 selected_endpoints = [str(item).strip() for item in (base_url.get("selected_endpoints") or []) if str(item).strip()]
                 if selected_endpoints:
-                    endpoint_key = f"{tool.method.upper()} {tool.path}"
-                    norm_path = tool.path.rstrip('/') or '/'
-                    selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_endpoints}
-                    is_match = (
-                        endpoint_key in selected_endpoints
-                        or tool.name in selected_endpoints
-                        or tool.path in selected_endpoints
-                        or norm_path in selected_paths
+                    is_match = _is_endpoint_selected(
+                        method=tool.method,
+                        path=tool.path,
+                        tool_name=tool.name,
+                        selected_endpoints=selected_endpoints
                     )
                     if not is_match:
                         continue

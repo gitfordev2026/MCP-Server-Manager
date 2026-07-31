@@ -498,10 +498,27 @@ export default function RegisterAppPage() {
     const liveEndpoints = buildEndpointsFromOpenApi(spec);
 
     const app = apps.find((item) => item.name === appName);
-    const configuredSelection = configuredSelectionOverride ?? (Array.isArray(app?.selected_endpoints)
+    const rawSelected = configuredSelectionOverride ?? (Array.isArray(app?.selected_endpoints)
       ? new Set((app?.selected_endpoints || []).map((item) => String(item).trim()).filter(Boolean))
       : new Set<string>());
-    const allSelectedByDefault = configuredSelection.size === 0;
+    const allSelectedByDefault = rawSelected.size === 0;
+
+    const normalizedConfiguredSet = new Set<string>();
+    let hasMethodKeys = false;
+    rawSelected.forEach((item) => {
+      const str = String(item).trim();
+      if (!str) return;
+      normalizedConfiguredSet.add(str);
+      const parts = str.split(' ', 1);
+      if (parts.length === 2 && ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'].includes(parts[0].toUpperCase())) {
+        const m = parts[0].toUpperCase();
+        const p = parts[1].replace(/\/+$/, '') || '/';
+        normalizedConfiguredSet.add(`${m} ${p}`);
+        hasMethodKeys = true;
+      } else {
+        normalizedConfiguredSet.add(str.replace(/\/+$/, '') || '/');
+      }
+    });
 
     const dbPayload = await http<{
       tools: Array<{
@@ -523,9 +540,22 @@ export default function RegisterAppPage() {
 
     return liveEndpoints
       .map((endpoint) => {
-        const key = `${endpoint.method} ${endpoint.path}`;
-        const dbEndpoint = dbByEndpointKey.get(key);
-        const isSelected = allSelectedByDefault ? true : configuredSelection.has(key);
+        const rawMethod = (endpoint.method || '').toUpperCase();
+        const rawPath = endpoint.path || '';
+        const normPath = rawPath.replace(/\/+$/, '') || '/';
+        const key = `${rawMethod} ${rawPath}`;
+        const normKey = `${rawMethod} ${normPath}`;
+
+        const dbEndpoint = dbByEndpointKey.get(key) || dbByEndpointKey.get(normKey);
+
+        const isSelected = allSelectedByDefault
+          ? true
+          : (
+              rawSelected.has(key) ||
+              normalizedConfiguredSet.has(normKey) ||
+              (!hasMethodKeys && (rawSelected.has(rawPath) || normalizedConfiguredSet.has(normPath)))
+            );
+
         return {
           id: key,
           method: endpoint.method,

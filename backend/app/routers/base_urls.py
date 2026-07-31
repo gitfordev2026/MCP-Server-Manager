@@ -107,7 +107,19 @@ def create_base_urls_router(
         owner_id = f"app:{app_name}"
         selected_set = {str(item).strip() for item in selected_endpoints if str(item).strip()}
         all_enabled_by_default = (len(selected_set) == 0)
-        selected_paths = {p.split(' ', 1)[-1].rstrip('/') or '/' for p in selected_set}
+
+        has_method_keys = False
+        normalized_keys: set[str] = set()
+        for item in selected_set:
+            parts = item.split(" ", 1)
+            if len(parts) == 2 and parts[0].upper() in {"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"}:
+                m = parts[0].upper()
+                p = parts[1].rstrip("/") or "/"
+                normalized_keys.add(f"{m} {p}")
+                has_method_keys = True
+            else:
+                normalized_keys.add(item)
+                normalized_keys.add(item.rstrip("/") or "/")
 
         tools = db.scalars(
             select(mcp_tool_model).where(mcp_tool_model.owner_id == owner_id)
@@ -116,14 +128,13 @@ def create_base_urls_router(
         for tool in tools:
             method = (getattr(tool, "method", "") or "").upper()
             path = getattr(tool, "path", "") or ""
-            endpoint_key = f"{method} {path}".strip()
             norm_path = path.rstrip('/') or '/'
+            target_key = f"{method} {norm_path}".strip()
 
             is_selected = all_enabled_by_default or (
-                endpoint_key in selected_set
+                target_key in normalized_keys
                 or tool.name in selected_set
-                or path in selected_set
-                or norm_path in selected_paths
+                or (not has_method_keys and (path in selected_set or norm_path in normalized_keys))
             )
 
             if is_selected:
