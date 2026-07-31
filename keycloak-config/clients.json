@@ -1,0 +1,268 @@
+[
+  {
+    "realm": "IAF",
+    "clientId": "account",
+    "name": "${client_account}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "/realms/IAF/account/*"
+    ],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "account-console",
+    "name": "${client_account-console}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "/realms/IAF/account/*"
+    ],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "adm-client",
+    "name": "adm-client",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": "QOlD8HCPl8UTRQQ1WTaC773FhFmlfsd05tSlNOfKJtIcaqj9feZuwnFX6T9O5gqPPYRycshmWNVpXJWX8xMRdj",
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": true
+  },
+  {
+    "realm": "IAF",
+    "clientId": "admin-cli",
+    "name": "${client_admin-cli}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": true
+  },
+  {
+    "realm": "IAF",
+    "clientId": "broker",
+    "name": "${client_broker}",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "inspector-client",
+    "name": "inspector-client",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": "9Y3PqC9AeiHs6nIBFY45BBUbZKYxzRuNfZwNtc4aQWkLmULYBk5Puu48eb2AfnReyTA3vT3LXDfglOURjWeXfn",
+    "redirectUris": [
+      "*"
+    ],
+    "webOrigins": [
+      "*"
+    ],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "mcp-client-secure",
+    "name": "mcp-client-secure",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": "oORQ1ynZJoiCRduW6aMVqpYq4BFgkPP27f7LMqHbwRUCxviUGzuHGQG9xulwqLXHeRfJASDx1wV3KEsoaT8xyB",
+    "redirectUris": [
+      "http://127.0.0.1:*",
+      "http://10.139.10.176:3000/",
+      "https://vscode.dev/redirect",
+      "*",
+      "+"
+    ],
+    "webOrigins": [
+      "/*"
+    ],
+    "serviceAccountsEnabled": true,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "mcp-inspector",
+    "name": "mcp-inspector",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "http://localhost:6274/*"
+    ],
+    "webOrigins": [
+      "+"
+    ],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "my-coder-app",
+    "name": "my-coder-app",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": "8GpKXiLsfxMyFgz71mFmbykwT3qXcupkOb2oZMrxyLu1o5AbJVR2WHDSdY9Sh6tRYzeIwtiL5jKVL7dEylZxtb",
+    "redirectUris": [
+      "http://10.139.10.176:7080/*"
+    ],
+    "webOrigins": [
+      "+"
+    ],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "realm-management",
+    "name": "${client_realm-management}",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "IAF",
+    "clientId": "security-admin-console",
+    "name": "${client_security-admin-console}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "/admin/IAF/console/*"
+    ],
+    "webOrigins": [
+      "+"
+    ],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "IAF-realm",
+    "name": "IAF Realm",
+    "protocol": null,
+    "publicClient": false,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "account",
+    "name": "${client_account}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "/realms/master/account/*"
+    ],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "account-console",
+    "name": "${client_account-console}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "/realms/master/account/*"
+    ],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "admin-cli",
+    "name": "${client_admin-cli}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": true
+  },
+  {
+    "realm": "master",
+    "clientId": "broker",
+    "name": "${client_broker}",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "master-realm",
+    "name": "master Realm",
+    "protocol": null,
+    "publicClient": false,
+    "secret": null,
+    "redirectUris": [],
+    "webOrigins": [],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "mcp-client-secure",
+    "name": "mcp-client-secure",
+    "protocol": "openid-connect",
+    "publicClient": false,
+    "secret": "oORQ1ynZJoiCRduW6aMVqpYq4BFgkPP27f7LMqHbwRUCxviUGzuHGQG9xulwqLXHeRfJASDx1wV3KEsoaT8xyB",
+    "redirectUris": [],
+    "webOrigins": [
+      "*"
+    ],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  },
+  {
+    "realm": "master",
+    "clientId": "security-admin-console",
+    "name": "${client_security-admin-console}",
+    "protocol": "openid-connect",
+    "publicClient": true,
+    "secret": null,
+    "redirectUris": [
+      "/admin/master/console/*"
+    ],
+    "webOrigins": [
+      "+"
+    ],
+    "serviceAccountsEnabled": false,
+    "directAccessGrantsEnabled": false
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "realm": "IAF",
+    "username": "aaa",
+    "email": "mcp@mcp.gdsd",
+    "enabled": true,
+    "emailVerified": false,
+    "realmRoles": [
+      "default-roles-iaf"
+    ],
+    "createdTimestamp": 1785185509542
+  },
+  {
+    "realm": "IAF",
+    "username": "admin",
+    "email": "admin@mcp.local",
+    "enabled": true,
+    "emailVerified": true,
+    "realmRoles": [
+      "default-roles-iaf"
+    ],
+    "createdTimestamp": 1785173009559
+  },
+  {
+    "realm": "IAF",
+    "username": "mcp",
+    "email": "mcp@mcp.local",
+    "enabled": true,
+    "emailVerified": true,
+    "realmRoles": [
+      "default-roles-iaf"
+    ],
+    "createdTimestamp": 1785173020232
+  },
+  {
+    "realm": "master",
+    "username": "admin",
+    "email": null,
+    "enabled": true,
+    "emailVerified": false,
+    "realmRoles": [
+      "default-roles-master",
+      "admin"
+    ],
+    "createdTimestamp": 1785172977513
+  }
+]
