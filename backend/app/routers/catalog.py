@@ -105,6 +105,8 @@ def create_catalog_router(
                 "registry_state": getattr(app, "registry_state", "active"),
                 "last_health_check_at": getattr(app, "last_health_check_at", None),
                 "consecutive_failures": int(getattr(app, "consecutive_failures", 0) or 0),
+                "mcp_endpoint": f"/mcp/app/{app.name}",
+                "mcp_proxy_endpoint": f"/api/proxy/mcp/app/{app.name}",
             }
             for app in (active_apps + active_servers)
         ]

@@ -2257,14 +2257,145 @@ class JWTAuthASGIMiddleware:
         await self.app(scope, receive, send)
 
 
+class AppSpecificOpenAPIMCP(CombinedAppsOpenAPIMCP):
+    """FastMCP subclass that scopes tool discovery and execution to a specific application."""
+
+    def __init__(self, target_app_name: str, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.target_app_name = target_app_name.lower().strip()
+
+    async def list_tools(self) -> list[Any]:
+        all_tools = await super().list_tools()
+        target = self.target_app_name
+        filtered: list[Any] = []
+
+        with SessionLocal() as db:
+            tool_rows = db.scalars(
+                select(MCPToolModel).where(MCPToolModel.is_deleted == False)
+            ).all()
+            tool_map = {t.name: t for t in tool_rows}
+            raw_api_map = {r.id: r.name.lower() for r in db.scalars(select(BaseURLModel)).all()}
+            server_map = {s.id: s.name.lower() for s in db.scalars(select(ServerModel)).all()}
+
+        for t in all_tools:
+            t_name = str(getattr(t, "name", ""))
+            belongs = False
+
+            if t_name.startswith("mcp__"):
+                parts = t_name.split("__", 2)
+                if len(parts) >= 2 and parts[1].lower() == target:
+                    belongs = True
+            elif t_name in tool_map:
+                row = tool_map[t_name]
+                owner = (row.owner_id or "").lower()
+                if target in owner or owner.endswith(f":{target}"):
+                    belongs = True
+                elif row.source_type == "openapi" and row.raw_api_id in raw_api_map:
+                    if raw_api_map[row.raw_api_id] == target:
+                        belongs = True
+                elif row.source_type == "mcp" and row.server_id in server_map:
+                    if server_map[row.server_id] == target:
+                        belongs = True
+            else:
+                if target in t_name.lower():
+                    belongs = True
+
+            if belongs:
+                filtered.append(t)
+
+        return filtered
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        version: str | None = None,
+        **_kwargs: Any,
+    ) -> ToolResult:
+        target = self.target_app_name
+        belongs = False
+
+        with SessionLocal() as db:
+            tool_rows = db.scalars(
+                select(MCPToolModel).where(MCPToolModel.name == name, MCPToolModel.is_deleted == False)
+            ).all()
+            raw_api_map = {r.id: r.name.lower() for r in db.scalars(select(BaseURLModel)).all()}
+            server_map = {s.id: s.name.lower() for s in db.scalars(select(ServerModel)).all()}
+
+        if name.startswith("mcp__"):
+            parts = name.split("__", 2)
+            if len(parts) >= 2 and parts[1].lower() == target:
+                belongs = True
+        elif tool_rows:
+            for row in tool_rows:
+                owner = (row.owner_id or "").lower()
+                if target in owner or owner.endswith(f":{target}"):
+                    belongs = True
+                    break
+                elif row.source_type == "openapi" and row.raw_api_id in raw_api_map:
+                    if raw_api_map[row.raw_api_id] == target:
+                        belongs = True
+                        break
+                elif row.source_type == "mcp" and row.server_id in server_map:
+                    if server_map[row.server_id] == target:
+                        belongs = True
+                        break
+        else:
+            if target in name.lower():
+                belongs = True
+
+        if not belongs:
+            return ToolResult(
+                structured_content={
+                    "error": "app_mcp_access_denied",
+                    "message": f"Tool '{name}' does not belong to application '{self.target_app_name}'",
+                },
+                is_error=True,
+            )
+
+        return await super().call_tool(name, arguments=arguments, version=version, **_kwargs)
+
+
+_app_specific_cache: dict[str, Any] = {}
+
+def get_app_specific_mcp_asgi(app_name: str) -> Any:
+    norm = app_name.lower().strip()
+    if norm not in _app_specific_cache:
+        server = AppSpecificOpenAPIMCP(
+            target_app_name=norm,
+            name=f"MCP-{app_name}",
+            instructions=f"Isolated MCP server exposing tools strictly for application '{app_name}'.",
+            streamable_http_path="/"
+        )
+        asgi = JWTAuthASGIMiddleware(build_fastmcp_asgi_app(server, path="/"))
+        _app_specific_cache[norm] = asgi
+    return _app_specific_cache[norm]
+
+
 combined_apps_mcp = _create_combined_apps_mcp()
 combined_mcp_asgi_app = JWTAuthASGIMiddleware(build_fastmcp_asgi_app(combined_apps_mcp, path="/"))
 
 
 app.mount("/mcp/apps", combined_mcp_asgi_app)
 app.mount("/mcp/apps/", combined_mcp_asgi_app)
+
+
+@app.api_route("/mcp/app/{app_name}", methods=["GET", "POST", "OPTIONS"])
+@app.api_route("/mcp/app/{app_name}/{rest_of_path:path}", methods=["GET", "POST", "OPTIONS"])
+async def handle_app_mcp_endpoint(app_name: str, request: Request, rest_of_path: str = ""):
+    asgi_app = get_app_specific_mcp_asgi(app_name)
+    scope = request.scope.copy()
+    root_path = f"/mcp/app/{app_name}"
+    scope["root_path"] = root_path
+    if rest_of_path:
+        scope["path"] = f"/{rest_of_path}"
+    else:
+        scope["path"] = "/"
+    await asgi_app(scope, request.receive, request._send)
+
+
 MCP_RUNTIME_INFO["mounted_path"] = "/mcp/apps"
-MCP_RUNTIME_INFO["mounted_paths"] = ["/mcp/apps", "/mcp/apps/"]
+MCP_RUNTIME_INFO["mounted_paths"] = ["/mcp/apps", "/mcp/apps/", "/mcp/app/{app_name}"]
 require_permission = build_require_permission(
     SessionLocal,
     RoleModel,

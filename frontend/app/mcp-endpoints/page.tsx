@@ -55,29 +55,38 @@ export default function McpEndpointsPortal() {
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [tools, setTools] = useState<any[]>([]);
+  const [apps, setApps] = useState<any[]>([]);
+  const [selectedApp, setSelectedApp] = useState<string>('all');
 
   const webAppEndpointUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '/api/proxy/mcp/apps/';
-    return `${window.location.origin}/api/proxy/mcp/apps/`;
-  }, []);
+    const path = selectedApp === 'all' ? '/api/proxy/mcp/apps/' : `/api/proxy/mcp/app/${selectedApp}/`;
+    if (typeof window === 'undefined') return path;
+    return `${window.location.origin}${path}`;
+  }, [selectedApp]);
 
-  const backendEndpointUrl = 'http://10.139.10.176:8000/mcp/apps/';
+  const backendEndpointUrl = useMemo(() => {
+    const path = selectedApp === 'all' ? '/mcp/apps/' : `/mcp/app/${selectedApp}/`;
+    return `http://10.139.10.176:8000${path}`;
+  }, [selectedApp]);
 
   useEffect(() => {
-    async function loadTools() {
+    async function loadCatalogData() {
       try {
-        const res = await authenticatedFetch('/api/proxy/tools?include_inactive=true');
+        const res = await authenticatedFetch('/api/proxy/catalog');
         if (res.ok) {
           const data = await res.json();
+          if (Array.isArray(data.apps)) {
+            setApps(data.apps);
+          }
           if (Array.isArray(data.tools)) {
             setTools(data.tools);
           }
         }
       } catch (err) {
-        console.error('Failed to load catalog tools:', err);
+        console.error('Failed to load catalog data:', err);
       }
     }
-    loadTools();
+    loadCatalogData();
   }, []);
 
   const handleCopy = async (text: string, key: string) => {
@@ -412,6 +421,57 @@ echo $result;
               </p>
             </div>
           )}
+        </div>
+
+        {/* Target Application Endpoint Selector */}
+        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-6 shadow-xl space-y-4 relative overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🎯</span>
+                <h2 className="text-base font-bold text-white tracking-tight">
+                  Target Application Endpoint Selector
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  ISOLATED PER-APP PROXY
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Select a specific registered microservice application to isolate tools and generate targeted MCP client endpoint URLs.
+              </p>
+            </div>
+
+            {/* Application Dropdown */}
+            <div className="w-full md:w-80">
+              <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-wider mb-1">
+                Choose Target Application
+              </label>
+              <select
+                value={selectedApp}
+                onChange={(e) => setSelectedApp(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-indigo-500/50 text-white font-medium text-xs focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer shadow-inner"
+              >
+                <option value="all">🌐 All Applications (Combined Gateway)</option>
+                {apps.map((app) => (
+                  <option key={app.name} value={app.name}>
+                    📦 {app.name} ({app.status || 'active'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+              <span className="text-slate-300">
+                Active Endpoint Target: <strong className="text-white font-mono">{selectedApp === 'all' ? 'All Applications (Combined)' : selectedApp}</strong>
+              </span>
+            </div>
+            <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 truncate">
+              {webAppEndpointUrl}
+            </span>
+          </div>
         </div>
 
         {/* Dual Endpoints Architecture */}

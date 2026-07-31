@@ -145,6 +145,7 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
               // signing) instead of hitting the backend directly.
               chunkText = chunkText
                 .replaceAll('/mcp/apps/', '/api/proxy/mcp/apps/')
+                .replaceAll('/mcp/app/', '/api/proxy/mcp/app/')
                 .replaceAll('/mcp/', '/api/proxy/mcp/');
               controller.enqueue(encoder.encode(chunkText));
             }
