@@ -418,59 +418,61 @@ echo $result;
           )}
         </div>
 
-        {/* Target Application Endpoint Selector */}
-        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-6 shadow-xl space-y-4 relative overflow-hidden">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
+        {/* Target Application Endpoint Selector (Gated by Feature Flag) */}
+        {publicEnv.NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS && (
+          <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-6 shadow-xl space-y-4 relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🎯</span>
+                  <h2 className="text-base font-bold text-white tracking-tight">
+                    Target Application Endpoint Selector
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    ISOLATED PER-APP PROXY
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1">
+                  Select a specific registered microservice application to isolate tools and generate targeted MCP client endpoint URLs.
+                </p>
+              </div>
+
+              {/* Application Dropdown */}
+              <div className="w-full md:w-80">
+                <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-wider mb-1">
+                  Choose Target Application
+                </label>
+                <select
+                  value={selectedApp}
+                  onChange={(e) => setSelectedApp(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-indigo-500/50 text-white font-medium text-xs focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer shadow-inner"
+                >
+                  <option value="all">🌐 All Applications (Combined Gateway)</option>
+                  {apps.map((app) => (
+                    <option key={app.name} value={app.name}>
+                      📦 {app.name} ({app.status || 'active'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-xl">🎯</span>
-                <h2 className="text-base font-bold text-white tracking-tight">
-                  Target Application Endpoint Selector
-                </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  ISOLATED PER-APP PROXY
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                <span className="text-slate-300">
+                  Active Endpoint Target: <strong className="text-white font-mono">{selectedApp === 'all' ? 'All Applications (Combined)' : selectedApp}</strong>
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-1">
-                Select a specific registered microservice application to isolate tools and generate targeted MCP client endpoint URLs.
-              </p>
-            </div>
-
-            {/* Application Dropdown */}
-            <div className="w-full md:w-80">
-              <label className="block text-[10px] font-bold text-indigo-300 uppercase tracking-wider mb-1">
-                Choose Target Application
-              </label>
-              <select
-                value={selectedApp}
-                onChange={(e) => setSelectedApp(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-indigo-500/50 text-white font-medium text-xs focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer shadow-inner"
-              >
-                <option value="all">🌐 All Applications (Combined Gateway)</option>
-                {apps.map((app) => (
-                  <option key={app.name} value={app.name}>
-                    📦 {app.name} ({app.status || 'active'})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-              <span className="text-slate-300">
-                Active Endpoint Target: <strong className="text-white font-mono">{selectedApp === 'all' ? 'All Applications (Combined)' : selectedApp}</strong>
+              <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 truncate">
+                {webAppEndpointUrl}
               </span>
             </div>
-            <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 truncate">
-              {webAppEndpointUrl}
-            </span>
           </div>
-        </div>
+        )}
 
-        {/* Dual Endpoints Architecture Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Endpoints Architecture Overview */}
+        <div className={`grid grid-cols-1 ${publicEnv.NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS ? 'md:grid-cols-2' : 'md:grid-cols-1'} gap-6`}>
           {/* Endpoint Card 1: Combined Gateway Endpoint */}
           <div className="bg-white dark:bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 shadow-sm space-y-4 relative overflow-hidden">
             <div className="flex items-center justify-between">
@@ -511,43 +513,45 @@ echo $result;
             </div>
           </div>
 
-          {/* Endpoint Card 2: App-Specific Isolated Endpoint */}
-          <div className="bg-white dark:bg-slate-900 border border-emerald-500/30 rounded-2xl p-6 shadow-sm space-y-4 relative overflow-hidden">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500" />
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                  📦 2. App-Specific Isolated Endpoint
-                </h2>
+          {/* Endpoint Card 2: App-Specific Isolated Endpoint (Gated by Feature Flag) */}
+          {publicEnv.NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS && (
+            <div className="bg-white dark:bg-slate-900 border border-emerald-500/30 rounded-2xl p-6 shadow-sm space-y-4 relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500" />
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    📦 2. App-Specific Isolated Endpoint
+                  </h2>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  SCOPED TO SELECTED APP
+                </span>
               </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                SCOPED TO SELECTED APP
-              </span>
-            </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Restricts tool discovery and execution strictly to the target application <code className="font-mono text-emerald-500">{selectedApp === 'all' ? '<app_name>' : selectedApp}</code> for fine-grained security.
-            </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Restricts tool discovery and execution strictly to the target application <code className="font-mono text-emerald-500">{selectedApp === 'all' ? '<app_name>' : selectedApp}</code> for fine-grained security.
+              </p>
 
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Frontend Proxy Endpoint URL</span>
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
-                <span className="flex-1 truncate">{webAppEndpointUrl}</span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(webAppEndpointUrl, 'app-proxy')}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 flex-shrink-0 cursor-pointer shadow-sm"
-                >
-                  {copiedKey === 'app-proxy' ? 'Copied!' : 'Copy URL'}
-                </button>
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Frontend Proxy Endpoint URL</span>
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/60 font-mono text-xs text-slate-800 dark:text-slate-200 break-all">
+                  <span className="flex-1 truncate">{webAppEndpointUrl}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(webAppEndpointUrl, 'app-proxy')}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 flex-shrink-0 cursor-pointer shadow-sm"
+                  >
+                    {copiedKey === 'app-proxy' ? 'Copied!' : 'Copy URL'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <span>Selected App: <strong className="text-emerald-400 font-mono">{selectedApp === 'all' ? 'All (Selector Active)' : selectedApp}</strong></span>
+                <span>RBAC Filtered: <strong>Active</strong></span>
               </div>
             </div>
-
-            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <span>Selected App: <strong className="text-emerald-400 font-mono">{selectedApp === 'all' ? 'All (Selector Active)' : selectedApp}</strong></span>
-              <span>RBAC Filtered: <strong>Active</strong></span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Integration Code Blocks (12 Languages Tabbed) */}

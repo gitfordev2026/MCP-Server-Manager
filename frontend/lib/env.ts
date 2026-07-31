@@ -18,6 +18,10 @@ const NEXT_PUBLIC_ANALYTICS_ID = readRequiredEnv(
   process.env.NEXT_PUBLIC_ANALYTICS_ID,
   "NEXT_PUBLIC_ANALYTICS_ID"
 );
+const NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS = (
+  process.env.NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS || 'false'
+).trim().toLowerCase() === 'true';
+
 const NODE_ENV = readRequiredEnv(process.env.NODE_ENV, "NODE_ENV");
 
 export const publicEnv = Object.freeze({
@@ -25,6 +29,7 @@ export const publicEnv = Object.freeze({
   // NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_GOOGLE_API_KEY,
   NEXT_PUBLIC_ANALYTICS_ID,
+  NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS,
   NODE_ENV: NODE_ENV || "development",
 });
 

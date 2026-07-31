@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Navigation from '@/components/Navigation';
 import { toast } from '@/lib/toast';
+import { publicEnv } from '@/lib/env';
 import AnimatedSystemFlowchart from '@/components/AnimatedSystemFlowchart';
 
 interface DocSection {
@@ -136,7 +137,7 @@ export default function DocumentationPage() {
               </div>
 
               {/* Dual Endpoint Options Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
+              <div className={`grid grid-cols-1 ${publicEnv.NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS ? 'md:grid-cols-2' : 'md:grid-cols-1'} gap-4 text-xs pt-2`}>
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-indigo-500/30 space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-base">🌐</span>
@@ -150,18 +151,20 @@ export default function DocumentationPage() {
                   </div>
                 </div>
 
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-emerald-500/30 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">📦</span>
-                    <h4 className="font-bold text-slate-900 dark:text-white">2. App-Specific Isolated Endpoints</h4>
+                {publicEnv.NEXT_PUBLIC_ENABLE_APP_SPECIFIC_ENDPOINTS && (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-emerald-500/30 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📦</span>
+                      <h4 className="font-bold text-slate-900 dark:text-white">2. App-Specific Isolated Endpoints</h4>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300">
+                      Exposes <strong>only tools</strong> registered under a specific application (e.g. <code>inventory-service</code>). Ideal for restricted role access & scoped tool execution.
+                    </p>
+                    <div className="p-2 rounded bg-slate-950 text-emerald-400 font-mono text-[11px] overflow-x-auto">
+                      http://10.139.10.176:3000/api/proxy/mcp/app/{'{app_name}'}/
+                    </div>
                   </div>
-                  <p className="text-slate-600 dark:text-slate-300">
-                    Exposes <strong>only tools</strong> registered under a specific application (e.g. <code>inventory-service</code>). Ideal for restricted role access & scoped tool execution.
-                  </p>
-                  <div className="p-2 rounded bg-slate-950 text-emerald-400 font-mono text-[11px] overflow-x-auto">
-                    http://10.139.10.176:3000/api/proxy/mcp/app/{'{app_name}'}/
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Interactive Animated Flowchart Graphic */}
